@@ -190,6 +190,19 @@ serve(async (req) => {
           VALUES ($1, $2, $3, $4, $5, $6, $7)
           RETURNING *
         `, [data.user_id, data.nome, data.data_sorteio, data.premio, data.valor_cartela, data.quantidade_cartelas, data.status]);
+        
+        // Generate cartelas automatically
+        const newSorteioId = (result.rows[0] as any).id;
+        const quantidadeCartelas = data.quantidade_cartelas || 0;
+        console.log(`Generating ${quantidadeCartelas} cartelas for sorteio ${newSorteioId}`);
+        
+        for (let i = 1; i <= quantidadeCartelas; i++) {
+          await client.queryObject(`
+            INSERT INTO cartelas (sorteio_id, numero, status)
+            VALUES ($1, $2, 'disponivel')
+          `, [newSorteioId, i]);
+        }
+        console.log(`Generated ${quantidadeCartelas} cartelas successfully`);
         break;
 
       case 'updateSorteio':
