@@ -1,13 +1,46 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import { BingoProvider, useBingo } from '@/contexts/BingoContext';
+import Header from '@/components/Header';
+import Navigation from '@/components/Navigation';
+import SorteiosTab from '@/components/tabs/SorteiosTab';
+import DashboardTab from '@/components/tabs/DashboardTab';
+import VendedoresTab from '@/components/tabs/VendedoresTab';
+import CartelasTab from '@/components/tabs/CartelasTab';
+import AtribuicoesTab from '@/components/tabs/AtribuicoesTab';
+import VendasTab from '@/components/tabs/VendasTab';
+import RelatoriosTab from '@/components/tabs/RelatoriosTab';
+
+const MainContent = () => {
+  const { currentTab } = useBingo();
+
+  const renderTab = () => {
+    switch (currentTab) {
+      case 'sorteios': return <SorteiosTab />;
+      case 'dashboard': return <DashboardTab />;
+      case 'vendedores': return <VendedoresTab />;
+      case 'cartelas': return <CartelasTab />;
+      case 'atribuicoes': return <AtribuicoesTab />;
+      case 'vendas': return <VendasTab />;
+      case 'relatorios': return <RelatoriosTab />;
+      default: return <SorteiosTab />;
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-background">
+      <Header />
+      <Navigation />
+      <main className="container mx-auto px-4 py-8">
+        {renderTab()}
+      </main>
+    </div>
+  );
+};
 
 const Index = () => {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="text-center">
-        <h1 className="mb-4 text-4xl font-bold">Welcome to Your Blank App</h1>
-        <p className="text-xl text-muted-foreground">Start building your amazing project here!</p>
-      </div>
-    </div>
+    <BingoProvider>
+      <MainContent />
+    </BingoProvider>
   );
 };
 
