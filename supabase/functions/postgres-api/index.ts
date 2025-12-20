@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { Client } from "https://deno.land/x/postgres@v0.17.0/mod.ts";
+import { crypto } from "https://deno.land/std@0.168.0/crypto/mod.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -21,6 +22,20 @@ const getDbConfig = (): PostgresConfig => ({
   user: Deno.env.get('POSTGRES_USER') || '',
   password: Deno.env.get('POSTGRES_PASSWORD') || '',
 });
+
+// Simple hash function for passwords
+async function hashPassword(password: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password + 'bingo_salt_2024');
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function verifyPassword(password: string, hash: string): Promise<boolean> {
+  const newHash = await hashPassword(password);
+  return newHash === hash;
+}
 
 serve(async (req) => {
   // Handle CORS preflight requests
@@ -51,19 +66,130 @@ serve(async (req) => {
     let result;
 
     switch (action) {
-      // ================== SORTEIOS ==================
+      // ================== AUTH ==================
+      case 'checkFirstAccess':
+        result = await client.queryObject(`SELECT COUNT(*) as count FROM usuarios`);
+        const count = parseInt((result.rows[0] as any).count) || 0;
+        return new Response(
+          JSON.stringify({ isFirstAccess: count === 0 }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+
+      case 'setupAdmin':
+        // Check if any user exists
+        const existingCheck = await client.queryObject(`SELECT COUNT(*) as count FROM usuarios`);
+        if (parseInt((existingCheck.rows[0] as any).count) > 0) {
+          return new Response(
+            JSON.stringify({ error: 'Administrador já existe' }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        
+        const adminHash = await hashPassword(data.senha);
+        const adminResult = await client.queryObject(`
+          INSERT INTO usuarios (email, senha_hash, nome, role, ativo)
+          VALUES ($1, $2, $3, 'admin', true)
+          RETURNING id, email, nome, role, ativo, created_at
+        `, [data.email, adminHash, data.nome]);
+        
+        return new Response(
+          JSON.stringify({ user: adminResult.rows[0] }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+
+      case 'login':
+        const userResult = await client.queryObject(`
+          SELECT id, email, nome, role, ativo, senha_hash, created_at 
+          FROM usuarios WHERE email = $1
+        `, [data.email]);
+        
+        if (userResult.rows.length === 0) {
+          return new Response(
+            JSON.stringify({ error: 'Credenciais inválidas' }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        
+        const foundUser = userResult.rows[0] as any;
+        const passwordValid = await verifyPassword(data.senha, foundUser.senha_hash);
+        
+        if (!passwordValid) {
+          return new Response(
+            JSON.stringify({ error: 'Credenciais inválidas' }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        
+        // Remove senha_hash from response
+        delete foundUser.senha_hash;
+        
+        return new Response(
+          JSON.stringify({ user: foundUser }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+
+      case 'getUsers':
+        result = await client.queryObject(`
+          SELECT id, email, nome, role, ativo, created_at, updated_at 
+          FROM usuarios ORDER BY nome
+        `);
+        return new Response(
+          JSON.stringify({ users: result.rows }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+
+      case 'createUser':
+        const newUserHash = await hashPassword(data.senha);
+        const newUserResult = await client.queryObject(`
+          INSERT INTO usuarios (email, senha_hash, nome, role, ativo)
+          VALUES ($1, $2, $3, $4, true)
+          RETURNING id, email, nome, role, ativo, created_at
+        `, [data.email, newUserHash, data.nome, data.role]);
+        
+        return new Response(
+          JSON.stringify({ user: newUserResult.rows[0] }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+
+      case 'updateUser':
+        if (data.senha) {
+          const updateHash = await hashPassword(data.senha);
+          await client.queryObject(`
+            UPDATE usuarios SET email = $2, nome = $3, role = $4, senha_hash = $5, updated_at = NOW()
+            WHERE id = $1
+          `, [data.id, data.email, data.nome, data.role, updateHash]);
+        } else {
+          await client.queryObject(`
+            UPDATE usuarios SET email = $2, nome = $3, role = $4, updated_at = NOW()
+            WHERE id = $1
+          `, [data.id, data.email, data.nome, data.role]);
+        }
+        
+        return new Response(
+          JSON.stringify({ success: true }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+
+      case 'deleteUser':
+        await client.queryObject(`DELETE FROM usuarios WHERE id = $1`, [data.id]);
+        return new Response(
+          JSON.stringify({ success: true }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+
+      // ================== SORTEIOS (filtered by user) ==================
       case 'getSorteios':
         result = await client.queryObject(`
-          SELECT * FROM sorteios ORDER BY created_at DESC
-        `);
+          SELECT * FROM sorteios WHERE user_id = $1 ORDER BY created_at DESC
+        `, [data.user_id]);
         break;
 
       case 'createSorteio':
         result = await client.queryObject(`
-          INSERT INTO sorteios (nome, data_sorteio, premio, valor_cartela, quantidade_cartelas, status)
-          VALUES ($1, $2, $3, $4, $5, $6)
+          INSERT INTO sorteios (user_id, nome, data_sorteio, premio, valor_cartela, quantidade_cartelas, status)
+          VALUES ($1, $2, $3, $4, $5, $6, $7)
           RETURNING *
-        `, [data.nome, data.data_sorteio, data.premio, data.valor_cartela, data.quantidade_cartelas, data.status]);
+        `, [data.user_id, data.nome, data.data_sorteio, data.premio, data.valor_cartela, data.quantidade_cartelas, data.status]);
         break;
 
       case 'updateSorteio':
