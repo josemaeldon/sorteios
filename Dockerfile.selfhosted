@@ -1,3 +1,8 @@
+# =====================================================
+# BINGO SYSTEM - Self-Hosted Docker Image
+# Imagem completamente preparada para deploy
+# =====================================================
+
 # Build stage
 FROM node:20-alpine AS build
 
@@ -16,12 +21,16 @@ COPY . .
 # Build com placeholders para substituição em runtime
 ENV VITE_SUPABASE_URL=__VITE_SUPABASE_URL__
 ENV VITE_SUPABASE_ANON_KEY=__VITE_SUPABASE_ANON_KEY__
+ENV VITE_SUPABASE_PUBLISHABLE_KEY=__VITE_SUPABASE_PUBLISHABLE_KEY__
 ENV VITE_SUPABASE_PROJECT_ID=__VITE_SUPABASE_PROJECT_ID__
 
 RUN npm run build
 
 # Production stage
 FROM nginx:alpine
+
+# Instalar gettext para envsubst
+RUN apk add --no-cache gettext
 
 # Copiar configuração do nginx
 COPY nginx.conf /etc/nginx/conf.d/default.conf

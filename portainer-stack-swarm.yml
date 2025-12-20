@@ -1,0 +1,395 @@
+# =====================================================
+# BINGO SYSTEM - PORTAINER SWARM STACK
+# Stack completa para deploy em Docker Swarm
+# =====================================================
+# 
+# VARIÁVEIS DE AMBIENTE NECESSÁRIAS NO PORTAINER:
+# ------------------------------------------------
+# DOMAIN          = bingo.seudominio.com
+# DB_HOST         = IP/hostname do PostgreSQL
+# DB_PORT         = 5432
+# DB_NAME         = nome do banco
+# DB_USER         = usuário do banco
+# DB_PASS         = senha do banco
+# JWT_SECRET      = chave secreta JWT (mínimo 32 caracteres)
+# ANON_KEY        = chave anônima JWT gerada
+# SERVICE_ROLE_KEY = chave de serviço JWT gerada
+#
+# Para gerar as chaves JWT, use:
+# https://supabase.com/docs/guides/self-hosting#api-keys
+# =====================================================
+
+version: "3.8"
+
+services:
+  # ============================================
+  # Supabase Auth (GoTrue)
+  # ============================================
+  auth:
+    image: supabase/gotrue:v2.143.0
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: 9999
+      API_EXTERNAL_URL: https://api.${DOMAIN}
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${DB_NAME}?search_path=auth
+      GOTRUE_SITE_URL: https://${DOMAIN}
+      GOTRUE_URI_ALLOW_LIST: "*"
+      GOTRUE_DISABLE_SIGNUP: "false"
+      GOTRUE_JWT_SECRET: ${JWT_SECRET}
+      GOTRUE_JWT_EXP: 3600
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
+      GOTRUE_MAILER_AUTOCONFIRM: "true"
+      GOTRUE_SMTP_ADMIN_EMAIL: admin@${DOMAIN}
+      GOTRUE_SMTP_HOST: ""
+      GOTRUE_SMTP_PORT: 587
+      GOTRUE_SMTP_USER: ""
+      GOTRUE_SMTP_PASS: ""
+      GOTRUE_SMTP_SENDER_NAME: "Bingo System"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9999/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 5
+      resources:
+        limits:
+          memory: 256M
+    networks:
+      - bingo-internal
+
+  # ============================================
+  # Supabase REST API (PostgREST)
+  # ============================================
+  rest:
+    image: postgrest/postgrest:v12.0.1
+    environment:
+      PGRST_DB_URI: postgres://${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${DB_NAME}
+      PGRST_DB_SCHEMAS: public,storage,graphql_public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+      PGRST_APP_SETTINGS_JWT_SECRET: ${JWT_SECRET}
+      PGRST_APP_SETTINGS_JWT_EXP: 3600
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 5
+      resources:
+        limits:
+          memory: 256M
+    networks:
+      - bingo-internal
+
+  # ============================================
+  # Supabase Realtime
+  # ============================================
+  realtime:
+    image: supabase/realtime:v2.28.32
+    environment:
+      PORT: 4000
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASS}
+      DB_NAME: ${DB_NAME}
+      DB_SSL: "false"
+      DB_AFTER_CONNECT_QUERY: "SET search_path TO _realtime"
+      DB_ENC_KEY: supabaserealtime
+      API_JWT_SECRET: ${JWT_SECRET}
+      FLY_ALLOC_ID: bingo-realtime
+      FLY_APP_NAME: realtime
+      SECRET_KEY_BASE: UpNVntn3cDxHJpq99YMc1T1AQgQpc8kfYTuRgBiYa15BLrx8etQoXz3gZv1/u2oq
+      ERL_AFLAGS: -proto_dist inet_tcp
+      ENABLE_TAILSCALE: "false"
+      DNS_NODES: "''"
+      RLIMIT_NOFILE: 10000
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/api/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 5
+      resources:
+        limits:
+          memory: 512M
+    networks:
+      - bingo-internal
+
+  # ============================================
+  # Supabase Storage
+  # ============================================
+  storage:
+    image: supabase/storage-api:v0.46.4
+    environment:
+      ANON_KEY: ${ANON_KEY}
+      SERVICE_KEY: ${SERVICE_ROLE_KEY}
+      POSTGREST_URL: http://rest:3000
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      DATABASE_URL: postgres://${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${DB_NAME}
+      FILE_SIZE_LIMIT: 52428800
+      STORAGE_BACKEND: file
+      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
+      TENANT_ID: stub
+      REGION: local
+      GLOBAL_S3_BUCKET: stub
+      ENABLE_IMAGE_TRANSFORMATION: "true"
+      IMGPROXY_URL: http://imgproxy:8080
+    volumes:
+      - bingo_storage_data:/var/lib/storage
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5000/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 5
+      resources:
+        limits:
+          memory: 256M
+    networks:
+      - bingo-internal
+
+  # ============================================
+  # Kong API Gateway
+  # ============================================
+  kong:
+    image: kong:2.8.1
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /home/kong/kong.yml
+      KONG_DNS_ORDER: LAST,A,CNAME
+      KONG_PLUGINS: request-transformer,cors,key-auth,acl,basic-auth
+      KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
+      KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
+      KONG_LOG_LEVEL: warn
+      SUPABASE_ANON_KEY: ${ANON_KEY}
+      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
+    configs:
+      - source: kong_config
+        target: /home/kong/kong.yml
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 5
+      resources:
+        limits:
+          memory: 512M
+      labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=luzianet"
+        # API Router
+        - "traefik.http.routers.bingo-api.rule=Host(`api.${DOMAIN}`)"
+        - "traefik.http.routers.bingo-api.entrypoints=websecure"
+        - "traefik.http.routers.bingo-api.tls=true"
+        - "traefik.http.routers.bingo-api.tls.certresolver=letsencryptresolver"
+        - "traefik.http.routers.bingo-api.service=bingo-api-service"
+        - "traefik.http.services.bingo-api-service.loadbalancer.server.port=8000"
+        # CORS Headers
+        - "traefik.http.middlewares.bingo-cors.headers.accesscontrolallowmethods=GET,OPTIONS,PUT,POST,DELETE,PATCH"
+        - "traefik.http.middlewares.bingo-cors.headers.accesscontrolallowheaders=*"
+        - "traefik.http.middlewares.bingo-cors.headers.accesscontrolalloworiginlist=https://${DOMAIN}"
+        - "traefik.http.middlewares.bingo-cors.headers.accesscontrolmaxage=100"
+        - "traefik.http.middlewares.bingo-cors.headers.addvaryheader=true"
+        - "traefik.http.routers.bingo-api.middlewares=bingo-cors"
+    networks:
+      - bingo-internal
+      - luzianet
+
+  # ============================================
+  # Supabase Meta (pg-meta)
+  # ============================================
+  meta:
+    image: supabase/postgres-meta:v0.80.0
+    environment:
+      PG_META_PORT: 8080
+      PG_META_DB_HOST: ${DB_HOST}
+      PG_META_DB_PORT: ${DB_PORT}
+      PG_META_DB_NAME: ${DB_NAME}
+      PG_META_DB_USER: ${DB_USER}
+      PG_META_DB_PASSWORD: ${DB_PASS}
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      resources:
+        limits:
+          memory: 256M
+    networks:
+      - bingo-internal
+
+  # ============================================
+  # Supabase Studio (Admin Dashboard)
+  # ============================================
+  studio:
+    image: supabase/studio:20240101-8e4a094
+    environment:
+      STUDIO_PG_META_URL: http://meta:8080
+      POSTGRES_PASSWORD: ${DB_PASS}
+      DEFAULT_ORGANIZATION_NAME: "Bingo System"
+      DEFAULT_PROJECT_NAME: "Bingo"
+      SUPABASE_URL: http://kong:8000
+      SUPABASE_PUBLIC_URL: https://api.${DOMAIN}
+      SUPABASE_ANON_KEY: ${ANON_KEY}
+      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
+      NEXT_PUBLIC_ENABLE_LOGS: "true"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/profile"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 5
+      resources:
+        limits:
+          memory: 512M
+      labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=luzianet"
+        - "traefik.http.routers.bingo-studio.rule=Host(`studio.${DOMAIN}`)"
+        - "traefik.http.routers.bingo-studio.entrypoints=websecure"
+        - "traefik.http.routers.bingo-studio.tls=true"
+        - "traefik.http.routers.bingo-studio.tls.certresolver=letsencryptresolver"
+        - "traefik.http.routers.bingo-studio.service=bingo-studio-service"
+        - "traefik.http.services.bingo-studio-service.loadbalancer.server.port=3000"
+    networks:
+      - bingo-internal
+      - luzianet
+
+  # ============================================
+  # Bingo Frontend Application
+  # ============================================
+  app:
+    image: josemaeldon/bingo-system:selfhosted
+    environment:
+      VITE_SUPABASE_URL: https://api.${DOMAIN}
+      VITE_SUPABASE_ANON_KEY: ${ANON_KEY}
+      VITE_SUPABASE_PROJECT_ID: bingo-local
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 5
+      resources:
+        limits:
+          memory: 128M
+      labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=luzianet"
+        - "traefik.http.routers.bingo-app.rule=Host(`${DOMAIN}`)"
+        - "traefik.http.routers.bingo-app.entrypoints=websecure"
+        - "traefik.http.routers.bingo-app.tls=true"
+        - "traefik.http.routers.bingo-app.tls.certresolver=letsencryptresolver"
+        - "traefik.http.routers.bingo-app.service=bingo-app-service"
+        - "traefik.http.services.bingo-app-service.loadbalancer.server.port=80"
+        # Redirect HTTP to HTTPS
+        - "traefik.http.routers.bingo-app-http.rule=Host(`${DOMAIN}`)"
+        - "traefik.http.routers.bingo-app-http.entrypoints=web"
+        - "traefik.http.routers.bingo-app-http.middlewares=redirect-to-https"
+        - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+    networks:
+      - bingo-internal
+      - luzianet
+
+# ============================================
+# Configs (Kong Configuration)
+# ============================================
+configs:
+  kong_config:
+    external: true
+    name: bingo_kong_config
+
+# ============================================
+# Volumes
+# ============================================
+volumes:
+  bingo_storage_data:
+    driver: local
+
+# ============================================
+# Networks
+# ============================================
+networks:
+  bingo-internal:
+    driver: overlay
+    attachable: true
+  luzianet:
+    external: true
