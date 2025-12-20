@@ -5,13 +5,22 @@ import type { Database } from './types';
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
+// Helper para verificar se é uma URL válida (não placeholder e não vazia)
+const isValidUrl = (url: string | undefined): url is string => {
+  if (!url) return false;
+  // Ignora placeholders não substituídos (ex: "__VITE_SUPABASE_URL__")
+  if (url.startsWith('__') && url.endsWith('__')) return false;
+  // Verifica se parece com URL
+  return url.startsWith('http://') || url.startsWith('https://');
+};
+
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
 
-// Only create Supabase client if URL is defined (Cloud mode)
-// In selfhosted mode, VITE_SUPABASE_URL is empty, so we don't create the client
+// Only create Supabase client if URL is valid (Cloud mode)
+// In selfhosted mode, VITE_SUPABASE_URL is empty or placeholder, so we don't create the client
 export const supabase: SupabaseClient<Database> | null = 
-  SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY
+  isValidUrl(SUPABASE_URL) && SUPABASE_PUBLISHABLE_KEY && !SUPABASE_PUBLISHABLE_KEY.startsWith('__')
     ? createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
         auth: {
           storage: localStorage,
