@@ -66,8 +66,25 @@ const SorteioCard: React.FC<SorteioCardProps> = ({
       </div>
 
       <div className="mb-4">
-        <div className="text-sm text-muted-foreground mb-1">Prêmio:</div>
-        <div className="text-lg font-bold text-foreground">{sorteio.premio || 'Não definido'}</div>
+        <div className="text-sm text-muted-foreground mb-1">
+          {sorteio.premios && sorteio.premios.length > 1 ? 'Prêmios:' : 'Prêmio:'}
+        </div>
+        {sorteio.premios && sorteio.premios.length > 0 ? (
+          <div className="space-y-1">
+            {sorteio.premios.map((premio, index) => (
+              <div key={index} className="flex items-center gap-2">
+                <span className="text-xs font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                  {index + 1}º
+                </span>
+                <span className={cn("font-bold text-foreground", index === 0 ? "text-lg" : "text-sm")}>
+                  {premio}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-lg font-bold text-foreground">{sorteio.premio || 'Não definido'}</div>
+        )}
       </div>
 
       <div className="mb-4">

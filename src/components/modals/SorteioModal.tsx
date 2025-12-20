@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
-import { Dice5, Save, Loader2 } from 'lucide-react';
+import { Dice5, Save, Loader2, Plus, Trash2, Gift } from 'lucide-react';
 
 interface SorteioModalProps {
   isOpen: boolean;
@@ -35,7 +35,7 @@ const SorteioModal: React.FC<SorteioModalProps> = ({ isOpen, onClose, editingId 
   const [formData, setFormData] = useState({
     nome: '',
     data_sorteio: '',
-    premio: '',
+    premios: [''],
     valor_cartela: '',
     quantidade_cartelas: '',
     status: 'agendado' as 'agendado' | 'em_andamento' | 'concluido'
@@ -48,10 +48,15 @@ const SorteioModal: React.FC<SorteioModalProps> = ({ isOpen, onClose, editingId 
     if (editingId) {
       const sorteio = sorteios.find(s => s.id === editingId);
       if (sorteio) {
+        // Convert premios from DB or use single premio as array
+        const premiosArray = sorteio.premios && sorteio.premios.length > 0 
+          ? sorteio.premios 
+          : (sorteio.premio ? [sorteio.premio] : ['']);
+        
         setFormData({
           nome: sorteio.nome,
           data_sorteio: sorteio.data_sorteio.split('T')[0],
-          premio: sorteio.premio,
+          premios: premiosArray,
           valor_cartela: sorteio.valor_cartela.toString(),
           quantidade_cartelas: sorteio.quantidade_cartelas.toString(),
           status: sorteio.status
@@ -61,7 +66,7 @@ const SorteioModal: React.FC<SorteioModalProps> = ({ isOpen, onClose, editingId 
       setFormData({
         nome: '',
         data_sorteio: '',
-        premio: '',
+        premios: [''],
         valor_cartela: '',
         quantidade_cartelas: '',
         status: 'agendado'
@@ -78,11 +83,10 @@ const SorteioModal: React.FC<SorteioModalProps> = ({ isOpen, onClose, editingId 
   }, [isOpen]);
 
   const simulateProgress = (quantidade: number) => {
-    // Estimate time based on quantity (approximately 50ms per cartela)
-    const estimatedTimeMs = Math.min(quantidade * 20, 10000); // Max 10 seconds
+    const estimatedTimeMs = Math.min(quantidade * 20, 10000);
     const intervalMs = 100;
     const steps = estimatedTimeMs / intervalMs;
-    const increment = 90 / steps; // Go up to 90%, then jump to 100% when done
+    const increment = 90 / steps;
 
     let currentProgress = 0;
     const interval = setInterval(() => {
@@ -98,14 +102,40 @@ const SorteioModal: React.FC<SorteioModalProps> = ({ isOpen, onClose, editingId 
     return interval;
   };
 
+  const handleAddPremio = () => {
+    setFormData(prev => ({
+      ...prev,
+      premios: [...prev.premios, '']
+    }));
+  };
+
+  const handleRemovePremio = (index: number) => {
+    if (formData.premios.length > 1) {
+      setFormData(prev => ({
+        ...prev,
+        premios: prev.premios.filter((_, i) => i !== index)
+      }));
+    }
+  };
+
+  const handlePremioChange = (index: number, value: string) => {
+    setFormData(prev => ({
+      ...prev,
+      premios: prev.premios.map((p, i) => i === index ? value : p)
+    }));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!formData.nome || !formData.data_sorteio || !formData.premio || 
+    // Filter empty premios
+    const premiosValidos = formData.premios.filter(p => p.trim() !== '');
+    
+    if (!formData.nome || !formData.data_sorteio || premiosValidos.length === 0 || 
         !formData.valor_cartela || !formData.quantidade_cartelas) {
       toast({
         title: "Erro",
-        description: "Preencha todos os campos obrigatórios.",
+        description: "Preencha todos os campos obrigatórios. Adicione pelo menos um prêmio.",
         variant: "destructive"
       });
       return;
@@ -115,7 +145,8 @@ const SorteioModal: React.FC<SorteioModalProps> = ({ isOpen, onClose, editingId 
       id: editingId || gerarId(),
       nome: formData.nome,
       data_sorteio: `${formData.data_sorteio}T20:00:00`,
-      premio: formData.premio,
+      premio: premiosValidos[0], // First prize for backwards compatibility
+      premios: premiosValidos,
       valor_cartela: parseFloat(formData.valor_cartela),
       quantidade_cartelas: parseInt(formData.quantidade_cartelas),
       status: formData.status,
@@ -135,7 +166,6 @@ const SorteioModal: React.FC<SorteioModalProps> = ({ isOpen, onClose, editingId 
       });
       onClose();
     } else {
-      // Show progress for creation
       setIsCreating(true);
       setProgress(0);
       
@@ -147,11 +177,10 @@ const SorteioModal: React.FC<SorteioModalProps> = ({ isOpen, onClose, editingId 
         clearInterval(progressInterval);
         setProgress(100);
         
-        // Wait a moment to show 100% before closing
         setTimeout(() => {
           toast({
             title: "Sorteio criado",
-            description: `O sorteio "${formData.nome}" foi criado com ${quantidade} cartelas.`
+            description: `O sorteio "${formData.nome}" foi criado com ${quantidade} cartelas e ${premiosValidos.length} prêmio(s).`
           });
           onClose();
         }, 500);
@@ -192,7 +221,7 @@ const SorteioModal: React.FC<SorteioModalProps> = ({ isOpen, onClose, editingId 
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Dice5 className="w-5 h-5" />
@@ -243,15 +272,50 @@ const SorteioModal: React.FC<SorteioModalProps> = ({ isOpen, onClose, editingId 
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="premio">Prêmio *</Label>
-            <Input
-              id="premio"
-              value={formData.premio}
-              onChange={(e) => setFormData({ ...formData, premio: e.target.value })}
-              placeholder="Ex: R$ 10.000,00 em dinheiro"
-              required
-            />
+          {/* Múltiplos Prêmios */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <Label className="flex items-center gap-2">
+                <Gift className="w-4 h-4" />
+                Prêmios *
+              </Label>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleAddPremio}
+                className="gap-1"
+              >
+                <Plus className="w-4 h-4" />
+                Adicionar
+              </Button>
+            </div>
+            
+            <div className="space-y-2">
+              {formData.premios.map((premio, index) => (
+                <div key={index} className="flex gap-2">
+                  <div className="flex items-center justify-center w-8 h-10 rounded-md bg-muted text-muted-foreground text-sm font-medium">
+                    {index + 1}º
+                  </div>
+                  <Input
+                    value={premio}
+                    onChange={(e) => handlePremioChange(index, e.target.value)}
+                    placeholder={`Ex: ${index === 0 ? 'R$ 10.000,00 em dinheiro' : index === 1 ? 'TV 55 polegadas' : 'Smartphone'}`}
+                  />
+                  {formData.premios.length > 1 && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleRemovePremio(index)}
+                      className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
