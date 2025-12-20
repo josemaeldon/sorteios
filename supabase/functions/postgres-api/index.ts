@@ -326,14 +326,36 @@ serve(async (req) => {
       case 'gerarCartelas':
         // First delete existing cartelas
         await client.queryObject(`DELETE FROM cartelas WHERE sorteio_id = $1`, [data.sorteio_id]);
-        // Then insert new ones
-        for (let i = 1; i <= data.quantidade; i++) {
-          await client.queryObject(`
-            INSERT INTO cartelas (sorteio_id, numero, status)
-            VALUES ($1, $2, 'disponivel')
-          `, [data.sorteio_id, i]);
+        
+        // Insert cartelas in batches for better performance
+        const batchSize = 500;
+        const totalCartelas = data.quantidade;
+        
+        for (let batch = 0; batch < Math.ceil(totalCartelas / batchSize); batch++) {
+          const startNum = batch * batchSize + 1;
+          const endNum = Math.min((batch + 1) * batchSize, totalCartelas);
+          
+          // Build batch insert query
+          const values: string[] = [];
+          const params: any[] = [data.sorteio_id];
+          let paramIndex = 2;
+          
+          for (let i = startNum; i <= endNum; i++) {
+            values.push(`($1, $${paramIndex}, 'disponivel')`);
+            params.push(i);
+            paramIndex++;
+          }
+          
+          if (values.length > 0) {
+            await client.queryObject(`
+              INSERT INTO cartelas (sorteio_id, numero, status)
+              VALUES ${values.join(', ')}
+            `, params);
+          }
         }
-        result = { rows: [{ success: true, quantidade: data.quantidade }] };
+        
+        console.log(`Generated ${totalCartelas} cartelas in batches of ${batchSize}`);
+        result = { rows: [{ success: true, quantidade: totalCartelas }] };
         break;
 
       // ================== ATRIBUIÇÕES ==================
