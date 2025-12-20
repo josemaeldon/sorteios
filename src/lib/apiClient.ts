@@ -95,9 +95,12 @@ export const callApi = async (action: string, data: Record<string, any> = {}): P
     // Supabase Edge Function call
     const { supabase } = await import('@/integrations/supabase/client');
     
+    if (!supabase) {
+      throw new Error('Supabase client não está configurado. Verifique as variáveis de ambiente.');
+    }
+    
     const response = await supabase.functions.invoke('postgres-api', {
       body: { action, data },
-      headers: getAuthHeaders(),
     });
     
     if (response.error) {
