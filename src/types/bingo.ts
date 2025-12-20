@@ -55,6 +55,11 @@ export interface Atribuicao {
   updated_at?: string;
 }
 
+export interface PagamentoVenda {
+  forma_pagamento: 'dinheiro' | 'pix' | 'cartao' | 'transferencia';
+  valor: number;
+}
+
 export interface Venda {
   id: string;
   sorteio_id: string;
@@ -66,7 +71,7 @@ export interface Venda {
   valor_total: number;
   valor_pago: number;
   total_pago?: number;
-  forma_pagamento: 'dinheiro' | 'pix' | 'cartao' | 'transferencia';
+  pagamentos?: PagamentoVenda[];
   status: 'pendente' | 'concluida';
   data_venda: string;
   created_at?: string;

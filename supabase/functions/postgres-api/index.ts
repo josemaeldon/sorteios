@@ -1,0 +1,469 @@
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { Client } from "https://deno.land/x/postgres@v0.17.0/mod.ts";
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+interface PostgresConfig {
+  hostname: string;
+  port: number;
+  database: string;
+  user: string;
+  password: string;
+}
+
+const getDbConfig = (): PostgresConfig => ({
+  hostname: Deno.env.get('POSTGRES_HOST') || '',
+  port: parseInt(Deno.env.get('POSTGRES_PORT') || '5432'),
+  database: Deno.env.get('POSTGRES_DB') || '',
+  user: Deno.env.get('POSTGRES_USER') || '',
+  password: Deno.env.get('POSTGRES_PASSWORD') || '',
+});
+
+serve(async (req) => {
+  // Handle CORS preflight requests
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  let client: Client | null = null;
+
+  try {
+    const config = getDbConfig();
+    
+    // Validate configuration
+    if (!config.hostname || !config.database || !config.user || !config.password) {
+      console.error('Missing database configuration');
+      return new Response(
+        JSON.stringify({ error: 'Database configuration is incomplete' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const { action, data } = await req.json();
+    console.log(`Executing action: ${action}`);
+
+    client = new Client(config);
+    await client.connect();
+
+    let result;
+
+    switch (action) {
+      // ================== SORTEIOS ==================
+      case 'getSorteios':
+        result = await client.queryObject(`
+          SELECT * FROM sorteios ORDER BY created_at DESC
+        `);
+        break;
+
+      case 'createSorteio':
+        result = await client.queryObject(`
+          INSERT INTO sorteios (nome, data_sorteio, premio, valor_cartela, quantidade_cartelas, status)
+          VALUES ($1, $2, $3, $4, $5, $6)
+          RETURNING *
+        `, [data.nome, data.data_sorteio, data.premio, data.valor_cartela, data.quantidade_cartelas, data.status]);
+        break;
+
+      case 'updateSorteio':
+        result = await client.queryObject(`
+          UPDATE sorteios 
+          SET nome = $2, data_sorteio = $3, premio = $4, valor_cartela = $5, quantidade_cartelas = $6, status = $7, updated_at = NOW()
+          WHERE id = $1
+          RETURNING *
+        `, [data.id, data.nome, data.data_sorteio, data.premio, data.valor_cartela, data.quantidade_cartelas, data.status]);
+        break;
+
+      case 'deleteSorteio':
+        result = await client.queryObject(`DELETE FROM sorteios WHERE id = $1`, [data.id]);
+        break;
+
+      // ================== VENDEDORES ==================
+      case 'getVendedores':
+        result = await client.queryObject(`
+          SELECT * FROM vendedores WHERE sorteio_id = $1 ORDER BY nome
+        `, [data.sorteio_id]);
+        break;
+
+      case 'createVendedor':
+        result = await client.queryObject(`
+          INSERT INTO vendedores (sorteio_id, nome, telefone, email, cpf, endereco, ativo)
+          VALUES ($1, $2, $3, $4, $5, $6, $7)
+          RETURNING *
+        `, [data.sorteio_id, data.nome, data.telefone, data.email, data.cpf, data.endereco, data.ativo]);
+        break;
+
+      case 'updateVendedor':
+        result = await client.queryObject(`
+          UPDATE vendedores 
+          SET nome = $2, telefone = $3, email = $4, cpf = $5, endereco = $6, ativo = $7, updated_at = NOW()
+          WHERE id = $1
+          RETURNING *
+        `, [data.id, data.nome, data.telefone, data.email, data.cpf, data.endereco, data.ativo]);
+        break;
+
+      case 'deleteVendedor':
+        result = await client.queryObject(`DELETE FROM vendedores WHERE id = $1`, [data.id]);
+        break;
+
+      // ================== CARTELAS ==================
+      case 'getCartelas':
+        result = await client.queryObject(`
+          SELECT * FROM cartelas WHERE sorteio_id = $1 ORDER BY numero
+        `, [data.sorteio_id]);
+        break;
+
+      case 'updateCartela':
+        result = await client.queryObject(`
+          UPDATE cartelas 
+          SET status = $2, vendedor_id = $3, updated_at = NOW()
+          WHERE sorteio_id = $1 AND numero = $4
+          RETURNING *
+        `, [data.sorteio_id, data.status, data.vendedor_id, data.numero]);
+        break;
+
+      case 'updateCartelasBatch':
+        // Update multiple cartelas at once
+        for (const cartela of data.cartelas) {
+          await client.queryObject(`
+            UPDATE cartelas 
+            SET status = $2, vendedor_id = $3, updated_at = NOW()
+            WHERE sorteio_id = $1 AND numero = $4
+          `, [data.sorteio_id, cartela.status, cartela.vendedor_id, cartela.numero]);
+        }
+        result = { rows: [{ success: true }] };
+        break;
+
+      case 'gerarCartelas':
+        // First delete existing cartelas
+        await client.queryObject(`DELETE FROM cartelas WHERE sorteio_id = $1`, [data.sorteio_id]);
+        // Then insert new ones
+        for (let i = 1; i <= data.quantidade; i++) {
+          await client.queryObject(`
+            INSERT INTO cartelas (sorteio_id, numero, status)
+            VALUES ($1, $2, 'disponivel')
+          `, [data.sorteio_id, i]);
+        }
+        result = { rows: [{ success: true, quantidade: data.quantidade }] };
+        break;
+
+      // ================== ATRIBUIÇÕES ==================
+      case 'getAtribuicoes':
+        result = await client.queryObject(`
+          SELECT a.*, v.nome as vendedor_nome,
+            COALESCE(json_agg(
+              json_build_object(
+                'numero', ac.numero_cartela,
+                'status', ac.status,
+                'data_atribuicao', ac.data_atribuicao,
+                'data_devolucao', ac.data_devolucao,
+                'venda_id', ac.venda_id
+              ) ORDER BY ac.numero_cartela
+            ) FILTER (WHERE ac.id IS NOT NULL), '[]') as cartelas
+          FROM atribuicoes a
+          LEFT JOIN vendedores v ON a.vendedor_id = v.id
+          LEFT JOIN atribuicao_cartelas ac ON a.id = ac.atribuicao_id
+          WHERE a.sorteio_id = $1
+          GROUP BY a.id, v.nome
+          ORDER BY v.nome
+        `, [data.sorteio_id]);
+        break;
+
+      case 'createAtribuicao':
+        const atribResult = await client.queryObject(`
+          INSERT INTO atribuicoes (sorteio_id, vendedor_id)
+          VALUES ($1, $2)
+          RETURNING *
+        `, [data.sorteio_id, data.vendedor_id]);
+        
+        const atribuicaoId = (atribResult.rows[0] as any).id;
+        
+        // Add cartelas to the attribution
+        for (const cartela of data.cartelas) {
+          await client.queryObject(`
+            INSERT INTO atribuicao_cartelas (atribuicao_id, numero_cartela, status, data_atribuicao)
+            VALUES ($1, $2, 'ativa', NOW())
+          `, [atribuicaoId, cartela]);
+          
+          // Update cartela status
+          await client.queryObject(`
+            UPDATE cartelas SET status = 'ativa', vendedor_id = $1 WHERE sorteio_id = $2 AND numero = $3
+          `, [data.vendedor_id, data.sorteio_id, cartela]);
+        }
+        
+        result = atribResult;
+        break;
+
+      case 'addCartelasToAtribuicao':
+        for (const cartela of data.cartelas) {
+          await client.queryObject(`
+            INSERT INTO atribuicao_cartelas (atribuicao_id, numero_cartela, status, data_atribuicao)
+            VALUES ($1, $2, 'ativa', NOW())
+          `, [data.atribuicao_id, cartela]);
+          
+          // Update cartela status
+          await client.queryObject(`
+            UPDATE cartelas SET status = 'ativa', vendedor_id = $1 WHERE sorteio_id = $2 AND numero = $3
+          `, [data.vendedor_id, data.sorteio_id, cartela]);
+        }
+        result = { rows: [{ success: true }] };
+        break;
+
+      case 'removeCartelaFromAtribuicao':
+        await client.queryObject(`
+          DELETE FROM atribuicao_cartelas WHERE atribuicao_id = $1 AND numero_cartela = $2
+        `, [data.atribuicao_id, data.numero_cartela]);
+        
+        // Update cartela status back to available
+        await client.queryObject(`
+          UPDATE cartelas SET status = 'disponivel', vendedor_id = NULL WHERE sorteio_id = $1 AND numero = $2
+        `, [data.sorteio_id, data.numero_cartela]);
+        
+        result = { rows: [{ success: true }] };
+        break;
+
+      case 'updateCartelaStatusInAtribuicao':
+        await client.queryObject(`
+          UPDATE atribuicao_cartelas 
+          SET status = $3, data_devolucao = CASE WHEN $3 = 'devolvida' THEN NOW() ELSE NULL END
+          WHERE atribuicao_id = $1 AND numero_cartela = $2
+        `, [data.atribuicao_id, data.numero_cartela, data.status]);
+        
+        // Update cartela status
+        const cartelaStatus = data.status === 'devolvida' ? 'disponivel' : data.status;
+        await client.queryObject(`
+          UPDATE cartelas SET status = $3, vendedor_id = CASE WHEN $3 = 'disponivel' THEN NULL ELSE vendedor_id END
+          WHERE sorteio_id = $1 AND numero = $2
+        `, [data.sorteio_id, data.numero_cartela, cartelaStatus]);
+        
+        result = { rows: [{ success: true }] };
+        break;
+
+      case 'deleteAtribuicao':
+        // Get all cartelas from this attribution
+        const cartelasResult = await client.queryObject(`
+          SELECT numero_cartela FROM atribuicao_cartelas WHERE atribuicao_id = $1
+        `, [data.atribuicao_id]);
+        
+        // Update cartelas back to available
+        for (const row of cartelasResult.rows as any[]) {
+          await client.queryObject(`
+            UPDATE cartelas SET status = 'disponivel', vendedor_id = NULL WHERE sorteio_id = $1 AND numero = $2
+          `, [data.sorteio_id, row.numero_cartela]);
+        }
+        
+        // Delete cartelas from attribution
+        await client.queryObject(`DELETE FROM atribuicao_cartelas WHERE atribuicao_id = $1`, [data.atribuicao_id]);
+        
+        // Delete attribution
+        await client.queryObject(`DELETE FROM atribuicoes WHERE id = $1`, [data.atribuicao_id]);
+        
+        result = { rows: [{ success: true }] };
+        break;
+
+      // ================== VENDAS ==================
+      case 'getVendas':
+        result = await client.queryObject(`
+          SELECT ve.*, v.nome as vendedor_nome,
+            COALESCE(json_agg(
+              json_build_object(
+                'forma_pagamento', p.forma_pagamento,
+                'valor', p.valor
+              ) ORDER BY p.created_at
+            ) FILTER (WHERE p.id IS NOT NULL), '[]') as pagamentos
+          FROM vendas ve
+          LEFT JOIN vendedores v ON ve.vendedor_id = v.id
+          LEFT JOIN pagamentos p ON ve.id = p.venda_id
+          WHERE ve.sorteio_id = $1
+          GROUP BY ve.id, v.nome
+          ORDER BY ve.data_venda DESC
+        `, [data.sorteio_id]);
+        break;
+
+      case 'createVenda':
+        const vendaResult = await client.queryObject(`
+          INSERT INTO vendas (sorteio_id, vendedor_id, cliente_nome, cliente_telefone, numeros_cartelas, valor_total, valor_pago, status, data_venda)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+          RETURNING *
+        `, [data.sorteio_id, data.vendedor_id, data.cliente_nome, data.cliente_telefone, data.numeros_cartelas, data.valor_total, data.valor_pago, data.status]);
+        
+        const vendaId = (vendaResult.rows[0] as any).id;
+        
+        // Add payments
+        if (data.pagamentos && data.pagamentos.length > 0) {
+          for (const pag of data.pagamentos) {
+            await client.queryObject(`
+              INSERT INTO pagamentos (venda_id, forma_pagamento, valor, data_pagamento)
+              VALUES ($1, $2, $3, NOW())
+            `, [vendaId, pag.forma_pagamento, pag.valor]);
+          }
+        }
+        
+        // Update cartelas status
+        const numerosVenda = data.numeros_cartelas.split(',').map((n: string) => parseInt(n.trim()));
+        for (const numero of numerosVenda) {
+          await client.queryObject(`
+            UPDATE cartelas SET status = 'vendida' WHERE sorteio_id = $1 AND numero = $2
+          `, [data.sorteio_id, numero]);
+          
+          // Update atribuicao_cartelas
+          await client.queryObject(`
+            UPDATE atribuicao_cartelas SET status = 'vendida', venda_id = $1 
+            WHERE numero_cartela = $2 AND atribuicao_id IN (
+              SELECT id FROM atribuicoes WHERE sorteio_id = $3 AND vendedor_id = $4
+            )
+          `, [vendaId, numero, data.sorteio_id, data.vendedor_id]);
+        }
+        
+        result = vendaResult;
+        break;
+
+      case 'updateVenda':
+        // Get old cartelas
+        const oldVendaResult = await client.queryObject(`
+          SELECT numeros_cartelas, vendedor_id FROM vendas WHERE id = $1
+        `, [data.id]);
+        const oldVenda = oldVendaResult.rows[0] as any;
+        const oldNumeros = oldVenda?.numeros_cartelas?.split(',').map((n: string) => parseInt(n.trim())) || [];
+        const newNumeros = data.numeros_cartelas.split(',').map((n: string) => parseInt(n.trim()));
+        
+        // Cartelas removed - return to 'ativa'
+        const removedCartelas = oldNumeros.filter((n: number) => !newNumeros.includes(n));
+        for (const numero of removedCartelas) {
+          await client.queryObject(`
+            UPDATE cartelas SET status = 'ativa' WHERE sorteio_id = $1 AND numero = $2
+          `, [data.sorteio_id, numero]);
+          
+          await client.queryObject(`
+            UPDATE atribuicao_cartelas SET status = 'ativa', venda_id = NULL 
+            WHERE numero_cartela = $1 AND atribuicao_id IN (
+              SELECT id FROM atribuicoes WHERE sorteio_id = $2
+            )
+          `, [numero, data.sorteio_id]);
+        }
+        
+        // Cartelas added - set to 'vendida'
+        const addedCartelas = newNumeros.filter((n: number) => !oldNumeros.includes(n));
+        for (const numero of addedCartelas) {
+          await client.queryObject(`
+            UPDATE cartelas SET status = 'vendida' WHERE sorteio_id = $1 AND numero = $2
+          `, [data.sorteio_id, numero]);
+          
+          await client.queryObject(`
+            UPDATE atribuicao_cartelas SET status = 'vendida', venda_id = $1 
+            WHERE numero_cartela = $2 AND atribuicao_id IN (
+              SELECT id FROM atribuicoes WHERE sorteio_id = $3 AND vendedor_id = $4
+            )
+          `, [data.id, numero, data.sorteio_id, data.vendedor_id]);
+        }
+        
+        // Delete old payments and add new ones
+        await client.queryObject(`DELETE FROM pagamentos WHERE venda_id = $1`, [data.id]);
+        if (data.pagamentos && data.pagamentos.length > 0) {
+          for (const pag of data.pagamentos) {
+            await client.queryObject(`
+              INSERT INTO pagamentos (venda_id, forma_pagamento, valor, data_pagamento)
+              VALUES ($1, $2, $3, NOW())
+            `, [data.id, pag.forma_pagamento, pag.valor]);
+          }
+        }
+        
+        result = await client.queryObject(`
+          UPDATE vendas 
+          SET vendedor_id = $2, cliente_nome = $3, cliente_telefone = $4, numeros_cartelas = $5, 
+              valor_total = $6, valor_pago = $7, status = $8, updated_at = NOW()
+          WHERE id = $1
+          RETURNING *
+        `, [data.id, data.vendedor_id, data.cliente_nome, data.cliente_telefone, data.numeros_cartelas, data.valor_total, data.valor_pago, data.status]);
+        break;
+
+      case 'deleteVenda':
+        // Get cartelas from this sale
+        const vendaToDeleteResult = await client.queryObject(`
+          SELECT numeros_cartelas, sorteio_id, vendedor_id FROM vendas WHERE id = $1
+        `, [data.id]);
+        const vendaToDelete = vendaToDeleteResult.rows[0] as any;
+        
+        if (vendaToDelete) {
+          const numerosToReturn = vendaToDelete.numeros_cartelas.split(',').map((n: string) => parseInt(n.trim()));
+          
+          // Return cartelas to 'ativa' status
+          for (const numero of numerosToReturn) {
+            await client.queryObject(`
+              UPDATE cartelas SET status = 'ativa' WHERE sorteio_id = $1 AND numero = $2
+            `, [vendaToDelete.sorteio_id, numero]);
+            
+            await client.queryObject(`
+              UPDATE atribuicao_cartelas SET status = 'ativa', venda_id = NULL 
+              WHERE numero_cartela = $1 AND atribuicao_id IN (
+                SELECT id FROM atribuicoes WHERE sorteio_id = $2
+              )
+            `, [numero, vendaToDelete.sorteio_id]);
+          }
+        }
+        
+        // Delete payments
+        await client.queryObject(`DELETE FROM pagamentos WHERE venda_id = $1`, [data.id]);
+        
+        // Delete sale
+        await client.queryObject(`DELETE FROM vendas WHERE id = $1`, [data.id]);
+        
+        result = { rows: [{ success: true }] };
+        break;
+
+      case 'addPagamento':
+        await client.queryObject(`
+          INSERT INTO pagamentos (venda_id, forma_pagamento, valor, observacao, data_pagamento)
+          VALUES ($1, $2, $3, $4, NOW())
+        `, [data.venda_id, data.forma_pagamento, data.valor, data.observacao]);
+        
+        // Update total paid and status
+        const totalPaidResult = await client.queryObject(`
+          SELECT COALESCE(SUM(valor), 0) as total_pago FROM pagamentos WHERE venda_id = $1
+        `, [data.venda_id]);
+        const totalPaid = parseFloat((totalPaidResult.rows[0] as any).total_pago) || 0;
+        
+        const vendaInfoResult = await client.queryObject(`
+          SELECT valor_total FROM vendas WHERE id = $1
+        `, [data.venda_id]);
+        const valorTotal = parseFloat((vendaInfoResult.rows[0] as any).valor_total) || 0;
+        
+        const newStatus = totalPaid >= valorTotal ? 'concluida' : 'pendente';
+        
+        await client.queryObject(`
+          UPDATE vendas SET valor_pago = $2, status = $3, updated_at = NOW() WHERE id = $1
+        `, [data.venda_id, totalPaid, newStatus]);
+        
+        result = { rows: [{ success: true, total_pago: totalPaid, status: newStatus }] };
+        break;
+
+      default:
+        return new Response(
+          JSON.stringify({ error: `Unknown action: ${action}` }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+    }
+
+    return new Response(
+      JSON.stringify({ data: result.rows }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+
+  } catch (error: unknown) {
+    console.error('Database error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Database error occurred';
+    return new Response(
+      JSON.stringify({ error: errorMessage }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  } finally {
+    if (client) {
+      try {
+        await client.end();
+      } catch (e) {
+        console.error('Error closing connection:', e);
+      }
+    }
+  }
+});
