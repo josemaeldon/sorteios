@@ -18,6 +18,7 @@ const userSchema = z.object({
   email: z.string().email('Email inválido').max(255),
   senha: z.string().min(6, 'Senha deve ter pelo menos 6 caracteres').max(100).optional().or(z.literal('')),
   role: z.enum(['admin', 'user']),
+  titulo_sistema: z.string().min(1, 'Título do sistema é obrigatório').max(100),
 });
 
 const Admin: React.FC = () => {
@@ -38,6 +39,7 @@ const Admin: React.FC = () => {
     email: '',
     senha: '',
     role: 'user',
+    titulo_sistema: 'Sorteios',
   });
 
   useEffect(() => {
@@ -69,10 +71,11 @@ const Admin: React.FC = () => {
         email: userToEdit.email,
         senha: '',
         role: userToEdit.role,
+        titulo_sistema: userToEdit.titulo_sistema || 'Sorteios',
       });
     } else {
       setEditingUser(null);
-      setFormData({ nome: '', email: '', senha: '', role: 'user' });
+      setFormData({ nome: '', email: '', senha: '', role: 'user', titulo_sistema: 'Sorteios' });
     }
     setErrors({});
     setIsModalOpen(true);
@@ -81,7 +84,7 @@ const Admin: React.FC = () => {
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setEditingUser(null);
-    setFormData({ nome: '', email: '', senha: '', role: 'user' });
+    setFormData({ nome: '', email: '', senha: '', role: 'user', titulo_sistema: 'Sorteios' });
     setErrors({});
   };
 
@@ -125,6 +128,7 @@ const Admin: React.FC = () => {
         nome: formData.nome,
         email: formData.email,
         role: formData.role,
+        titulo_sistema: formData.titulo_sistema,
       };
       if (formData.senha) {
         updateData.senha = formData.senha;
@@ -350,6 +354,18 @@ const Admin: React.FC = () => {
                   <SelectItem value="admin">Administrador</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="titulo_sistema">Título do Sistema</Label>
+              <Input
+                id="titulo_sistema"
+                value={formData.titulo_sistema}
+                onChange={(e) => setFormData({ ...formData, titulo_sistema: e.target.value })}
+                disabled={isSubmitting}
+                placeholder="Ex: Meus Sorteios"
+              />
+              {errors.titulo_sistema && <p className="text-destructive text-sm">{errors.titulo_sistema}</p>}
             </div>
             
             <DialogFooter>

@@ -87,10 +87,10 @@ serve(async (req) => {
         
         const adminHash = await hashPassword(data.senha);
         const adminResult = await client.queryObject(`
-          INSERT INTO usuarios (email, senha_hash, nome, role, ativo)
-          VALUES ($1, $2, $3, 'admin', true)
-          RETURNING id, email, nome, role, ativo, created_at
-        `, [data.email, adminHash, data.nome]);
+          INSERT INTO usuarios (email, senha_hash, nome, role, ativo, titulo_sistema)
+          VALUES ($1, $2, $3, 'admin', true, $4)
+          RETURNING id, email, nome, role, ativo, titulo_sistema, created_at
+        `, [data.email, adminHash, data.nome, data.titulo_sistema || 'Sorteios']);
         
         return new Response(
           JSON.stringify({ user: adminResult.rows[0] }),
@@ -99,7 +99,7 @@ serve(async (req) => {
 
       case 'login':
         const userResult = await client.queryObject(`
-          SELECT id, email, nome, role, ativo, senha_hash, created_at 
+          SELECT id, email, nome, role, ativo, titulo_sistema, senha_hash, created_at 
           FROM usuarios WHERE email = $1
         `, [data.email]);
         
@@ -130,7 +130,7 @@ serve(async (req) => {
 
       case 'getUsers':
         result = await client.queryObject(`
-          SELECT id, email, nome, role, ativo, created_at, updated_at 
+          SELECT id, email, nome, role, ativo, titulo_sistema, created_at, updated_at 
           FROM usuarios ORDER BY nome
         `);
         return new Response(
@@ -141,10 +141,10 @@ serve(async (req) => {
       case 'createUser':
         const newUserHash = await hashPassword(data.senha);
         const newUserResult = await client.queryObject(`
-          INSERT INTO usuarios (email, senha_hash, nome, role, ativo)
-          VALUES ($1, $2, $3, $4, true)
-          RETURNING id, email, nome, role, ativo, created_at
-        `, [data.email, newUserHash, data.nome, data.role]);
+          INSERT INTO usuarios (email, senha_hash, nome, role, ativo, titulo_sistema)
+          VALUES ($1, $2, $3, $4, true, $5)
+          RETURNING id, email, nome, role, ativo, titulo_sistema, created_at
+        `, [data.email, newUserHash, data.nome, data.role, data.titulo_sistema || 'Sorteios']);
         
         return new Response(
           JSON.stringify({ user: newUserResult.rows[0] }),
@@ -155,14 +155,14 @@ serve(async (req) => {
         if (data.senha) {
           const updateHash = await hashPassword(data.senha);
           await client.queryObject(`
-            UPDATE usuarios SET email = $2, nome = $3, role = $4, senha_hash = $5, updated_at = NOW()
+            UPDATE usuarios SET email = $2, nome = $3, role = $4, senha_hash = $5, titulo_sistema = $6, updated_at = NOW()
             WHERE id = $1
-          `, [data.id, data.email, data.nome, data.role, updateHash]);
+          `, [data.id, data.email, data.nome, data.role, updateHash, data.titulo_sistema || 'Sorteios']);
         } else {
           await client.queryObject(`
-            UPDATE usuarios SET email = $2, nome = $3, role = $4, updated_at = NOW()
+            UPDATE usuarios SET email = $2, nome = $3, role = $4, titulo_sistema = $5, updated_at = NOW()
             WHERE id = $1
-          `, [data.id, data.email, data.nome, data.role]);
+          `, [data.id, data.email, data.nome, data.role, data.titulo_sistema || 'Sorteios']);
         }
         
         return new Response(

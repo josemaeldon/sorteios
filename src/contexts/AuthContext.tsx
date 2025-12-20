@@ -11,7 +11,7 @@ interface AuthContextType extends AuthState {
   deleteUser: (id: string) => Promise<{ success: boolean; error?: string }>;
   getAllUsers: () => Promise<User[]>;
   checkFirstAccess: () => Promise<boolean>;
-  setupAdmin: (email: string, senha: string, nome: string) => Promise<{ success: boolean; error?: string }>;
+  setupAdmin: (email: string, senha: string, nome: string, titulo_sistema: string) => Promise<{ success: boolean; error?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -60,9 +60,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, []);
 
-  const setupAdmin = useCallback(async (email: string, senha: string, nome: string) => {
+  const setupAdmin = useCallback(async (email: string, senha: string, nome: string, titulo_sistema: string) => {
     try {
-      const result = await callApi('setupAdmin', { email, senha, nome });
+      const result = await callApi('setupAdmin', { email, senha, nome, titulo_sistema });
       
       if (result.user) {
         setUser(result.user);
