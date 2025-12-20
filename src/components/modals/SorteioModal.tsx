@@ -83,20 +83,27 @@ const SorteioModal: React.FC<SorteioModalProps> = ({ isOpen, onClose, editingId 
   }, [isOpen]);
 
   const simulateProgress = (quantidade: number) => {
-    const estimatedTimeMs = Math.min(quantidade * 20, 10000);
-    const intervalMs = 100;
-    const steps = estimatedTimeMs / intervalMs;
-    const increment = 90 / steps;
+    // A barra é apenas "estimativa". Para volumes grandes, mantemos movimento até 99%
+    // e finalizamos em 100% quando a criação realmente termina.
+    const fastDurationMs = Math.min(Math.max(quantidade * 2, 1200), 5000); // vai até 85%
+    const slowDurationMs = 12000; // 85% -> 99%
+    const intervalMs = 120;
 
-    let currentProgress = 0;
+    const startedAt = Date.now();
+
     const interval = setInterval(() => {
-      currentProgress += increment;
-      if (currentProgress >= 90) {
-        clearInterval(interval);
-        setProgress(90);
+      const elapsed = Date.now() - startedAt;
+
+      let next = 0;
+      if (elapsed <= fastDurationMs) {
+        next = (elapsed / fastDurationMs) * 85;
       } else {
-        setProgress(currentProgress);
+        const slowElapsed = elapsed - fastDurationMs;
+        next = 85 + Math.min((slowElapsed / slowDurationMs) * 14, 14);
       }
+
+      // nunca chega em 100% aqui (evita "travar" no final)
+      setProgress(Math.min(99, Math.max(0, next)));
     }, intervalMs);
 
     return interval;
@@ -203,17 +210,19 @@ const SorteioModal: React.FC<SorteioModalProps> = ({ isOpen, onClose, editingId 
             </DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-4 py-4">
-            <p className="text-sm text-muted-foreground text-center">
-              Gerando {formData.quantidade_cartelas} cartelas...
-            </p>
-            
-            <Progress value={progress} className="h-3" />
-            
-            <p className="text-center text-sm font-medium">
-              {Math.round(progress)}%
-            </p>
-          </div>
+           <div className="space-y-4 py-4">
+             <p className="text-sm text-muted-foreground text-center">
+               {progress >= 90
+                 ? 'Finalizando... (pode levar alguns segundos)'
+                 : `Gerando ${formData.quantidade_cartelas} cartelas...`}
+             </p>
+             
+             <Progress value={progress} className="h-3" />
+             
+             <p className="text-center text-sm font-medium">
+               {Math.round(progress)}%
+             </p>
+           </div>
         </DialogContent>
       </Dialog>
     );

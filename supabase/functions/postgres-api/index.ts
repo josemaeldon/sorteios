@@ -225,7 +225,7 @@ serve(async (req) => {
         `, [data.user_id]);
         break;
 
-      case 'createSorteio':
+      case 'createSorteio': {
         // premios is an array, premio is the first item for backwards compatibility
         const premiosCreate = data.premios || (data.premio ? [data.premio] : []);
         const premioCreate = premiosCreate[0] || '';
@@ -236,19 +236,37 @@ serve(async (req) => {
           RETURNING *
         `, [data.user_id, data.nome, data.data_sorteio, premioCreate, JSON.stringify(premiosCreate), data.valor_cartela, data.quantidade_cartelas, data.status]);
         
-        // Generate cartelas automatically
+        // Generate cartelas automatically (batched)
         const newSorteioId = (result.rows[0] as any).id;
-        const quantidadeCartelas = data.quantidade_cartelas || 0;
+        const quantidadeCartelas = Number(data.quantidade_cartelas || 0);
         console.log(`Generating ${quantidadeCartelas} cartelas for sorteio ${newSorteioId}`);
-        
-        for (let i = 1; i <= quantidadeCartelas; i++) {
-          await client.queryObject(`
-            INSERT INTO cartelas (sorteio_id, numero, status)
-            VALUES ($1, $2, 'disponivel')
-          `, [newSorteioId, i]);
+
+        const batchSize = 500;
+        for (let batch = 0; batch < Math.ceil(quantidadeCartelas / batchSize); batch++) {
+          const startNum = batch * batchSize + 1;
+          const endNum = Math.min((batch + 1) * batchSize, quantidadeCartelas);
+
+          const values: string[] = [];
+          const params: any[] = [newSorteioId];
+          let paramIndex = 2;
+
+          for (let i = startNum; i <= endNum; i++) {
+            values.push(`($1, $${paramIndex}, 'disponivel')`);
+            params.push(i);
+            paramIndex++;
+          }
+
+          if (values.length > 0) {
+            await client.queryObject(
+              `INSERT INTO cartelas (sorteio_id, numero, status) VALUES ${values.join(', ')}`,
+              params
+            );
+          }
         }
+
         console.log(`Generated ${quantidadeCartelas} cartelas successfully`);
         break;
+      }
 
       case 'updateSorteio':
         // premios is an array, premio is the first item for backwards compatibility
@@ -323,13 +341,13 @@ serve(async (req) => {
         result = { rows: [{ success: true }] };
         break;
 
-      case 'gerarCartelas':
+      case 'gerarCartelas': {
         // First delete existing cartelas
         await client.queryObject(`DELETE FROM cartelas WHERE sorteio_id = $1`, [data.sorteio_id]);
         
         // Insert cartelas in batches for better performance
         const batchSize = 500;
-        const totalCartelas = data.quantidade;
+        const totalCartelas = Number(data.quantidade || 0);
         
         for (let batch = 0; batch < Math.ceil(totalCartelas / batchSize); batch++) {
           const startNum = batch * batchSize + 1;
@@ -357,6 +375,7 @@ serve(async (req) => {
         console.log(`Generated ${totalCartelas} cartelas in batches of ${batchSize}`);
         result = { rows: [{ success: true, quantidade: totalCartelas }] };
         break;
+      }
 
       // ================== ATRIBUIÇÕES ==================
       case 'getAtribuicoes':
