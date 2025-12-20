@@ -66,7 +66,7 @@ interface BingoContextType {
   removeCartelaFromAtribuicao: (atribuicaoId: string, numeroCartela: number) => Promise<void>;
   updateCartelaStatusInAtribuicao: (atribuicaoId: string, numeroCartela: number, status: 'ativa' | 'vendida' | 'devolvida') => Promise<void>;
   deleteAtribuicao: (id: string) => Promise<void>;
-  transferirCartela: (atribuicaoOrigemId: string, numeroCartela: number, vendedorDestinoId: string) => Promise<void>;
+  transferirCartelas: (atribuicaoOrigemId: string, numerosCartelas: number[], vendedorDestinoId: string) => Promise<void>;
   
   // CRUD Operations - Vendas
   loadVendas: () => Promise<void>;
@@ -447,23 +447,23 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   }, [sorteioAtivo, callApi, toast, loadAtribuicoes, loadCartelas]);
 
-  const transferirCartela = useCallback(async (atribuicaoOrigemId: string, numeroCartela: number, vendedorDestinoId: string) => {
+  const transferirCartelas = useCallback(async (atribuicaoOrigemId: string, numerosCartelas: number[], vendedorDestinoId: string) => {
     if (!sorteioAtivo) return;
     
     try {
-      await callApi('transferirCartela', { 
+      await callApi('transferirCartelas', { 
         atribuicao_origem_id: atribuicaoOrigemId,
         sorteio_id: sorteioAtivo.id,
-        numero_cartela: numeroCartela,
+        numeros_cartelas: numerosCartelas,
         vendedor_destino_id: vendedorDestinoId
       });
-      toast({ title: "Cartela transferida!" });
+      toast({ title: `${numerosCartelas.length} cartela(s) transferida(s)!` });
       await loadAtribuicoes();
       await loadCartelas();
     } catch (error: any) {
-      console.error('Error transferring cartela:', error);
+      console.error('Error transferring cartelas:', error);
       toast({
-        title: "Erro ao transferir cartela",
+        title: "Erro ao transferir cartelas",
         description: error.message,
         variant: "destructive"
       });
@@ -615,7 +615,7 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     removeCartelaFromAtribuicao,
     updateCartelaStatusInAtribuicao,
     deleteAtribuicao,
-    transferirCartela,
+    transferirCartelas,
     loadVendas,
     addVenda,
     updateVenda,

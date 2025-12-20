@@ -34,7 +34,8 @@ const AtribuicoesTab: React.FC = () => {
     filtrosAtribuicoes, 
     setFiltrosAtribuicoes,
     deleteAtribuicao,
-    removeCartelaFromAtribuicao
+    removeCartelaFromAtribuicao,
+    updateCartelaStatusInAtribuicao
   } = useBingo();
   const { toast } = useToast();
 
@@ -113,8 +114,8 @@ const AtribuicoesTab: React.FC = () => {
     if (!atribuicao) return;
 
     if (actionType === 'devolver' && deletingAtribuicao.cartela) {
-      // Remove the cartela from the attribution and return to available
-      await removeCartelaFromAtribuicao(deletingAtribuicao.id, deletingAtribuicao.cartela);
+      // Mark as returned in the attribution but make available for new assignments
+      await updateCartelaStatusInAtribuicao(deletingAtribuicao.id, deletingAtribuicao.cartela, 'devolvida');
       toast({
         title: "Cartela devolvida",
         description: `A cartela ${formatarNumeroCartela(deletingAtribuicao.cartela)} foi devolvida e está disponível para novas atribuições.`
@@ -309,15 +310,32 @@ const AtribuicoesTab: React.FC = () => {
                   <div className="border-t border-border p-4 bg-muted/20">
                     <div className="mb-4 flex justify-between items-center">
                       <h4 className="font-semibold text-foreground">Cartelas Atribuídas</h4>
-                      <Button 
-                        size="sm" 
-                        variant="outline"
-                        onClick={() => setIsModalOpen(true)}
-                        className="gap-1"
-                      >
-                        <Plus className="w-4 h-4" />
-                        Adicionar Cartelas
-                      </Button>
+                      <div className="flex gap-2">
+                        {atribuicao.cartelas.filter(c => c.status === 'ativa').length > 1 && (
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            onClick={() => {
+                              setTransferAtribuicao(atribuicao);
+                              setTransferCartelaNumero(null); // null = multi-select mode
+                              setIsTransferModalOpen(true);
+                            }}
+                            className="gap-1"
+                          >
+                            <ArrowRightLeft className="w-4 h-4" />
+                            Transferir Várias
+                          </Button>
+                        )}
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          onClick={() => setIsModalOpen(true)}
+                          className="gap-1"
+                        >
+                          <Plus className="w-4 h-4" />
+                          Adicionar Cartelas
+                        </Button>
+                      </div>
                     </div>
                     
                     {atribuicao.cartelas.length === 0 ? (
