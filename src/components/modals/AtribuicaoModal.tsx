@@ -6,6 +6,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { Progress } from '@/components/ui/progress';
 import {
   Dialog,
   DialogContent,
@@ -19,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ListTodo, Save, Eraser, AlertCircle, X, Trash2 } from 'lucide-react';
+import { ListTodo, Save, Eraser, AlertCircle, X, Trash2, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface AtribuicaoModalProps {
@@ -48,6 +49,8 @@ const AtribuicaoModal: React.FC<AtribuicaoModalProps> = ({ isOpen, onClose, edit
   const [tipoSelecao, setTipoSelecao] = useState<TipoSelecao>('individual');
   const [faixaInput, setFaixaInput] = useState('');
   const [aleatorioInput, setAleatorioInput] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [progress, setProgress] = useState(0);
 
   const vendedoresAtivos = vendedores.filter(v => v.ativo);
   const cartelasDisponiveis = cartelas.filter(c => c.status === 'disponivel');
@@ -161,46 +164,70 @@ const AtribuicaoModal: React.FC<AtribuicaoModalProps> = ({ isOpen, onClose, edit
       return;
     }
 
-    const vendedor = vendedores.find(v => v.id === vendedorId);
+    setIsSubmitting(true);
+    setProgress(10);
 
-    if (editingAtribuicao) {
-      // Handle editing - find removed and added cartelas
-      const cartelasAnteriores = editingAtribuicao.cartelas.map(c => c.numero);
-      const removidas = cartelasAnteriores.filter(n => !cartelasSelecionadas.includes(n));
-      const adicionadas = cartelasSelecionadas.filter(n => !cartelasAnteriores.includes(n));
+    try {
+      const vendedor = vendedores.find(v => v.id === vendedorId);
 
-      // Remove cartelas
-      for (const num of removidas) {
-        await removeCartelaFromAtribuicao(editingAtribuicao.id, num);
+      if (editingAtribuicao) {
+        // Handle editing - find removed and added cartelas
+        const cartelasAnteriores = editingAtribuicao.cartelas.map(c => c.numero);
+        const removidas = cartelasAnteriores.filter(n => !cartelasSelecionadas.includes(n));
+        const adicionadas = cartelasSelecionadas.filter(n => !cartelasAnteriores.includes(n));
+
+        setProgress(30);
+
+        // Remove cartelas
+        for (const num of removidas) {
+          await removeCartelaFromAtribuicao(editingAtribuicao.id, num);
+        }
+
+        setProgress(60);
+
+        // Add new cartelas
+        if (adicionadas.length > 0) {
+          await addCartelasToAtribuicao(editingAtribuicao.id, vendedorId, adicionadas);
+        }
+
+        setProgress(100);
+
+        toast({
+          title: "Atribuição atualizada",
+          description: `Atribuição atualizada com sucesso.`
+        });
+      } else if (atribuicaoExistente) {
+        setProgress(40);
+        // Add cartelas to existing attribution
+        await addCartelasToAtribuicao(atribuicaoExistente.id, vendedorId, cartelasSelecionadas);
+        setProgress(100);
+        toast({
+          title: "Cartelas adicionadas",
+          description: `${cartelasSelecionadas.length} cartela(s) adicionada(s) à atribuição existente.`
+        });
+      } else {
+        setProgress(40);
+        // Create new attribution
+        await addAtribuicao(vendedorId, cartelasSelecionadas);
+        setProgress(100);
+
+        toast({
+          title: "Atribuição realizada",
+          description: `${cartelasSelecionadas.length} cartela(s) atribuída(s) com sucesso.`
+        });
       }
 
-      // Add new cartelas
-      if (adicionadas.length > 0) {
-        await addCartelasToAtribuicao(editingAtribuicao.id, vendedorId, adicionadas);
-      }
-
+      onClose();
+    } catch (error) {
       toast({
-        title: "Atribuição atualizada",
-        description: `Atribuição atualizada com sucesso.`
+        title: "Erro",
+        description: "Ocorreu um erro ao salvar a atribuição.",
+        variant: "destructive"
       });
-    } else if (atribuicaoExistente) {
-      // Add cartelas to existing attribution
-      await addCartelasToAtribuicao(atribuicaoExistente.id, vendedorId, cartelasSelecionadas);
-      toast({
-        title: "Cartelas adicionadas",
-        description: `${cartelasSelecionadas.length} cartela(s) adicionada(s) à atribuição existente.`
-      });
-    } else {
-      // Create new attribution
-      await addAtribuicao(vendedorId, cartelasSelecionadas);
-
-      toast({
-        title: "Atribuição realizada",
-        description: `${cartelasSelecionadas.length} cartela(s) atribuída(s) com sucesso.`
-      });
+    } finally {
+      setIsSubmitting(false);
+      setProgress(0);
     }
-
-    onClose();
   };
 
   const isEditing = !!editingAtribuicao;
@@ -373,12 +400,31 @@ const AtribuicaoModal: React.FC<AtribuicaoModalProps> = ({ isOpen, onClose, edit
             </div>
           )}
 
+          {isSubmitting && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Atribuindo cartelas...</span>
+              </div>
+              <Progress value={progress} className="h-2" />
+            </div>
+          )}
+
           <div className="flex gap-4 pt-4">
-            <Button type="submit" className="flex-1 gap-2" disabled={!vendedorId || cartelasSelecionadas.length === 0}>
-              <Save className="w-4 h-4" />
-              {isEditing ? 'Salvar Alterações' : atribuicaoExistente && vendedorId ? 'Adicionar Cartelas' : 'Atribuir Cartelas'}
+            <Button type="submit" className="flex-1 gap-2" disabled={!vendedorId || cartelasSelecionadas.length === 0 || isSubmitting}>
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Atribuindo...
+                </>
+              ) : (
+                <>
+                  <Save className="w-4 h-4" />
+                  {isEditing ? 'Salvar Alterações' : atribuicaoExistente && vendedorId ? 'Adicionar Cartelas' : 'Atribuir Cartelas'}
+                </>
+              )}
             </Button>
-            <Button type="button" variant="outline" onClick={onClose} className="flex-1">
+            <Button type="button" variant="outline" onClick={onClose} className="flex-1" disabled={isSubmitting}>
               Cancelar
             </Button>
           </div>
