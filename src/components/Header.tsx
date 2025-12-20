@@ -25,10 +25,10 @@ const Header: React.FC = () => {
           <div>
             <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-3">
               <Dice5 className="w-8 h-8" />
-              Sistema de Gerenciamento de Bingos
+              {user?.titulo_sistema || 'Sorteios'}
             </h1>
             <p className="text-primary-foreground/70 mt-1">
-              Sistema completo de gestão de rifas e bingos
+              Sistema completo de gestão de rifas e sorteios
             </p>
           </div>
           <div className="flex items-center gap-4">

@@ -18,6 +18,7 @@ const setupSchema = z.object({
   email: z.string().email('Email inválido').max(255),
   senha: z.string().min(6, 'Senha deve ter pelo menos 6 caracteres').max(100),
   confirmarSenha: z.string(),
+  titulo_sistema: z.string().min(1, 'Nome do sistema é obrigatório').max(100),
 }).refine((data) => data.senha === data.confirmarSenha, {
   message: "As senhas não coincidem",
   path: ["confirmarSenha"],
@@ -35,7 +36,7 @@ const Auth: React.FC = () => {
   const [loginData, setLoginData] = useState({ email: '', senha: '' });
   
   // Setup admin form
-  const [setupData, setSetupData] = useState({ nome: '', email: '', senha: '', confirmarSenha: '' });
+  const [setupData, setSetupData] = useState({ nome: '', email: '', senha: '', confirmarSenha: '', titulo_sistema: 'Sorteios' });
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -99,7 +100,7 @@ const Auth: React.FC = () => {
     }
     
     setIsSubmitting(true);
-    const result = await setupAdmin(setupData.email, setupData.senha, setupData.nome);
+    const result = await setupAdmin(setupData.email, setupData.senha, setupData.nome, setupData.titulo_sistema);
     setIsSubmitting(false);
     
     if (!result.success) {
@@ -125,8 +126,8 @@ const Auth: React.FC = () => {
             </div>
           </div>
           <div>
-            <CardTitle className="text-2xl font-bold">
-              {isFirstAccess ? 'Configuração Inicial' : 'Bingo Manager'}
+             <CardTitle className="text-2xl font-bold">
+               {isFirstAccess ? 'Configuração Inicial' : 'Sorteios'}
             </CardTitle>
             <CardDescription className="mt-2">
               {isFirstAccess 
@@ -147,7 +148,20 @@ const Auth: React.FC = () => {
           {isFirstAccess ? (
             <form onSubmit={handleSetupAdmin} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="nome">Nome</Label>
+                <Label htmlFor="titulo_sistema">Nome do Sistema</Label>
+                <Input
+                  id="titulo_sistema"
+                  type="text"
+                  placeholder="Ex: Meus Sorteios"
+                  value={setupData.titulo_sistema}
+                  onChange={(e) => setSetupData({ ...setupData, titulo_sistema: e.target.value })}
+                  disabled={isSubmitting}
+                />
+                {errors.titulo_sistema && <p className="text-destructive text-sm">{errors.titulo_sistema}</p>}
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="nome">Seu Nome</Label>
                 <Input
                   id="nome"
                   type="text"
