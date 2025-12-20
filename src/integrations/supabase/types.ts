@@ -216,6 +216,7 @@ export type Database = {
       usuarios: {
         Row: {
           ativo: boolean
+          avatar_url: string | null
           created_at: string
           email: string
           id: string
@@ -227,6 +228,7 @@ export type Database = {
         }
         Insert: {
           ativo?: boolean
+          avatar_url?: string | null
           created_at?: string
           email: string
           id?: string
@@ -238,6 +240,7 @@ export type Database = {
         }
         Update: {
           ativo?: boolean
+          avatar_url?: string | null
           created_at?: string
           email?: string
           id?: string

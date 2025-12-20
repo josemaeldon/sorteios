@@ -4,6 +4,7 @@ import { useBingo } from '@/contexts/BingoContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,6 +18,15 @@ const Header: React.FC = () => {
   const { sorteioAtivo } = useBingo();
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+
+  const getInitials = (name: string) => {
+    return name
+      .split(' ')
+      .map(n => n[0])
+      .slice(0, 2)
+      .join('')
+      .toUpperCase();
+  };
 
   return (
     <header className="gradient-header text-primary-foreground shadow-lg">
@@ -44,16 +54,29 @@ const Header: React.FC = () => {
             
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="text-primary-foreground hover:bg-primary-foreground/10">
-                  <User className="h-5 w-5 mr-2" />
+                <Button variant="ghost" className="text-primary-foreground hover:bg-primary-foreground/10 flex items-center gap-2">
+                  <Avatar className="h-8 w-8">
+                    <AvatarImage src={user?.avatar_url} alt={user?.nome} />
+                    <AvatarFallback className="bg-primary-foreground/20 text-primary-foreground text-xs">
+                      {user?.nome ? getInitials(user.nome) : 'U'}
+                    </AvatarFallback>
+                  </Avatar>
                   <span className="hidden sm:inline">{user?.nome}</span>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuLabel>
-                  <div className="flex flex-col">
-                    <span>{user?.nome}</span>
-                    <span className="text-xs text-muted-foreground">{user?.email}</span>
+                  <div className="flex items-center gap-3">
+                    <Avatar className="h-10 w-10">
+                      <AvatarImage src={user?.avatar_url} alt={user?.nome} />
+                      <AvatarFallback className="bg-primary text-primary-foreground">
+                        {user?.nome ? getInitials(user.nome) : 'U'}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="flex flex-col">
+                      <span>{user?.nome}</span>
+                      <span className="text-xs text-muted-foreground">{user?.email}</span>
+                    </div>
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />

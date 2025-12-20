@@ -7,6 +7,7 @@ export interface User {
   role: UserRole;
   ativo: boolean;
   titulo_sistema: string;
+  avatar_url?: string;
   created_at: string;
   updated_at?: string;
 }
@@ -28,4 +29,5 @@ export interface CreateUserData {
   nome: string;
   role: UserRole;
   titulo_sistema?: string;
+  avatar_url?: string;
 }

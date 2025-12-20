@@ -1,13 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowLeft, User, Loader2, Save } from 'lucide-react';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { ArrowLeft, User, Loader2, Save, Camera, X } from 'lucide-react';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 
 const profileSchema = z.object({
   titulo_sistema: z.string().min(1, 'Título do sistema é obrigatório').max(100),
@@ -17,11 +19,14 @@ const Profile: React.FC = () => {
   const navigate = useNavigate();
   const { user, updateProfile, isAuthenticated } = useAuth();
   const { toast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formData, setFormData] = useState({
     titulo_sistema: user?.titulo_sistema || 'Sorteios',
+    avatar_url: user?.avatar_url || '',
   });
 
   React.useEffect(() => {
@@ -29,6 +34,75 @@ const Profile: React.FC = () => {
       navigate('/auth');
     }
   }, [isAuthenticated, navigate]);
+
+  const handleAvatarClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      toast({
+        title: "Erro",
+        description: "Por favor, selecione uma imagem válida.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validate file size (max 2MB)
+    if (file.size > 2 * 1024 * 1024) {
+      toast({
+        title: "Erro",
+        description: "A imagem deve ter no máximo 2MB.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsUploading(true);
+
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${user?.id}-${Date.now()}.${fileExt}`;
+      const filePath = `avatars/${fileName}`;
+
+      // Upload to Supabase Storage
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(filePath);
+
+      setFormData(prev => ({ ...prev, avatar_url: publicUrl }));
+      
+      toast({
+        title: "Imagem carregada",
+        description: "Clique em Salvar para confirmar as alterações.",
+      });
+    } catch (error: any) {
+      console.error('Upload error:', error);
+      toast({
+        title: "Erro ao carregar imagem",
+        description: error.message || "Tente novamente.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleRemoveAvatar = () => {
+    setFormData(prev => ({ ...prev, avatar_url: '' }));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,7 +124,10 @@ const Profile: React.FC = () => {
     }
     
     setIsSubmitting(true);
-    const result = await updateProfile({ titulo_sistema: formData.titulo_sistema });
+    const result = await updateProfile({ 
+      titulo_sistema: formData.titulo_sistema,
+      avatar_url: formData.avatar_url || undefined,
+    });
     setIsSubmitting(false);
     
     if (result.success) {
@@ -61,6 +138,15 @@ const Profile: React.FC = () => {
     } else {
       setErrors({ form: result.error || 'Erro ao atualizar perfil' });
     }
+  };
+
+  const getInitials = (name: string) => {
+    return name
+      .split(' ')
+      .map(n => n[0])
+      .slice(0, 2)
+      .join('')
+      .toUpperCase();
   };
 
   return (
@@ -102,6 +188,71 @@ const Profile: React.FC = () => {
                   {errors.form}
                 </div>
               )}
+
+              {/* Avatar Upload */}
+              <div className="flex flex-col items-center gap-4">
+                <div className="relative">
+                  <Avatar className="h-24 w-24 cursor-pointer ring-2 ring-border hover:ring-primary transition-all" onClick={handleAvatarClick}>
+                    <AvatarImage src={formData.avatar_url} alt={user?.nome} />
+                    <AvatarFallback className="text-2xl bg-primary text-primary-foreground">
+                      {user?.nome ? getInitials(user.nome) : 'U'}
+                    </AvatarFallback>
+                  </Avatar>
+                  
+                  {isUploading && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-background/80 rounded-full">
+                      <Loader2 className="h-6 w-6 animate-spin" />
+                    </div>
+                  )}
+                  
+                  <button
+                    type="button"
+                    onClick={handleAvatarClick}
+                    className="absolute bottom-0 right-0 p-1.5 bg-primary text-primary-foreground rounded-full hover:bg-primary/90 transition-colors"
+                    disabled={isUploading}
+                  >
+                    <Camera className="h-4 w-4" />
+                  </button>
+                </div>
+                
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileChange}
+                  className="hidden"
+                />
+                
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleAvatarClick}
+                    disabled={isUploading}
+                  >
+                    {isUploading ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    ) : (
+                      <Camera className="h-4 w-4 mr-2" />
+                    )}
+                    Alterar foto
+                  </Button>
+                  
+                  {formData.avatar_url && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleRemoveAvatar}
+                      disabled={isUploading}
+                    >
+                      <X className="h-4 w-4 mr-2" />
+                      Remover
+                    </Button>
+                  )}
+                </div>
+              </div>
               
               <div className="space-y-2">
                 <Label htmlFor="titulo_sistema">Título do Sistema</Label>
@@ -142,7 +293,7 @@ const Profile: React.FC = () => {
                 <Button type="button" variant="outline" onClick={() => navigate('/')} disabled={isSubmitting}>
                   Cancelar
                 </Button>
-                <Button type="submit" disabled={isSubmitting}>
+                <Button type="submit" disabled={isSubmitting || isUploading}>
                   {isSubmitting ? (
                     <Loader2 className="h-4 w-4 animate-spin mr-2" />
                   ) : (
