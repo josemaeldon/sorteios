@@ -140,7 +140,7 @@ const AtribuicaoModal: React.FC<AtribuicaoModalProps> = ({ isOpen, onClose, edit
     setCartelasSelecionadas([]);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!vendedorId) {
@@ -170,17 +170,13 @@ const AtribuicaoModal: React.FC<AtribuicaoModalProps> = ({ isOpen, onClose, edit
       const adicionadas = cartelasSelecionadas.filter(n => !cartelasAnteriores.includes(n));
 
       // Remove cartelas
-      removidas.forEach(num => {
-        removeCartelaFromAtribuicao(vendedorId, num);
-        atualizarStatusCartela(num, 'disponivel');
-      });
+      for (const num of removidas) {
+        await removeCartelaFromAtribuicao(editingAtribuicao.id, num);
+      }
 
       // Add new cartelas
       if (adicionadas.length > 0) {
-        addCartelasToAtribuicao(vendedorId, adicionadas);
-        adicionadas.forEach(num => {
-          atualizarStatusCartela(num, 'ativa', vendedorId, vendedor?.nome);
-        });
+        await addCartelasToAtribuicao(editingAtribuicao.id, vendedorId, adicionadas);
       }
 
       toast({
@@ -189,37 +185,14 @@ const AtribuicaoModal: React.FC<AtribuicaoModalProps> = ({ isOpen, onClose, edit
       });
     } else if (atribuicaoExistente) {
       // Add cartelas to existing attribution
-      addCartelasToAtribuicao(vendedorId, cartelasSelecionadas);
-      cartelasSelecionadas.forEach(numero => {
-        atualizarStatusCartela(numero, 'ativa', vendedorId, vendedor?.nome);
-      });
+      await addCartelasToAtribuicao(atribuicaoExistente.id, vendedorId, cartelasSelecionadas);
       toast({
         title: "Cartelas adicionadas",
         description: `${cartelasSelecionadas.length} cartela(s) adicionada(s) à atribuição existente.`
       });
     } else {
       // Create new attribution
-      const novasCartelas: CartelaAtribuida[] = cartelasSelecionadas.map(num => ({
-        numero: num,
-        status: 'ativa',
-        data_atribuicao: new Date().toISOString()
-      }));
-
-      const atribuicao: Atribuicao = {
-        id: gerarId(),
-        sorteio_id: sorteioAtivo!.id,
-        vendedor_id: vendedorId,
-        vendedor_nome: vendedor?.nome,
-        cartelas: novasCartelas,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-      addAtribuicao(atribuicao);
-
-      // Update cartela status
-      cartelasSelecionadas.forEach(numero => {
-        atualizarStatusCartela(numero, 'ativa', vendedorId, vendedor?.nome);
-      });
+      await addAtribuicao(vendedorId, cartelasSelecionadas);
 
       toast({
         title: "Atribuição realizada",

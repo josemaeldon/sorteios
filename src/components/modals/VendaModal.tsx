@@ -20,7 +20,7 @@ interface VendaModalProps {
 type TipoSelecao = 'individual' | 'faixa' | 'aleatorio';
 
 const VendaModal: React.FC<VendaModalProps> = ({ isOpen, onClose, editingId }) => {
-  const { sorteioAtivo, vendedores, cartelas, vendas, addVenda, updateVenda, atualizarStatusCartela, updateCartelaStatusInAtribuicao, atribuicoes } = useBingo();
+  const { sorteioAtivo, vendedores, cartelas, vendas, addVenda, updateVenda, atribuicoes } = useBingo();
   const { toast } = useToast();
   
   const [vendedorId, setVendedorId] = useState('');
@@ -165,7 +165,7 @@ const VendaModal: React.FC<VendaModalProps> = ({ isOpen, onClose, editingId }) =
     setPagamentos(prev => prev.map(p => ({ ...p, valor: valorPorPagamento })));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!vendedorId || !clienteNome || cartelasSelecionadas.length === 0) {
       toast({ title: "Erro", description: "Preencha todos os campos obrigatórios.", variant: "destructive" });
@@ -178,9 +178,7 @@ const VendaModal: React.FC<VendaModalProps> = ({ isOpen, onClose, editingId }) =
     const pagamentosValidos = pagamentos.filter(p => p.valor > 0);
     const totalPago = pagamentosValidos.reduce((sum, p) => sum + p.valor, 0);
 
-    const vendaData: Venda = {
-      id: editingId || gerarId(),
-      sorteio_id: sorteioAtivo!.id,
+    const vendaData = {
       vendedor_id: vendedorId,
       vendedor_nome: vendedor?.nome,
       cliente_nome: clienteNome,
@@ -189,40 +187,14 @@ const VendaModal: React.FC<VendaModalProps> = ({ isOpen, onClose, editingId }) =
       valor_total: valorTotal,
       valor_pago: totalPago,
       pagamentos: pagamentosValidos.length > 0 ? pagamentosValidos : undefined,
-      status: totalPago >= valorTotal ? 'concluida' : 'pendente',
-      data_venda: new Date().toISOString(),
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
+      status: (totalPago >= valorTotal ? 'concluida' : 'pendente') as 'concluida' | 'pendente',
+      data_venda: new Date().toISOString()
     };
 
     if (editingId) {
-      // Handle cartela status changes when editing
-      const oldVenda = vendas.find(v => v.id === editingId);
-      if (oldVenda) {
-        const oldNumeros = oldVenda.numeros_cartelas.split(',').map(n => parseInt(n.trim()));
-        
-        // Return removed cartelas to 'ativa'
-        oldNumeros.filter(n => !cartelasSelecionadas.includes(n)).forEach(num => {
-          atualizarStatusCartela(num, 'ativa', vendedorId, vendedor?.nome);
-          updateCartelaStatusInAtribuicao(vendedorId, num, 'ativa');
-        });
-        
-        // Mark new cartelas as 'vendida'
-        cartelasSelecionadas.filter(n => !oldNumeros.includes(n)).forEach(num => {
-          atualizarStatusCartela(num, 'vendida', vendedorId, vendedor?.nome);
-          updateCartelaStatusInAtribuicao(vendedorId, num, 'vendida');
-        });
-      }
-      
-      updateVenda(editingId, vendaData);
-      toast({ title: "Venda atualizada", description: "A venda foi atualizada com sucesso." });
+      await updateVenda(editingId, vendaData);
     } else {
-      addVenda(vendaData);
-      cartelasSelecionadas.forEach(num => {
-        atualizarStatusCartela(num, 'vendida', vendedorId, vendedor?.nome);
-        updateCartelaStatusInAtribuicao(vendedorId, num, 'vendida');
-      });
-      toast({ title: "Venda registrada", description: "A venda foi registrada com sucesso." });
+      await addVenda(vendaData as any);
     }
     onClose();
   };
