@@ -73,7 +73,7 @@ services:
       DB_PASSWORD: ${DB_PASS}
       DB_NAME: ${DB_NAME}
       DB_SSL: "false"
-      DB_AFTER_CONNECT_QUERY: "SET search_path TO _realtime"
+      DB_AFTER_CONNECT_QUERY: "SET search_path TO realtime, public"
       DB_ENC_KEY: supabaserealtime
       API_JWT_SECRET: ${JWT_SECRET}
       FLY_ALLOC_ID: fly123
