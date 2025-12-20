@@ -1,0 +1,47 @@
+version: "3.7"
+
+services:
+  app:
+    image: seuusuario/bingo-system:latest  ## Substitua pelo seu usuário do Docker Hub
+    working_dir: /usr/share/nginx/html
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=luzianet"
+        - "traefik.http.routers.bingo.rule=Host(`bingo.seudominio.com`)"
+        - "traefik.http.routers.bingo.entrypoints=websecure"
+        - "traefik.http.routers.bingo.tls=true"
+        - "traefik.http.routers.bingo.tls.certresolver=letsencryptresolver"
+        - "traefik.http.middlewares.bingo-redirect.redirectscheme.scheme=https"
+        - "traefik.http.routers.bingo.middlewares=bingo-redirect"
+        - "traefik.http.routers.bingo.service=bingo-service"
+        - "traefik.http.services.bingo-service.loadbalancer.server.port=80"
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      resources:
+        limits:
+          memory: 128M
+        reservations:
+          memory: 64M
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - luzianet
+
+networks:
+  luzianet:
+    external: true
