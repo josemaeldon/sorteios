@@ -12,6 +12,7 @@ interface AuthContextType extends AuthState {
   getAllUsers: () => Promise<User[]>;
   checkFirstAccess: () => Promise<boolean>;
   setupAdmin: (email: string, senha: string, nome: string, titulo_sistema: string) => Promise<{ success: boolean; error?: string }>;
+  updateProfile: (data: { titulo_sistema: string }) => Promise<{ success: boolean; error?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -205,6 +206,28 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [user]);
 
+  const updateProfile = useCallback(async (data: { titulo_sistema: string }) => {
+    if (!user) {
+      return { success: false, error: 'Usuário não autenticado' };
+    }
+
+    try {
+      const result = await callApi('updateProfile', { id: user.id, titulo_sistema: data.titulo_sistema });
+      
+      if (result.success) {
+        const updatedUser = { ...user, titulo_sistema: data.titulo_sistema };
+        setUser(updatedUser);
+        localStorage.setItem(AUTH_KEY, JSON.stringify(updatedUser));
+        return { success: true };
+      }
+      
+      return { success: false, error: result.error || 'Erro ao atualizar perfil' };
+    } catch (error: any) {
+      console.error('Update profile error:', error);
+      return { success: false, error: error.message || 'Erro ao atualizar perfil' };
+    }
+  }, [user]);
+
   const value: AuthContextType = {
     user,
     isLoading,
@@ -217,6 +240,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     getAllUsers,
     checkFirstAccess,
     setupAdmin,
+    updateProfile,
   };
 
   return (

@@ -177,6 +177,16 @@ serve(async (req) => {
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
 
+      case 'updateProfile':
+        await client.queryObject(`
+          UPDATE usuarios SET titulo_sistema = $2, updated_at = NOW()
+          WHERE id = $1
+        `, [data.id, data.titulo_sistema]);
+        return new Response(
+          JSON.stringify({ success: true }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+
       // ================== SORTEIOS (filtered by user) ==================
       case 'getSorteios':
         result = await client.queryObject(`
