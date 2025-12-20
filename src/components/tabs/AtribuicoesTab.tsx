@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useBingo } from '@/contexts/BingoContext';
-import { ListTodo, Plus, Search, Filter, Eraser, RotateCcw, Trash2 } from 'lucide-react';
+import { ListTodo, Plus, Search, Filter, Eraser, Eye, Trash2, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import { formatarData, formatarNumeroCartela, getStatusLabel } from '@/lib/utils/formatters';
 import AtribuicaoModal from '@/components/modals/AtribuicaoModal';
 import { useToast } from '@/hooks/use-toast';
+import { CartelaAtribuida } from '@/types/bingo';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,6 +19,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 
 const AtribuicoesTab: React.FC = () => {
   const { 
@@ -27,14 +33,17 @@ const AtribuicoesTab: React.FC = () => {
     filtrosAtribuicoes, 
     setFiltrosAtribuicoes,
     deleteAtribuicao,
+    removeCartelaFromAtribuicao,
+    updateCartelaStatusInAtribuicao,
     atualizarStatusCartela
   } = useBingo();
   const { toast } = useToast();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [expandedAtribuicao, setExpandedAtribuicao] = useState<string | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [devolvendo, setDevolvendo] = useState(false);
+  const [deletingAtribuicao, setDeletingAtribuicao] = useState<{ id: string; vendedorId: string; cartela?: number } | null>(null);
+  const [actionType, setActionType] = useState<'devolver' | 'excluir-cartela' | 'excluir-atribuicao'>('excluir-atribuicao');
 
   if (!sorteioAtivo) {
     return (
@@ -49,59 +58,88 @@ const AtribuicoesTab: React.FC = () => {
   const atribuicoesFiltradas = atribuicoes.filter(a => {
     if (filtrosAtribuicoes.busca) {
       const busca = filtrosAtribuicoes.busca.toLowerCase();
-      const match = a.numero_cartela.toString().includes(busca) ||
-                   (a.vendedor_nome && a.vendedor_nome.toLowerCase().includes(busca));
-      if (!match) return false;
-    }
-    if (filtrosAtribuicoes.status !== 'todos') {
-      if (a.status !== filtrosAtribuicoes.status) return false;
+      const matchVendedor = a.vendedor_nome && a.vendedor_nome.toLowerCase().includes(busca);
+      const matchCartela = a.cartelas.some(c => c.numero.toString().includes(busca));
+      if (!matchVendedor && !matchCartela) return false;
     }
     if (filtrosAtribuicoes.vendedor !== 'todos') {
       if (a.vendedor_id !== filtrosAtribuicoes.vendedor) return false;
     }
+    if (filtrosAtribuicoes.status !== 'todos') {
+      const hasCartelaWithStatus = a.cartelas.some(c => c.status === filtrosAtribuicoes.status);
+      if (!hasCartelaWithStatus) return false;
+    }
     return true;
   });
 
-  const handleDevolver = (id: string, numeroCartela: number) => {
-    setDeletingId(id);
-    setDevolvendo(true);
+  const handleDevolverCartela = (atribuicaoId: string, vendedorId: string, numeroCartela: number) => {
+    setDeletingAtribuicao({ id: atribuicaoId, vendedorId, cartela: numeroCartela });
+    setActionType('devolver');
     setDeleteDialogOpen(true);
   };
 
-  const handleExcluir = (id: string) => {
-    setDeletingId(id);
-    setDevolvendo(false);
+  const handleExcluirCartela = (atribuicaoId: string, vendedorId: string, numeroCartela: number) => {
+    setDeletingAtribuicao({ id: atribuicaoId, vendedorId, cartela: numeroCartela });
+    setActionType('excluir-cartela');
+    setDeleteDialogOpen(true);
+  };
+
+  const handleExcluirAtribuicao = (id: string, vendedorId: string) => {
+    setDeletingAtribuicao({ id, vendedorId });
+    setActionType('excluir-atribuicao');
     setDeleteDialogOpen(true);
   };
 
   const confirmAction = () => {
-    if (deletingId) {
-      const atribuicao = atribuicoes.find(a => a.id === deletingId);
-      if (atribuicao) {
-        if (devolvendo) {
-          // Devolver cartela - marca como devolvida
-          atualizarStatusCartela(atribuicao.numero_cartela, 'devolvida');
-          toast({
-            title: "Cartela devolvida",
-            description: `A cartela ${formatarNumeroCartela(atribuicao.numero_cartela)} foi devolvida.`
-          });
-        } else {
-          // Excluir atribuição - volta para disponível
-          atualizarStatusCartela(atribuicao.numero_cartela, 'disponivel');
-          deleteAtribuicao(deletingId);
-          toast({
-            title: "Atribuição excluída",
-            description: `A atribuição da cartela ${formatarNumeroCartela(atribuicao.numero_cartela)} foi excluída.`
-          });
-        }
-      }
+    if (!deletingAtribuicao) return;
+    
+    const atribuicao = atribuicoes.find(a => a.id === deletingAtribuicao.id);
+    if (!atribuicao) return;
+
+    if (actionType === 'devolver' && deletingAtribuicao.cartela) {
+      updateCartelaStatusInAtribuicao(deletingAtribuicao.vendedorId, deletingAtribuicao.cartela, 'devolvida');
+      atualizarStatusCartela(deletingAtribuicao.cartela, 'devolvida');
+      toast({
+        title: "Cartela devolvida",
+        description: `A cartela ${formatarNumeroCartela(deletingAtribuicao.cartela)} foi devolvida.`
+      });
+    } else if (actionType === 'excluir-cartela' && deletingAtribuicao.cartela) {
+      removeCartelaFromAtribuicao(deletingAtribuicao.vendedorId, deletingAtribuicao.cartela);
+      atualizarStatusCartela(deletingAtribuicao.cartela, 'disponivel');
+      toast({
+        title: "Cartela removida",
+        description: `A cartela ${formatarNumeroCartela(deletingAtribuicao.cartela)} foi removida da atribuição.`
+      });
+    } else if (actionType === 'excluir-atribuicao') {
+      // Voltar todas as cartelas para disponível
+      atribuicao.cartelas.forEach(c => {
+        atualizarStatusCartela(c.numero, 'disponivel');
+      });
+      deleteAtribuicao(deletingAtribuicao.id);
+      toast({
+        title: "Atribuição excluída",
+        description: `A atribuição de ${atribuicao.vendedor_nome} foi excluída.`
+      });
     }
+
     setDeleteDialogOpen(false);
-    setDeletingId(null);
+    setDeletingAtribuicao(null);
   };
 
   const limparFiltros = () => {
     setFiltrosAtribuicoes({ busca: '', status: 'todos', vendedor: 'todos' });
+  };
+
+  const toggleExpand = (id: string) => {
+    setExpandedAtribuicao(prev => prev === id ? null : id);
+  };
+
+  const getStatusCounts = (cartelas: CartelaAtribuida[]) => {
+    return {
+      ativas: cartelas.filter(c => c.status === 'ativa').length,
+      vendidas: cartelas.filter(c => c.status === 'vendida').length,
+      devolvidas: cartelas.filter(c => c.status === 'devolvida').length,
+    };
   };
 
   return (
@@ -126,7 +164,7 @@ const AtribuicoesTab: React.FC = () => {
               Buscar
             </label>
             <Input
-              placeholder="Número ou vendedor..."
+              placeholder="Vendedor ou número..."
               value={filtrosAtribuicoes.busca}
               onChange={(e) => setFiltrosAtribuicoes({ ...filtrosAtribuicoes, busca: e.target.value })}
             />
@@ -134,7 +172,7 @@ const AtribuicoesTab: React.FC = () => {
           <div className="space-y-2">
             <label className="text-sm font-semibold text-foreground flex items-center gap-1">
               <Filter className="w-4 h-4" />
-              Status
+              Status Cartelas
             </label>
             <Select 
               value={filtrosAtribuicoes.status} 
@@ -179,82 +217,177 @@ const AtribuicoesTab: React.FC = () => {
         </div>
       </div>
 
-      {/* Tabela */}
-      <div className="table-container overflow-x-auto">
-        <table className="w-full">
-          <thead>
-            <tr className="bg-muted/50">
-              <th className="p-4 text-left font-semibold text-foreground">Cartela</th>
-              <th className="p-4 text-left font-semibold text-foreground">Vendedor</th>
-              <th className="p-4 text-left font-semibold text-foreground">Data Atribuição</th>
-              <th className="p-4 text-center font-semibold text-foreground">Status</th>
-              <th className="p-4 text-center font-semibold text-foreground">Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            {atribuicoesFiltradas.map((atribuicao) => (
-              <tr key={atribuicao.id} className="border-b border-border hover:bg-muted/30 transition-colors">
-                <td className="p-4">
-                  <span className="px-3 py-1 bg-primary/10 text-primary rounded-full font-bold">
-                    {formatarNumeroCartela(atribuicao.numero_cartela)}
-                  </span>
-                </td>
-                <td className="p-4 font-semibold text-foreground">{atribuicao.vendedor_nome || 'N/A'}</td>
-                <td className="p-4 text-muted-foreground">{formatarData(atribuicao.data_atribuicao)}</td>
-                <td className="p-4 text-center">
-                  <span className={cn('status-badge', `status-${atribuicao.status}`)}>
-                    {getStatusLabel(atribuicao.status)}
-                  </span>
-                </td>
-                <td className="p-4">
-                  <div className="flex justify-center gap-2">
-                    {atribuicao.status === 'ativa' && (
+      {/* Lista de Atribuições */}
+      <div className="space-y-4">
+        {atribuicoesFiltradas.map((atribuicao) => {
+          const counts = getStatusCounts(atribuicao.cartelas);
+          const isExpanded = expandedAtribuicao === atribuicao.id;
+          
+          return (
+            <Collapsible key={atribuicao.id} open={isExpanded} onOpenChange={() => toggleExpand(atribuicao.id)}>
+              <div className="bg-card border border-border rounded-xl overflow-hidden">
+                <CollapsibleTrigger asChild>
+                  <div className="p-4 cursor-pointer hover:bg-muted/30 transition-colors">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center">
+                          <span className="text-primary font-bold text-lg">
+                            {atribuicao.vendedor_nome?.charAt(0).toUpperCase()}
+                          </span>
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-foreground text-lg">{atribuicao.vendedor_nome}</h3>
+                          <p className="text-sm text-muted-foreground">
+                            {atribuicao.cartelas.length} cartela(s) atribuída(s)
+                          </p>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center gap-4">
+                        <div className="hidden sm:flex gap-2">
+                          {counts.ativas > 0 && (
+                            <span className="status-badge status-ativa">
+                              {counts.ativas} ativa(s)
+                            </span>
+                          )}
+                          {counts.vendidas > 0 && (
+                            <span className="status-badge status-vendida">
+                              {counts.vendidas} vendida(s)
+                            </span>
+                          )}
+                          {counts.devolvidas > 0 && (
+                            <span className="status-badge status-devolvida">
+                              {counts.devolvidas} devolvida(s)
+                            </span>
+                          )}
+                        </div>
+                        
+                        <div className="flex items-center gap-2">
+                          <Button 
+                            size="sm" 
+                            variant="destructive"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleExcluirAtribuicao(atribuicao.id, atribuicao.vendedor_id);
+                            }}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                          {isExpanded ? (
+                            <ChevronUp className="w-5 h-5 text-muted-foreground" />
+                          ) : (
+                            <ChevronDown className="w-5 h-5 text-muted-foreground" />
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </CollapsibleTrigger>
+                
+                <CollapsibleContent>
+                  <div className="border-t border-border p-4 bg-muted/20">
+                    <div className="mb-4 flex justify-between items-center">
+                      <h4 className="font-semibold text-foreground">Cartelas Atribuídas</h4>
                       <Button 
                         size="sm" 
-                        variant="outline" 
-                        onClick={() => handleDevolver(atribuicao.id, atribuicao.numero_cartela)}
+                        variant="outline"
+                        onClick={() => setIsModalOpen(true)}
                         className="gap-1"
                       >
-                        <RotateCcw className="w-4 h-4" />
-                        Devolver
-                      </Button>
-                    )}
-                    <Button 
-                      size="sm" 
-                      variant="destructive" 
-                      onClick={() => handleExcluir(atribuicao.id)}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {atribuicoesFiltradas.length === 0 && (
-              <tr>
-                <td colSpan={5} className="p-8 text-center text-muted-foreground">
-                  {atribuicoes.length === 0 ? (
-                    <div>
-                      <ListTodo className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                      <p className="text-lg">Nenhuma atribuição encontrada</p>
-                      <p className="text-sm mt-2">Atribua cartelas aos vendedores para começar</p>
-                      <Button onClick={() => setIsModalOpen(true)} className="mt-4 gap-2">
                         <Plus className="w-4 h-4" />
-                        Nova Atribuição
+                        Adicionar Cartelas
                       </Button>
                     </div>
-                  ) : (
-                    <div>
-                      <Filter className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                      <p className="text-lg">Nenhuma atribuição encontrada</p>
-                      <p className="text-sm mt-2">Tente ajustar os filtros de busca</p>
-                    </div>
-                  )}
-                </td>
-              </tr>
+                    
+                    {atribuicao.cartelas.length === 0 ? (
+                      <p className="text-center text-muted-foreground py-4">
+                        Nenhuma cartela atribuída a este vendedor
+                      </p>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full">
+                          <thead>
+                            <tr className="bg-muted/50">
+                              <th className="p-3 text-left font-semibold text-foreground">Cartela</th>
+                              <th className="p-3 text-left font-semibold text-foreground">Data Atribuição</th>
+                              <th className="p-3 text-center font-semibold text-foreground">Status</th>
+                              <th className="p-3 text-center font-semibold text-foreground">Ações</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {atribuicao.cartelas.map((cartela) => (
+                              <tr key={cartela.numero} className="border-b border-border hover:bg-muted/30 transition-colors">
+                                <td className="p-3">
+                                  <span className="px-3 py-1 bg-primary/10 text-primary rounded-full font-bold">
+                                    {formatarNumeroCartela(cartela.numero)}
+                                  </span>
+                                </td>
+                                <td className="p-3 text-muted-foreground">
+                                  {formatarData(cartela.data_atribuicao)}
+                                </td>
+                                <td className="p-3 text-center">
+                                  <span className={cn('status-badge', `status-${cartela.status}`)}>
+                                    {getStatusLabel(cartela.status)}
+                                  </span>
+                                </td>
+                                <td className="p-3">
+                                  <div className="flex justify-center gap-2">
+                                    {cartela.status === 'ativa' && (
+                                      <Button 
+                                        size="sm" 
+                                        variant="outline" 
+                                        onClick={() => handleDevolverCartela(atribuicao.id, atribuicao.vendedor_id, cartela.numero)}
+                                        className="gap-1"
+                                      >
+                                        <RotateCcw className="w-4 h-4" />
+                                        Devolver
+                                      </Button>
+                                    )}
+                                    {cartela.status !== 'vendida' && (
+                                      <Button 
+                                        size="sm" 
+                                        variant="destructive" 
+                                        onClick={() => handleExcluirCartela(atribuicao.id, atribuicao.vendedor_id, cartela.numero)}
+                                      >
+                                        <Trash2 className="w-4 h-4" />
+                                      </Button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </CollapsibleContent>
+              </div>
+            </Collapsible>
+          );
+        })}
+        
+        {atribuicoesFiltradas.length === 0 && (
+          <div className="text-center py-12 bg-card border border-border rounded-xl">
+            {atribuicoes.length === 0 ? (
+              <div>
+                <ListTodo className="w-12 h-12 mx-auto mb-4 opacity-50 text-muted-foreground" />
+                <p className="text-lg text-foreground">Nenhuma atribuição encontrada</p>
+                <p className="text-sm mt-2 text-muted-foreground">Atribua cartelas aos vendedores para começar</p>
+                <Button onClick={() => setIsModalOpen(true)} className="mt-4 gap-2">
+                  <Plus className="w-4 h-4" />
+                  Nova Atribuição
+                </Button>
+              </div>
+            ) : (
+              <div>
+                <Filter className="w-12 h-12 mx-auto mb-4 opacity-50 text-muted-foreground" />
+                <p className="text-lg text-foreground">Nenhuma atribuição encontrada</p>
+                <p className="text-sm mt-2 text-muted-foreground">Tente ajustar os filtros de busca</p>
+              </div>
             )}
-          </tbody>
-        </table>
+          </div>
+        )}
       </div>
 
       <AtribuicaoModal
@@ -266,22 +399,25 @@ const AtribuicoesTab: React.FC = () => {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {devolvendo ? 'Devolver Cartela' : 'Excluir Atribuição'}
+              {actionType === 'devolver' && 'Devolver Cartela'}
+              {actionType === 'excluir-cartela' && 'Remover Cartela'}
+              {actionType === 'excluir-atribuicao' && 'Excluir Atribuição'}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {devolvendo 
-                ? 'Tem certeza que deseja devolver esta cartela? Ela será marcada como devolvida.'
-                : 'Tem certeza que deseja excluir esta atribuição? A cartela voltará a ficar disponível.'
-              }
+              {actionType === 'devolver' && 'Tem certeza que deseja devolver esta cartela? Ela será marcada como devolvida.'}
+              {actionType === 'excluir-cartela' && 'Tem certeza que deseja remover esta cartela da atribuição? Ela voltará a ficar disponível.'}
+              {actionType === 'excluir-atribuicao' && 'Tem certeza que deseja excluir esta atribuição? Todas as cartelas voltarão a ficar disponíveis.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction 
               onClick={confirmAction}
-              className={devolvendo ? '' : 'bg-danger text-danger-foreground hover:bg-danger/90'}
+              className={actionType !== 'devolver' ? 'bg-danger text-danger-foreground hover:bg-danger/90' : ''}
             >
-              {devolvendo ? 'Devolver' : 'Excluir'}
+              {actionType === 'devolver' && 'Devolver'}
+              {actionType === 'excluir-cartela' && 'Remover'}
+              {actionType === 'excluir-atribuicao' && 'Excluir'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

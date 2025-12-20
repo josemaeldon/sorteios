@@ -37,16 +37,20 @@ export interface Cartela {
   vendedor_nome?: string;
 }
 
+export interface CartelaAtribuida {
+  numero: number;
+  status: 'ativa' | 'vendida' | 'devolvida';
+  data_atribuicao: string;
+  data_devolucao?: string;
+  venda_id?: string;
+}
+
 export interface Atribuicao {
   id: string;
   sorteio_id: string;
   vendedor_id: string;
   vendedor_nome?: string;
-  numero_cartela: number;
-  status: 'ativa' | 'vendida' | 'devolvida';
-  data_atribuicao: string;
-  data_devolucao?: string;
-  venda_id?: string;
+  cartelas: CartelaAtribuida[];
   created_at?: string;
   updated_at?: string;
 }

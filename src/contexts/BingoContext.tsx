@@ -56,6 +56,9 @@ interface BingoContextType {
   deleteVendedor: (id: string) => void;
   
   addAtribuicao: (atribuicao: Atribuicao) => void;
+  addCartelasToAtribuicao: (vendedorId: string, cartelas: number[]) => void;
+  removeCartelaFromAtribuicao: (vendedorId: string, numeroCartela: number) => void;
+  updateCartelaStatusInAtribuicao: (vendedorId: string, numeroCartela: number, status: 'ativa' | 'vendida' | 'devolvida') => void;
   deleteAtribuicao: (id: string) => void;
   
   addVenda: (venda: Venda) => void;
@@ -144,6 +147,54 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     setAtribuicoes(prev => [...prev, atribuicao]);
   }, []);
   
+  const addCartelasToAtribuicao = useCallback((vendedorId: string, cartelas: number[]) => {
+    setAtribuicoes(prev => prev.map(a => {
+      if (a.vendedor_id === vendedorId) {
+        const novasCartelas = cartelas.map(num => ({
+          numero: num,
+          status: 'ativa' as const,
+          data_atribuicao: new Date().toISOString()
+        }));
+        return {
+          ...a,
+          cartelas: [...a.cartelas, ...novasCartelas],
+          updated_at: new Date().toISOString()
+        };
+      }
+      return a;
+    }));
+  }, []);
+  
+  const removeCartelaFromAtribuicao = useCallback((vendedorId: string, numeroCartela: number) => {
+    setAtribuicoes(prev => prev.map(a => {
+      if (a.vendedor_id === vendedorId) {
+        return {
+          ...a,
+          cartelas: a.cartelas.filter(c => c.numero !== numeroCartela),
+          updated_at: new Date().toISOString()
+        };
+      }
+      return a;
+    }));
+  }, []);
+  
+  const updateCartelaStatusInAtribuicao = useCallback((vendedorId: string, numeroCartela: number, status: 'ativa' | 'vendida' | 'devolvida') => {
+    setAtribuicoes(prev => prev.map(a => {
+      if (a.vendedor_id === vendedorId) {
+        return {
+          ...a,
+          cartelas: a.cartelas.map(c => 
+            c.numero === numeroCartela 
+              ? { ...c, status, data_devolucao: status === 'devolvida' ? new Date().toISOString() : undefined }
+              : c
+          ),
+          updated_at: new Date().toISOString()
+        };
+      }
+      return a;
+    }));
+  }, []);
+  
   const deleteAtribuicao = useCallback((id: string) => {
     setAtribuicoes(prev => prev.filter(a => a.id !== id));
   }, []);
@@ -218,6 +269,9 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     updateVendedor,
     deleteVendedor,
     addAtribuicao,
+    addCartelasToAtribuicao,
+    removeCartelaFromAtribuicao,
+    updateCartelaStatusInAtribuicao,
     deleteAtribuicao,
     addVenda,
     updateVenda,

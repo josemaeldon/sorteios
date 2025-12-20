@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useBingo } from '@/contexts/BingoContext';
-import { Atribuicao } from '@/types/bingo';
+import { Atribuicao, CartelaAtribuida } from '@/types/bingo';
 import { gerarId, formatarNumeroCartela } from '@/lib/utils/formatters';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ListTodo, Save, Eraser } from 'lucide-react';
+import { ListTodo, Save, Eraser, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface AtribuicaoModalProps {
@@ -27,7 +27,15 @@ interface AtribuicaoModalProps {
 }
 
 const AtribuicaoModal: React.FC<AtribuicaoModalProps> = ({ isOpen, onClose }) => {
-  const { sorteioAtivo, vendedores, cartelas, addAtribuicao, atualizarStatusCartela } = useBingo();
+  const { 
+    sorteioAtivo, 
+    vendedores, 
+    cartelas, 
+    atribuicoes,
+    addAtribuicao, 
+    addCartelasToAtribuicao,
+    atualizarStatusCartela 
+  } = useBingo();
   const { toast } = useToast();
   
   const [vendedorId, setVendedorId] = useState('');
@@ -35,6 +43,9 @@ const AtribuicaoModal: React.FC<AtribuicaoModalProps> = ({ isOpen, onClose }) =>
 
   const vendedoresAtivos = vendedores.filter(v => v.ativo);
   const cartelasDisponiveis = cartelas.filter(c => c.status === 'disponivel');
+
+  // Verificar se o vendedor já tem uma atribuição
+  const atribuicaoExistente = atribuicoes.find(a => a.vendedor_id === vendedorId);
 
   useEffect(() => {
     if (isOpen) {
@@ -78,25 +89,37 @@ const AtribuicaoModal: React.FC<AtribuicaoModalProps> = ({ isOpen, onClose }) =>
 
     const vendedor = vendedores.find(v => v.id === vendedorId);
 
-    cartelasSelecionadas.forEach(numero => {
+    if (atribuicaoExistente) {
+      // Adicionar cartelas à atribuição existente
+      addCartelasToAtribuicao(vendedorId, cartelasSelecionadas);
+    } else {
+      // Criar nova atribuição
+      const novasCartelas: CartelaAtribuida[] = cartelasSelecionadas.map(num => ({
+        numero: num,
+        status: 'ativa',
+        data_atribuicao: new Date().toISOString()
+      }));
+
       const atribuicao: Atribuicao = {
         id: gerarId(),
         sorteio_id: sorteioAtivo!.id,
         vendedor_id: vendedorId,
         vendedor_nome: vendedor?.nome,
-        numero_cartela: numero,
-        status: 'ativa',
-        data_atribuicao: new Date().toISOString(),
+        cartelas: novasCartelas,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
       addAtribuicao(atribuicao);
+    }
+
+    // Atualizar status das cartelas
+    cartelasSelecionadas.forEach(numero => {
       atualizarStatusCartela(numero, 'ativa', vendedorId, vendedor?.nome);
     });
 
     toast({
-      title: "Atribuição realizada",
-      description: `${cartelasSelecionadas.length} cartela(s) atribuída(s) com sucesso.`
+      title: atribuicaoExistente ? "Cartelas adicionadas" : "Atribuição realizada",
+      description: `${cartelasSelecionadas.length} cartela(s) ${atribuicaoExistente ? 'adicionada(s) à atribuição' : 'atribuída(s)'} com sucesso.`
     });
 
     onClose();
@@ -108,7 +131,7 @@ const AtribuicaoModal: React.FC<AtribuicaoModalProps> = ({ isOpen, onClose }) =>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ListTodo className="w-5 h-5" />
-            Nova Atribuição
+            {atribuicaoExistente && vendedorId ? 'Adicionar Cartelas' : 'Nova Atribuição'}
           </DialogTitle>
         </DialogHeader>
 
@@ -120,15 +143,32 @@ const AtribuicaoModal: React.FC<AtribuicaoModalProps> = ({ isOpen, onClose }) =>
                 <SelectValue placeholder="Selecione um vendedor" />
               </SelectTrigger>
               <SelectContent>
-                {vendedoresAtivos.map(v => (
-                  <SelectItem key={v.id} value={v.id}>{v.nome}</SelectItem>
-                ))}
+                {vendedoresAtivos.map(v => {
+                  const atribuicao = atribuicoes.find(a => a.vendedor_id === v.id);
+                  return (
+                    <SelectItem key={v.id} value={v.id}>
+                      {v.nome} {atribuicao && `(${atribuicao.cartelas.length} cartelas)`}
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
             {vendedoresAtivos.length === 0 && (
               <p className="text-sm text-warning">Nenhum vendedor ativo cadastrado</p>
             )}
           </div>
+
+          {atribuicaoExistente && vendedorId && (
+            <div className="bg-info/10 border border-info/30 rounded-lg p-3 flex items-start gap-2">
+              <AlertCircle className="w-5 h-5 text-info mt-0.5" />
+              <div>
+                <p className="text-sm font-medium text-foreground">Este vendedor já possui uma atribuição</p>
+                <p className="text-sm text-muted-foreground">
+                  Ele já tem {atribuicaoExistente.cartelas.length} cartela(s). As novas cartelas serão adicionadas à atribuição existente.
+                </p>
+              </div>
+            </div>
+          )}
 
           <div className="space-y-2">
             <div className="flex justify-between items-center">
@@ -197,7 +237,7 @@ const AtribuicaoModal: React.FC<AtribuicaoModalProps> = ({ isOpen, onClose }) =>
           <div className="flex gap-4 pt-4">
             <Button type="submit" className="flex-1 gap-2" disabled={!vendedorId || cartelasSelecionadas.length === 0}>
               <Save className="w-4 h-4" />
-              Atribuir Cartelas
+              {atribuicaoExistente && vendedorId ? 'Adicionar Cartelas' : 'Atribuir Cartelas'}
             </Button>
             <Button type="button" variant="outline" onClick={onClose} className="flex-1">
               Cancelar
