@@ -22,11 +22,7 @@ const SorteiosTab: React.FC = () => {
     sorteioAtivo, 
     setSorteioAtivo, 
     deleteSorteio,
-    setCurrentTab,
-    gerarCartelas,
-    setVendedores,
-    setVendas,
-    setAtribuicoes
+    setCurrentTab
   } = useBingo();
   const { toast } = useToast();
   
@@ -39,10 +35,6 @@ const SorteiosTab: React.FC = () => {
     const sorteio = sorteios.find(s => s.id === id);
     if (sorteio) {
       setSorteioAtivo(sorteio);
-      gerarCartelas(sorteio.quantidade_cartelas);
-      setVendedores([]);
-      setVendas([]);
-      setAtribuicoes([]);
       setCurrentTab('dashboard');
       toast({
         title: "Sorteio selecionado",

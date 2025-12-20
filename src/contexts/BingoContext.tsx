@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react';
 import { 
   Sorteio, 
   Vendedor, 
@@ -12,6 +12,8 @@ import {
   FiltrosVendas
 } from '@/types/bingo';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
 
 interface BingoContextType {
   // State
@@ -32,13 +34,7 @@ interface BingoContextType {
   
   // Actions
   setSorteioAtivo: (sorteio: Sorteio | null) => void;
-  setSorteios: (sorteios: Sorteio[]) => void;
-  setVendedores: (vendedores: Vendedor[]) => void;
-  setCartelas: (cartelas: Cartela[]) => void;
-  setAtribuicoes: (atribuicoes: Atribuicao[]) => void;
-  setVendas: (vendas: Venda[]) => void;
   setCurrentTab: (tab: TabType) => void;
-  setIsLoading: (loading: boolean) => void;
   
   // Filtros Actions
   setFiltrosVendedores: (filtros: FiltrosVendedores) => void;
@@ -46,37 +42,49 @@ interface BingoContextType {
   setFiltrosAtribuicoes: (filtros: FiltrosAtribuicoes) => void;
   setFiltrosVendas: (filtros: FiltrosVendas) => void;
   
-  // CRUD Operations
-  addSorteio: (sorteio: Sorteio) => void;
-  updateSorteio: (id: string, sorteio: Partial<Sorteio>) => void;
-  deleteSorteio: (id: string) => void;
+  // CRUD Operations - Sorteios
+  loadSorteios: () => Promise<void>;
+  addSorteio: (sorteio: Omit<Sorteio, 'id' | 'created_at' | 'updated_at'>) => Promise<void>;
+  updateSorteio: (id: string, sorteio: Partial<Sorteio>) => Promise<void>;
+  deleteSorteio: (id: string) => Promise<void>;
   
-  addVendedor: (vendedor: Vendedor) => void;
-  updateVendedor: (id: string, vendedor: Partial<Vendedor>) => void;
-  deleteVendedor: (id: string) => void;
+  // CRUD Operations - Vendedores
+  loadVendedores: () => Promise<void>;
+  addVendedor: (vendedor: Omit<Vendedor, 'id' | 'created_at' | 'updated_at'>) => Promise<void>;
+  updateVendedor: (id: string, vendedor: Partial<Vendedor>) => Promise<void>;
+  deleteVendedor: (id: string) => Promise<void>;
   
-  addAtribuicao: (atribuicao: Atribuicao) => void;
-  addCartelasToAtribuicao: (vendedorId: string, cartelas: number[]) => void;
-  removeCartelaFromAtribuicao: (vendedorId: string, numeroCartela: number) => void;
-  updateCartelaStatusInAtribuicao: (vendedorId: string, numeroCartela: number, status: 'ativa' | 'vendida' | 'devolvida') => void;
-  deleteAtribuicao: (id: string) => void;
+  // CRUD Operations - Cartelas
+  loadCartelas: () => Promise<void>;
+  gerarCartelas: (quantidade: number) => Promise<void>;
+  atualizarStatusCartela: (numero: number, status: Cartela['status'], vendedorId?: string) => Promise<void>;
   
-  addVenda: (venda: Venda) => void;
-  updateVenda: (id: string, venda: Partial<Venda>) => void;
-  deleteVenda: (id: string) => void;
+  // CRUD Operations - Atribuicoes
+  loadAtribuicoes: () => Promise<void>;
+  addAtribuicao: (vendedorId: string, cartelas: number[]) => Promise<void>;
+  addCartelasToAtribuicao: (atribuicaoId: string, vendedorId: string, cartelas: number[]) => Promise<void>;
+  removeCartelaFromAtribuicao: (atribuicaoId: string, numeroCartela: number) => Promise<void>;
+  updateCartelaStatusInAtribuicao: (atribuicaoId: string, numeroCartela: number, status: 'ativa' | 'vendida' | 'devolvida') => Promise<void>;
+  deleteAtribuicao: (id: string) => Promise<void>;
   
-  // Utilities
-  gerarCartelas: (quantidade: number) => void;
-  atualizarStatusCartela: (numero: number, status: Cartela['status'], vendedorId?: string, vendedorNome?: string) => void;
+  // CRUD Operations - Vendas
+  loadVendas: () => Promise<void>;
+  addVenda: (venda: Omit<Venda, 'id' | 'created_at' | 'updated_at'>) => Promise<void>;
+  updateVenda: (id: string, venda: Partial<Venda>) => Promise<void>;
+  deleteVenda: (id: string) => Promise<void>;
+  
+  // Refresh all data for current sorteio
+  refreshData: () => Promise<void>;
 }
 
 const BingoContext = createContext<BingoContextType | undefined>(undefined);
 
 export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { toast } = useToast();
+  const { user } = useAuth();
   
   // State
-  const [sorteioAtivo, setSorteioAtivo] = useState<Sorteio | null>(null);
+  const [sorteioAtivo, setSorteioAtivoState] = useState<Sorteio | null>(null);
   const [sorteios, setSorteios] = useState<Sorteio[]>([]);
   const [vendedores, setVendedores] = useState<Vendedor[]>([]);
   const [cartelas, setCartelas] = useState<Cartela[]>([]);
@@ -109,134 +117,437 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     vendedor: 'todos',
     periodo: 'todos'
   });
-  
-  // CRUD Sorteios
-  const addSorteio = useCallback((sorteio: Sorteio) => {
-    setSorteios(prev => [...prev, sorteio]);
-  }, []);
-  
-  const updateSorteio = useCallback((id: string, updates: Partial<Sorteio>) => {
-    setSorteios(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
-    if (sorteioAtivo?.id === id) {
-      setSorteioAtivo(prev => prev ? { ...prev, ...updates } : null);
+
+  // API call helper
+  const callApi = useCallback(async (action: string, data: Record<string, any> = {}) => {
+    const response = await supabase.functions.invoke('postgres-api', {
+      body: { action, data }
+    });
+    
+    if (response.error) {
+      console.error('API Error:', response.error);
+      throw new Error(response.error.message);
     }
-  }, [sorteioAtivo]);
-  
-  const deleteSorteio = useCallback((id: string) => {
-    setSorteios(prev => prev.filter(s => s.id !== id));
-    if (sorteioAtivo?.id === id) {
-      setSorteioAtivo(null);
+    
+    return response.data;
+  }, []);
+
+  // ================== SORTEIOS ==================
+  const loadSorteios = useCallback(async () => {
+    if (!user) return;
+    
+    try {
+      setIsLoading(true);
+      const result = await callApi('getSorteios', { user_id: user.id });
+      setSorteios(result.data || []);
+    } catch (error: any) {
+      console.error('Error loading sorteios:', error);
+      toast({
+        title: "Erro ao carregar sorteios",
+        description: error.message,
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoading(false);
     }
-  }, [sorteioAtivo]);
-  
-  // CRUD Vendedores
-  const addVendedor = useCallback((vendedor: Vendedor) => {
-    setVendedores(prev => [...prev, vendedor]);
-  }, []);
-  
-  const updateVendedor = useCallback((id: string, updates: Partial<Vendedor>) => {
-    setVendedores(prev => prev.map(v => v.id === id ? { ...v, ...updates } : v));
-  }, []);
-  
-  const deleteVendedor = useCallback((id: string) => {
-    setVendedores(prev => prev.filter(v => v.id !== id));
-  }, []);
-  
-  // CRUD Atribuições
-  const addAtribuicao = useCallback((atribuicao: Atribuicao) => {
-    setAtribuicoes(prev => [...prev, atribuicao]);
-  }, []);
-  
-  const addCartelasToAtribuicao = useCallback((vendedorId: string, cartelas: number[]) => {
-    setAtribuicoes(prev => prev.map(a => {
-      if (a.vendedor_id === vendedorId) {
-        const novasCartelas = cartelas.map(num => ({
-          numero: num,
-          status: 'ativa' as const,
-          data_atribuicao: new Date().toISOString()
-        }));
-        return {
-          ...a,
-          cartelas: [...a.cartelas, ...novasCartelas],
-          updated_at: new Date().toISOString()
-        };
+  }, [user, callApi, toast]);
+
+  const addSorteio = useCallback(async (sorteio: Omit<Sorteio, 'id' | 'created_at' | 'updated_at'>) => {
+    if (!user) return;
+    
+    try {
+      setIsLoading(true);
+      await callApi('createSorteio', { ...sorteio, user_id: user.id });
+      toast({ title: "Sorteio criado com sucesso!" });
+      await loadSorteios();
+    } catch (error: any) {
+      console.error('Error creating sorteio:', error);
+      toast({
+        title: "Erro ao criar sorteio",
+        description: error.message,
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [user, callApi, toast, loadSorteios]);
+
+  const updateSorteio = useCallback(async (id: string, updates: Partial<Sorteio>) => {
+    try {
+      setIsLoading(true);
+      const sorteio = sorteios.find(s => s.id === id);
+      if (!sorteio) return;
+      
+      await callApi('updateSorteio', { id, ...sorteio, ...updates });
+      toast({ title: "Sorteio atualizado!" });
+      await loadSorteios();
+      
+      if (sorteioAtivo?.id === id) {
+        setSorteioAtivoState(prev => prev ? { ...prev, ...updates } : null);
       }
-      return a;
-    }));
-  }, []);
-  
-  const removeCartelaFromAtribuicao = useCallback((vendedorId: string, numeroCartela: number) => {
-    setAtribuicoes(prev => prev.map(a => {
-      if (a.vendedor_id === vendedorId) {
-        return {
-          ...a,
-          cartelas: a.cartelas.filter(c => c.numero !== numeroCartela),
-          updated_at: new Date().toISOString()
-        };
+    } catch (error: any) {
+      console.error('Error updating sorteio:', error);
+      toast({
+        title: "Erro ao atualizar sorteio",
+        description: error.message,
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [sorteios, sorteioAtivo, callApi, toast, loadSorteios]);
+
+  const deleteSorteio = useCallback(async (id: string) => {
+    try {
+      setIsLoading(true);
+      await callApi('deleteSorteio', { id });
+      toast({ title: "Sorteio excluído!" });
+      await loadSorteios();
+      
+      if (sorteioAtivo?.id === id) {
+        setSorteioAtivoState(null);
       }
-      return a;
-    }));
-  }, []);
-  
-  const updateCartelaStatusInAtribuicao = useCallback((vendedorId: string, numeroCartela: number, status: 'ativa' | 'vendida' | 'devolvida') => {
-    setAtribuicoes(prev => prev.map(a => {
-      if (a.vendedor_id === vendedorId) {
-        return {
-          ...a,
-          cartelas: a.cartelas.map(c => 
-            c.numero === numeroCartela 
-              ? { ...c, status, data_devolucao: status === 'devolvida' ? new Date().toISOString() : undefined }
-              : c
-          ),
-          updated_at: new Date().toISOString()
-        };
-      }
-      return a;
-    }));
-  }, []);
-  
-  const deleteAtribuicao = useCallback((id: string) => {
-    setAtribuicoes(prev => prev.filter(a => a.id !== id));
-  }, []);
-  
-  // CRUD Vendas
-  const addVenda = useCallback((venda: Venda) => {
-    setVendas(prev => [...prev, venda]);
-  }, []);
-  
-  const updateVenda = useCallback((id: string, updates: Partial<Venda>) => {
-    setVendas(prev => prev.map(v => v.id === id ? { ...v, ...updates } : v));
-  }, []);
-  
-  const deleteVenda = useCallback((id: string) => {
-    setVendas(prev => prev.filter(v => v.id !== id));
-  }, []);
-  
-  // Utilities
-  const gerarCartelas = useCallback((quantidade: number) => {
-    const novasCartelas: Cartela[] = [];
-    for (let i = 1; i <= quantidade; i++) {
-      novasCartelas.push({
-        numero: i,
-        status: 'disponivel'
+    } catch (error: any) {
+      console.error('Error deleting sorteio:', error);
+      toast({
+        title: "Erro ao excluir sorteio",
+        description: error.message,
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [sorteioAtivo, callApi, toast, loadSorteios]);
+
+  // ================== VENDEDORES ==================
+  const loadVendedores = useCallback(async () => {
+    if (!sorteioAtivo) return;
+    
+    try {
+      const result = await callApi('getVendedores', { sorteio_id: sorteioAtivo.id });
+      setVendedores(result.data || []);
+    } catch (error: any) {
+      console.error('Error loading vendedores:', error);
+    }
+  }, [sorteioAtivo, callApi]);
+
+  const addVendedor = useCallback(async (vendedor: Omit<Vendedor, 'id' | 'created_at' | 'updated_at'>) => {
+    if (!sorteioAtivo) return;
+    
+    try {
+      await callApi('createVendedor', { ...vendedor, sorteio_id: sorteioAtivo.id });
+      toast({ title: "Vendedor criado!" });
+      await loadVendedores();
+    } catch (error: any) {
+      console.error('Error creating vendedor:', error);
+      toast({
+        title: "Erro ao criar vendedor",
+        description: error.message,
+        variant: "destructive"
       });
     }
-    setCartelas(novasCartelas);
+  }, [sorteioAtivo, callApi, toast, loadVendedores]);
+
+  const updateVendedor = useCallback(async (id: string, updates: Partial<Vendedor>) => {
+    try {
+      const vendedor = vendedores.find(v => v.id === id);
+      if (!vendedor) return;
+      
+      await callApi('updateVendedor', { id, ...vendedor, ...updates });
+      toast({ title: "Vendedor atualizado!" });
+      await loadVendedores();
+    } catch (error: any) {
+      console.error('Error updating vendedor:', error);
+      toast({
+        title: "Erro ao atualizar vendedor",
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  }, [vendedores, callApi, toast, loadVendedores]);
+
+  const deleteVendedor = useCallback(async (id: string) => {
+    try {
+      await callApi('deleteVendedor', { id });
+      toast({ title: "Vendedor excluído!" });
+      await loadVendedores();
+    } catch (error: any) {
+      console.error('Error deleting vendedor:', error);
+      toast({
+        title: "Erro ao excluir vendedor",
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  }, [callApi, toast, loadVendedores]);
+
+  // ================== CARTELAS ==================
+  const loadCartelas = useCallback(async () => {
+    if (!sorteioAtivo) return;
+    
+    try {
+      const result = await callApi('getCartelas', { sorteio_id: sorteioAtivo.id });
+      setCartelas(result.data || []);
+    } catch (error: any) {
+      console.error('Error loading cartelas:', error);
+    }
+  }, [sorteioAtivo, callApi]);
+
+  const gerarCartelas = useCallback(async (quantidade: number) => {
+    if (!sorteioAtivo) return;
+    
+    try {
+      setIsLoading(true);
+      await callApi('gerarCartelas', { sorteio_id: sorteioAtivo.id, quantidade });
+      toast({ title: `${quantidade} cartelas geradas!` });
+      await loadCartelas();
+    } catch (error: any) {
+      console.error('Error generating cartelas:', error);
+      toast({
+        title: "Erro ao gerar cartelas",
+        description: error.message,
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [sorteioAtivo, callApi, toast, loadCartelas]);
+
+  const atualizarStatusCartela = useCallback(async (numero: number, status: Cartela['status'], vendedorId?: string) => {
+    if (!sorteioAtivo) return;
+    
+    try {
+      await callApi('updateCartela', { 
+        sorteio_id: sorteioAtivo.id, 
+        numero, 
+        status, 
+        vendedor_id: vendedorId || null 
+      });
+      await loadCartelas();
+    } catch (error: any) {
+      console.error('Error updating cartela:', error);
+    }
+  }, [sorteioAtivo, callApi, loadCartelas]);
+
+  // ================== ATRIBUIÇÕES ==================
+  const loadAtribuicoes = useCallback(async () => {
+    if (!sorteioAtivo) return;
+    
+    try {
+      const result = await callApi('getAtribuicoes', { sorteio_id: sorteioAtivo.id });
+      setAtribuicoes(result.data || []);
+    } catch (error: any) {
+      console.error('Error loading atribuicoes:', error);
+    }
+  }, [sorteioAtivo, callApi]);
+
+  const addAtribuicao = useCallback(async (vendedorId: string, cartelasNums: number[]) => {
+    if (!sorteioAtivo) return;
+    
+    try {
+      await callApi('createAtribuicao', { 
+        sorteio_id: sorteioAtivo.id, 
+        vendedor_id: vendedorId, 
+        cartelas: cartelasNums 
+      });
+      toast({ title: "Atribuição criada!" });
+      await loadAtribuicoes();
+      await loadCartelas();
+    } catch (error: any) {
+      console.error('Error creating atribuicao:', error);
+      toast({
+        title: "Erro ao criar atribuição",
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  }, [sorteioAtivo, callApi, toast, loadAtribuicoes, loadCartelas]);
+
+  const addCartelasToAtribuicao = useCallback(async (atribuicaoId: string, vendedorId: string, cartelasNums: number[]) => {
+    if (!sorteioAtivo) return;
+    
+    try {
+      await callApi('addCartelasToAtribuicao', { 
+        atribuicao_id: atribuicaoId,
+        vendedor_id: vendedorId,
+        sorteio_id: sorteioAtivo.id,
+        cartelas: cartelasNums 
+      });
+      toast({ title: "Cartelas adicionadas!" });
+      await loadAtribuicoes();
+      await loadCartelas();
+    } catch (error: any) {
+      console.error('Error adding cartelas:', error);
+      toast({
+        title: "Erro ao adicionar cartelas",
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  }, [sorteioAtivo, callApi, toast, loadAtribuicoes, loadCartelas]);
+
+  const removeCartelaFromAtribuicao = useCallback(async (atribuicaoId: string, numeroCartela: number) => {
+    if (!sorteioAtivo) return;
+    
+    try {
+      await callApi('removeCartelaFromAtribuicao', { 
+        atribuicao_id: atribuicaoId,
+        sorteio_id: sorteioAtivo.id,
+        numero_cartela: numeroCartela 
+      });
+      toast({ title: "Cartela removida!" });
+      await loadAtribuicoes();
+      await loadCartelas();
+    } catch (error: any) {
+      console.error('Error removing cartela:', error);
+    }
+  }, [sorteioAtivo, callApi, toast, loadAtribuicoes, loadCartelas]);
+
+  const updateCartelaStatusInAtribuicao = useCallback(async (atribuicaoId: string, numeroCartela: number, status: 'ativa' | 'vendida' | 'devolvida') => {
+    if (!sorteioAtivo) return;
+    
+    try {
+      await callApi('updateCartelaStatusInAtribuicao', { 
+        atribuicao_id: atribuicaoId,
+        sorteio_id: sorteioAtivo.id,
+        numero_cartela: numeroCartela,
+        status
+      });
+      await loadAtribuicoes();
+      await loadCartelas();
+    } catch (error: any) {
+      console.error('Error updating cartela status:', error);
+    }
+  }, [sorteioAtivo, callApi, loadAtribuicoes, loadCartelas]);
+
+  const deleteAtribuicao = useCallback(async (id: string) => {
+    if (!sorteioAtivo) return;
+    
+    try {
+      await callApi('deleteAtribuicao', { atribuicao_id: id, sorteio_id: sorteioAtivo.id });
+      toast({ title: "Atribuição excluída!" });
+      await loadAtribuicoes();
+      await loadCartelas();
+    } catch (error: any) {
+      console.error('Error deleting atribuicao:', error);
+      toast({
+        title: "Erro ao excluir atribuição",
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  }, [sorteioAtivo, callApi, toast, loadAtribuicoes, loadCartelas]);
+
+  // ================== VENDAS ==================
+  const loadVendas = useCallback(async () => {
+    if (!sorteioAtivo) return;
+    
+    try {
+      const result = await callApi('getVendas', { sorteio_id: sorteioAtivo.id });
+      setVendas(result.data || []);
+    } catch (error: any) {
+      console.error('Error loading vendas:', error);
+    }
+  }, [sorteioAtivo, callApi]);
+
+  const addVenda = useCallback(async (venda: Omit<Venda, 'id' | 'created_at' | 'updated_at'>) => {
+    if (!sorteioAtivo) return;
+    
+    try {
+      await callApi('createVenda', { ...venda, sorteio_id: sorteioAtivo.id });
+      toast({ title: "Venda registrada!" });
+      await loadVendas();
+      await loadCartelas();
+      await loadAtribuicoes();
+    } catch (error: any) {
+      console.error('Error creating venda:', error);
+      toast({
+        title: "Erro ao registrar venda",
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  }, [sorteioAtivo, callApi, toast, loadVendas, loadCartelas, loadAtribuicoes]);
+
+  const updateVenda = useCallback(async (id: string, updates: Partial<Venda>) => {
+    if (!sorteioAtivo) return;
+    
+    try {
+      const venda = vendas.find(v => v.id === id);
+      if (!venda) return;
+      
+      await callApi('updateVenda', { id, sorteio_id: sorteioAtivo.id, ...venda, ...updates });
+      toast({ title: "Venda atualizada!" });
+      await loadVendas();
+      await loadCartelas();
+      await loadAtribuicoes();
+    } catch (error: any) {
+      console.error('Error updating venda:', error);
+      toast({
+        title: "Erro ao atualizar venda",
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  }, [sorteioAtivo, vendas, callApi, toast, loadVendas, loadCartelas, loadAtribuicoes]);
+
+  const deleteVenda = useCallback(async (id: string) => {
+    try {
+      await callApi('deleteVenda', { id });
+      toast({ title: "Venda excluída!" });
+      await loadVendas();
+      await loadCartelas();
+      await loadAtribuicoes();
+    } catch (error: any) {
+      console.error('Error deleting venda:', error);
+      toast({
+        title: "Erro ao excluir venda",
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  }, [callApi, toast, loadVendas, loadCartelas, loadAtribuicoes]);
+
+  // ================== REFRESH & SET SORTEIO ATIVO ==================
+  const refreshData = useCallback(async () => {
+    if (!sorteioAtivo) return;
+    
+    setIsLoading(true);
+    try {
+      await Promise.all([
+        loadVendedores(),
+        loadCartelas(),
+        loadAtribuicoes(),
+        loadVendas()
+      ]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [sorteioAtivo, loadVendedores, loadCartelas, loadAtribuicoes, loadVendas]);
+
+  const setSorteioAtivo = useCallback((sorteio: Sorteio | null) => {
+    setSorteioAtivoState(sorteio);
   }, []);
-  
-  const atualizarStatusCartela = useCallback((
-    numero: number, 
-    status: Cartela['status'], 
-    vendedorId?: string, 
-    vendedorNome?: string
-  ) => {
-    setCartelas(prev => prev.map(c => 
-      c.numero === numero 
-        ? { ...c, status, vendedor_id: vendedorId, vendedor_nome: vendedorNome }
-        : c
-    ));
-  }, []);
-  
+
+  // Load sorteio data when sorteio changes
+  useEffect(() => {
+    if (sorteioAtivo) {
+      refreshData();
+    } else {
+      setVendedores([]);
+      setCartelas([]);
+      setAtribuicoes([]);
+      setVendas([]);
+    }
+  }, [sorteioAtivo?.id]);
+
+  // Load sorteios when user changes
+  useEffect(() => {
+    if (user) {
+      loadSorteios();
+    }
+  }, [user?.id]);
+
   const value: BingoContextType = {
     sorteioAtivo,
     sorteios,
@@ -251,33 +562,33 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     filtrosAtribuicoes,
     filtrosVendas,
     setSorteioAtivo,
-    setSorteios,
-    setVendedores,
-    setCartelas,
-    setAtribuicoes,
-    setVendas,
     setCurrentTab,
-    setIsLoading,
     setFiltrosVendedores,
     setFiltrosCartelas,
     setFiltrosAtribuicoes,
     setFiltrosVendas,
+    loadSorteios,
     addSorteio,
     updateSorteio,
     deleteSorteio,
+    loadVendedores,
     addVendedor,
     updateVendedor,
     deleteVendedor,
+    loadCartelas,
+    gerarCartelas,
+    atualizarStatusCartela,
+    loadAtribuicoes,
     addAtribuicao,
     addCartelasToAtribuicao,
     removeCartelaFromAtribuicao,
     updateCartelaStatusInAtribuicao,
     deleteAtribuicao,
+    loadVendas,
     addVenda,
     updateVenda,
     deleteVenda,
-    gerarCartelas,
-    atualizarStatusCartela
+    refreshData
   };
   
   return (
