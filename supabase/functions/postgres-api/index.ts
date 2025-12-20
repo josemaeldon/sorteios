@@ -178,10 +178,41 @@ serve(async (req) => {
         );
 
       case 'updateProfile':
-        await client.queryObject(`
-          UPDATE usuarios SET titulo_sistema = $2, avatar_url = $3, updated_at = NOW()
-          WHERE id = $1
-        `, [data.id, data.titulo_sistema, data.avatar_url || null]);
+        // If updating password, verify current password first
+        if (data.nova_senha) {
+          const currentUserResult = await client.queryObject(`
+            SELECT senha_hash FROM usuarios WHERE id = $1
+          `, [data.id]);
+          
+          if (currentUserResult.rows.length === 0) {
+            return new Response(
+              JSON.stringify({ error: 'Usuário não encontrado' }),
+              { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            );
+          }
+          
+          const currentUser = currentUserResult.rows[0] as any;
+          const senhaValida = await verifyPassword(data.senha_atual, currentUser.senha_hash);
+          
+          if (!senhaValida) {
+            return new Response(
+              JSON.stringify({ error: 'Senha atual incorreta' }),
+              { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            );
+          }
+          
+          const newHash = await hashPassword(data.nova_senha);
+          await client.queryObject(`
+            UPDATE usuarios SET nome = $2, email = $3, titulo_sistema = $4, avatar_url = $5, senha_hash = $6, updated_at = NOW()
+            WHERE id = $1
+          `, [data.id, data.nome, data.email, data.titulo_sistema, data.avatar_url || null, newHash]);
+        } else {
+          await client.queryObject(`
+            UPDATE usuarios SET nome = $2, email = $3, titulo_sistema = $4, avatar_url = $5, updated_at = NOW()
+            WHERE id = $1
+          `, [data.id, data.nome, data.email, data.titulo_sistema, data.avatar_url || null]);
+        }
+        
         return new Response(
           JSON.stringify({ success: true }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
