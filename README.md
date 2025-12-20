@@ -498,6 +498,212 @@ services:
 
 ---
 
+## 🏠 Deploy 100% Self-Hosted
+
+Para rodar o sistema completamente em sua própria infraestrutura, sem depender do Lovable Cloud:
+
+### Arquivos Disponíveis
+
+| Arquivo | Descrição |
+|---------|-----------|
+| `Dockerfile.selfhosted` | Dockerfile com suporte a variáveis de ambiente em runtime |
+| `docker-compose.selfhosted.yml` | Compose simples com PostgreSQL |
+| `docker-compose.supabase-selfhosted.yml` | Supabase completo auto-hospedado |
+| `docker-entrypoint.sh` | Script para injeção de variáveis |
+| `init-db.sql` | Script de inicialização do banco |
+| `kong.yml` | Configuração do API Gateway Kong |
+| `.env.selfhosted` | Template de variáveis de ambiente |
+
+### Opção 1: Setup Simples (Apenas PostgreSQL)
+
+Para um setup mínimo com apenas o banco de dados:
+
+```bash
+# 1. Copiar template de variáveis
+cp .env.selfhosted .env
+
+# 2. Editar variáveis (senhas, URLs, etc.)
+nano .env
+
+# 3. Build da imagem self-hosted
+docker build -f Dockerfile.selfhosted -t josemaeldon/bingo-system:selfhosted .
+
+# 4. Iniciar containers
+docker-compose -f docker-compose.selfhosted.yml up -d
+```
+
+**⚠️ Nota:** Esta opção requer adaptação do código para usar PostgreSQL direto ao invés de Supabase.
+
+### Opção 2: Supabase Self-Hosted Completo (Recomendado)
+
+Para ter todas as funcionalidades do Supabase rodando localmente:
+
+```bash
+# 1. Copiar template de variáveis
+cp .env.selfhosted .env
+
+# 2. Gerar novos secrets (IMPORTANTE para produção!)
+# Acesse: https://supabase.com/docs/guides/self-hosting/docker#generate-api-keys
+# E substitua as chaves no .env
+
+# 3. Editar variáveis
+nano .env
+
+# 4. Criar diretório para init scripts
+mkdir -p volumes/db/init
+
+# 5. Build da imagem self-hosted
+docker build -f Dockerfile.selfhosted -t josemaeldon/bingo-system:selfhosted .
+
+# 6. Iniciar Supabase + App
+docker-compose -f docker-compose.supabase-selfhosted.yml up -d
+```
+
+#### Serviços Disponíveis
+
+| Serviço | Porta | Descrição |
+|---------|-------|-----------|
+| **App (Frontend)** | 80 | Interface do sistema |
+| **Kong (API Gateway)** | 8000 | Endpoint das APIs |
+| **Studio (Dashboard)** | 3001 | Interface admin do Supabase |
+| **PostgreSQL** | 5432 | Banco de dados |
+
+#### Acessos
+
+- **Sistema**: http://localhost
+- **API Supabase**: http://localhost:8000
+- **Supabase Studio**: http://localhost:3001
+- **PostgreSQL**: localhost:5432
+
+### Deploy no Portainer (Self-Hosted)
+
+1. Acesse **Stacks** → **Add stack**
+2. Nome: `bingo-selfhosted`
+3. Cole o conteúdo de `docker-compose.supabase-selfhosted.yml`
+4. Em **Environment variables**, adicione:
+   - `POSTGRES_PASSWORD`: sua_senha_segura
+   - `JWT_SECRET`: seu_jwt_secret_32chars
+   - `API_EXTERNAL_URL`: http://seu-servidor:8000
+   - `SITE_URL`: http://seu-servidor
+5. Clique em **Deploy the stack**
+
+### Variáveis de Ambiente Importantes
+
+```env
+# Obrigatórias
+POSTGRES_PASSWORD=sua-senha-super-secreta
+JWT_SECRET=seu-jwt-com-pelo-menos-32-caracteres
+
+# URLs (ajuste para seu servidor)
+API_EXTERNAL_URL=http://localhost:8000
+SITE_URL=http://localhost
+
+# Keys (gere novas para produção!)
+ANON_KEY=sua_anon_key
+SERVICE_ROLE_KEY=sua_service_role_key
+```
+
+### Gerando Novas Chaves JWT
+
+Para produção, gere novas chaves:
+
+```bash
+# Gerar JWT_SECRET
+openssl rand -base64 32
+
+# Para ANON_KEY e SERVICE_ROLE_KEY, use:
+# https://supabase.com/docs/guides/self-hosting/docker#generate-api-keys
+```
+
+### Configuração com Traefik (Self-Hosted + Produção)
+
+Para deploy em produção com SSL via Traefik:
+
+```yaml
+version: "3.8"
+
+services:
+  app:
+    image: josemaeldon/bingo-system:selfhosted
+    environment:
+      VITE_SUPABASE_URL: https://api.seudominio.com
+      VITE_SUPABASE_ANON_KEY: ${ANON_KEY}
+      VITE_SUPABASE_PROJECT_ID: selfhosted
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.bingo.rule=Host(`bingo.seudominio.com`)"
+        - "traefik.http.routers.bingo.entrypoints=websecure"
+        - "traefik.http.routers.bingo.tls.certresolver=letsencryptresolver"
+        - "traefik.http.services.bingo-service.loadbalancer.server.port=80"
+    networks:
+      - luzianet
+      - supabase-network
+
+  kong:
+    image: kong:2.8.1
+    # ... configuração do Kong ...
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.supabase-api.rule=Host(`api.seudominio.com`)"
+        - "traefik.http.routers.supabase-api.entrypoints=websecure"
+        - "traefik.http.routers.supabase-api.tls.certresolver=letsencryptresolver"
+        - "traefik.http.services.supabase-api-service.loadbalancer.server.port=8000"
+    networks:
+      - luzianet
+      - supabase-network
+
+networks:
+  luzianet:
+    external: true
+  supabase-network:
+    driver: overlay
+```
+
+### Backup Self-Hosted
+
+```bash
+# Backup do PostgreSQL
+docker exec supabase-postgres pg_dump -U postgres postgres > backup_$(date +%Y%m%d).sql
+
+# Backup dos volumes
+docker run --rm -v supabase_postgres_data:/data -v $(pwd):/backup alpine tar czf /backup/postgres_data.tar.gz /data
+docker run --rm -v supabase_storage_data:/data -v $(pwd):/backup alpine tar czf /backup/storage_data.tar.gz /data
+
+# Restaurar PostgreSQL
+docker exec -i supabase-postgres psql -U postgres postgres < backup.sql
+```
+
+### Migração do Lovable Cloud para Self-Hosted
+
+1. **Exportar dados do Lovable Cloud:**
+   - Use a ferramenta de export do sistema ou acesse o backend
+
+2. **Importar para Self-Hosted:**
+   ```bash
+   # Copiar backup para o container
+   docker cp backup.sql supabase-postgres:/tmp/
+   
+   # Importar
+   docker exec -it supabase-postgres psql -U postgres postgres -f /tmp/backup.sql
+   ```
+
+3. **Atualizar URLs:**
+   - Altere `VITE_SUPABASE_URL` para apontar para seu servidor
+   - Rebuild da imagem com as novas variáveis
+
+### Usuário Admin Padrão (Self-Hosted)
+
+Ao usar o `init-db.sql`, um usuário admin é criado automaticamente:
+
+- **Email:** admin@bingo.local
+- **Senha:** admin123
+
+**⚠️ IMPORTANTE:** Altere a senha imediatamente após o primeiro login!
+
+---
+
 ## Instalação em Servidor Linux (Sem Docker)
 
 ### Pré-requisitos
