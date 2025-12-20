@@ -66,6 +66,7 @@ interface BingoContextType {
   removeCartelaFromAtribuicao: (atribuicaoId: string, numeroCartela: number) => Promise<void>;
   updateCartelaStatusInAtribuicao: (atribuicaoId: string, numeroCartela: number, status: 'ativa' | 'vendida' | 'devolvida') => Promise<void>;
   deleteAtribuicao: (id: string) => Promise<void>;
+  transferirCartela: (atribuicaoOrigemId: string, numeroCartela: number, vendedorDestinoId: string) => Promise<void>;
   
   // CRUD Operations - Vendas
   loadVendas: () => Promise<void>;
@@ -446,7 +447,29 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   }, [sorteioAtivo, callApi, toast, loadAtribuicoes, loadCartelas]);
 
-  // ================== VENDAS ==================
+  const transferirCartela = useCallback(async (atribuicaoOrigemId: string, numeroCartela: number, vendedorDestinoId: string) => {
+    if (!sorteioAtivo) return;
+    
+    try {
+      await callApi('transferirCartela', { 
+        atribuicao_origem_id: atribuicaoOrigemId,
+        sorteio_id: sorteioAtivo.id,
+        numero_cartela: numeroCartela,
+        vendedor_destino_id: vendedorDestinoId
+      });
+      toast({ title: "Cartela transferida!" });
+      await loadAtribuicoes();
+      await loadCartelas();
+    } catch (error: any) {
+      console.error('Error transferring cartela:', error);
+      toast({
+        title: "Erro ao transferir cartela",
+        description: error.message,
+        variant: "destructive"
+      });
+      throw error;
+    }
+  }, [sorteioAtivo, callApi, toast, loadAtribuicoes, loadCartelas]);
   const loadVendas = useCallback(async () => {
     if (!sorteioAtivo) return;
     
@@ -592,6 +615,7 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     removeCartelaFromAtribuicao,
     updateCartelaStatusInAtribuicao,
     deleteAtribuicao,
+    transferirCartela,
     loadVendas,
     addVenda,
     updateVenda,

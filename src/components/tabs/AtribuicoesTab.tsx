@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { useBingo } from '@/contexts/BingoContext';
-import { ListTodo, Plus, Search, Filter, Eraser, Edit, Trash2, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react';
+import { ListTodo, Plus, Search, Filter, Eraser, Edit, Trash2, ChevronDown, ChevronUp, RotateCcw, ArrowRightLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { formatarData, formatarNumeroCartela, getStatusLabel } from '@/lib/utils/formatters';
 import AtribuicaoModal from '@/components/modals/AtribuicaoModal';
+import TransferenciaModal from '@/components/modals/TransferenciaModal';
 import { useToast } from '@/hooks/use-toast';
 import { CartelaAtribuida, Atribuicao } from '@/types/bingo';
 import {
@@ -43,6 +44,11 @@ const AtribuicoesTab: React.FC = () => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deletingAtribuicao, setDeletingAtribuicao] = useState<{ id: string; vendedorId: string; cartela?: number } | null>(null);
   const [actionType, setActionType] = useState<'devolver' | 'excluir-cartela' | 'excluir-atribuicao'>('excluir-atribuicao');
+  
+  // Transfer modal state
+  const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
+  const [transferAtribuicao, setTransferAtribuicao] = useState<Atribuicao | null>(null);
+  const [transferCartelaNumero, setTransferCartelaNumero] = useState<number | null>(null);
 
   if (!sorteioAtivo) {
     return (
@@ -92,6 +98,12 @@ const AtribuicoesTab: React.FC = () => {
   const handleEditarAtribuicao = (atribuicao: Atribuicao) => {
     setEditingAtribuicao(atribuicao);
     setIsModalOpen(true);
+  };
+
+  const handleTransferirCartela = (atribuicao: Atribuicao, numeroCartela: number) => {
+    setTransferAtribuicao(atribuicao);
+    setTransferCartelaNumero(numeroCartela);
+    setIsTransferModalOpen(true);
   };
 
   const confirmAction = async () => {
@@ -342,15 +354,27 @@ const AtribuicoesTab: React.FC = () => {
                                 <td className="p-3">
                                   <div className="flex justify-center gap-2">
                                     {cartela.status === 'ativa' && (
-                                      <Button 
-                                        size="sm" 
-                                        variant="outline" 
-                                        onClick={() => handleDevolverCartela(atribuicao.id, cartela.numero)}
-                                        className="gap-1"
-                                      >
-                                        <RotateCcw className="w-4 h-4" />
-                                        Devolver
-                                      </Button>
+                                      <>
+                                        <Button 
+                                          size="sm" 
+                                          variant="outline" 
+                                          onClick={() => handleTransferirCartela(atribuicao, cartela.numero)}
+                                          className="gap-1"
+                                          title="Transferir para outro vendedor"
+                                        >
+                                          <ArrowRightLeft className="w-4 h-4" />
+                                          Transferir
+                                        </Button>
+                                        <Button 
+                                          size="sm" 
+                                          variant="outline" 
+                                          onClick={() => handleDevolverCartela(atribuicao.id, cartela.numero)}
+                                          className="gap-1"
+                                        >
+                                          <RotateCcw className="w-4 h-4" />
+                                          Devolver
+                                        </Button>
+                                      </>
                                     )}
                                     {cartela.status !== 'vendida' && (
                                       <Button 
@@ -403,6 +427,17 @@ const AtribuicoesTab: React.FC = () => {
         isOpen={isModalOpen}
         onClose={() => { setIsModalOpen(false); setEditingAtribuicao(null); }}
         editingAtribuicao={editingAtribuicao}
+      />
+
+      <TransferenciaModal
+        isOpen={isTransferModalOpen}
+        onClose={() => {
+          setIsTransferModalOpen(false);
+          setTransferAtribuicao(null);
+          setTransferCartelaNumero(null);
+        }}
+        atribuicaoOrigem={transferAtribuicao}
+        cartelaNumero={transferCartelaNumero}
       />
 
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
