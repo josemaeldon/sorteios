@@ -1,6 +1,7 @@
 # =====================================================
 # BINGO SYSTEM - Self-Hosted Docker Image
 # Imagem completamente preparada para deploy
+# Suporta modo Supabase e modo Selfhosted (PostgreSQL)
 # =====================================================
 
 # Build stage
@@ -23,6 +24,9 @@ ENV VITE_SUPABASE_URL=__VITE_SUPABASE_URL__
 ENV VITE_SUPABASE_ANON_KEY=__VITE_SUPABASE_ANON_KEY__
 ENV VITE_SUPABASE_PUBLISHABLE_KEY=__VITE_SUPABASE_PUBLISHABLE_KEY__
 ENV VITE_SUPABASE_PROJECT_ID=__VITE_SUPABASE_PROJECT_ID__
+ENV VITE_API_BASE_URL=__VITE_API_BASE_URL__
+ENV VITE_BASIC_AUTH_USER=__VITE_BASIC_AUTH_USER__
+ENV VITE_BASIC_AUTH_PASS=__VITE_BASIC_AUTH_PASS__
 
 RUN npm run build
 

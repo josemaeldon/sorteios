@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { User, AuthState, LoginCredentials, CreateUserData } from '@/types/auth';
-import { supabase } from '@/integrations/supabase/client';
+import { callApi, getStoredToken, setStoredToken, clearStoredToken, isSelfhostedMode } from '@/lib/apiClient';
 import { useToast } from '@/hooks/use-toast';
 
 interface AuthContextType extends AuthState {
@@ -19,7 +19,6 @@ interface AuthContextType extends AuthState {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const AUTH_KEY = 'bingo_auth_user';
-const TOKEN_KEY = 'bingo_auth_token';
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { toast } = useToast();
@@ -29,38 +28,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const getAuthToken = useCallback(() => token, [token]);
 
-  const callApi = async (action: string, data: any = {}) => {
-    const headers: Record<string, string> = {};
-    const currentToken = localStorage.getItem(TOKEN_KEY);
-    
-    if (currentToken) {
-      headers['Authorization'] = `Bearer ${currentToken}`;
-    }
-
-    const response = await supabase.functions.invoke('postgres-api', {
-      body: { action, data },
-      headers
-    });
-    
-    if (response.error) {
-      console.error('API Error:', response.error);
-      // If unauthorized, clear auth state
-      if (response.error.message?.includes('401') || response.error.message?.includes('Não autorizado')) {
-        setUser(null);
-        setToken(null);
-        localStorage.removeItem(AUTH_KEY);
-        localStorage.removeItem(TOKEN_KEY);
-      }
-      throw new Error(response.error.message);
-    }
-    
-    return response.data;
-  };
-
   // Check stored auth on mount
   useEffect(() => {
     const stored = localStorage.getItem(AUTH_KEY);
-    const storedToken = localStorage.getItem(TOKEN_KEY);
+    const storedToken = getStoredToken();
     if (stored && storedToken) {
       try {
         const parsed = JSON.parse(stored);
@@ -68,7 +39,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setToken(storedToken);
       } catch (e) {
         localStorage.removeItem(AUTH_KEY);
-        localStorage.removeItem(TOKEN_KEY);
+        clearStoredToken();
       }
     }
     setIsLoading(false);
@@ -114,7 +85,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setUser(result.user);
         setToken(result.token);
         localStorage.setItem(AUTH_KEY, JSON.stringify(result.user));
-        localStorage.setItem(TOKEN_KEY, result.token);
+        setStoredToken(result.token);
         toast({
           title: "Login realizado",
           description: `Bem-vindo, ${result.user.nome}!`,
@@ -135,7 +106,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setUser(null);
     setToken(null);
     localStorage.removeItem(AUTH_KEY);
-    localStorage.removeItem(TOKEN_KEY);
+    clearStoredToken();
     toast({
       title: "Logout realizado",
       description: "Você foi desconectado.",
