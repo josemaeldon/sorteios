@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { Client } from "https://deno.land/x/postgres@v0.17.0/mod.ts";
 import { crypto } from "https://deno.land/std@0.168.0/crypto/mod.ts";
+import { encode as base64Encode, decode as base64Decode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -23,6 +24,10 @@ const getDbConfig = (): PostgresConfig => ({
   password: Deno.env.get('POSTGRES_PASSWORD') || '',
 });
 
+// JWT Secret - use a strong secret from environment or generate one
+const JWT_SECRET = Deno.env.get('JWT_SECRET') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || 'bingo_jwt_secret_2024_secure';
+const JWT_EXPIRY_HOURS = 24;
+
 // Simple hash function for passwords
 async function hashPassword(password: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -36,6 +41,120 @@ async function verifyPassword(password: string, hash: string): Promise<boolean> 
   const newHash = await hashPassword(password);
   return newHash === hash;
 }
+
+// JWT Functions
+function base64UrlEncode(data: Uint8Array): string {
+  // Convert Uint8Array to string for btoa
+  let binary = '';
+  for (let i = 0; i < data.length; i++) {
+    binary += String.fromCharCode(data[i]);
+  }
+  return btoa(binary)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+}
+
+function base64UrlDecode(str: string): Uint8Array {
+  // Add padding if needed
+  let padded = str.replace(/-/g, '+').replace(/_/g, '/');
+  while (padded.length % 4) {
+    padded += '=';
+  }
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+async function createJwt(payload: { user_id: string; role: string; email: string }): Promise<string> {
+  const header = { alg: 'HS256', typ: 'JWT' };
+  const now = Math.floor(Date.now() / 1000);
+  const fullPayload = {
+    ...payload,
+    iat: now,
+    exp: now + (JWT_EXPIRY_HOURS * 60 * 60),
+  };
+
+  const encoder = new TextEncoder();
+  const headerB64 = base64UrlEncode(encoder.encode(JSON.stringify(header)));
+  const payloadB64 = base64UrlEncode(encoder.encode(JSON.stringify(fullPayload)));
+
+  const signatureInput = `${headerB64}.${payloadB64}`;
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(JWT_SECRET),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(signatureInput));
+  const signatureB64 = base64UrlEncode(new Uint8Array(signature));
+
+  return `${headerB64}.${payloadB64}.${signatureB64}`;
+}
+
+async function verifyJwt(token: string): Promise<{ user_id: string; role: string; email: string } | null> {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+
+    const [headerB64, payloadB64, signatureB64] = parts;
+    const encoder = new TextEncoder();
+
+    // Verify signature
+    const signatureInput = `${headerB64}.${payloadB64}`;
+    const key = await crypto.subtle.importKey(
+      'raw',
+      encoder.encode(JWT_SECRET),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['verify']
+    );
+    const signatureBytes = base64UrlDecode(signatureB64);
+    // Create a new ArrayBuffer to avoid SharedArrayBuffer issues
+    const signatureBuffer = new ArrayBuffer(signatureBytes.length);
+    new Uint8Array(signatureBuffer).set(signatureBytes);
+    
+    const isValid = await crypto.subtle.verify('HMAC', key, signatureBuffer, encoder.encode(signatureInput));
+
+    if (!isValid) return null;
+
+    // Decode payload
+    const decoder = new TextDecoder();
+    const payload = JSON.parse(decoder.decode(base64UrlDecode(payloadB64)));
+
+    // Check expiry
+    const now = Math.floor(Date.now() / 1000);
+    if (payload.exp && payload.exp < now) {
+      console.log('Token expired');
+      return null;
+    }
+
+    return { user_id: payload.user_id, role: payload.role, email: payload.email };
+  } catch (error) {
+    console.error('JWT verification error:', error);
+    return null;
+  }
+}
+
+// Extract and verify token from request
+async function getAuthenticatedUser(req: Request): Promise<{ user_id: string; role: string; email: string } | null> {
+  const authHeader = req.headers.get('Authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return null;
+  }
+  const token = authHeader.substring(7);
+  return await verifyJwt(token);
+}
+
+// Actions that don't require authentication
+const publicActions = ['checkFirstAccess', 'setupAdmin', 'login'];
+
+// Actions that require admin role
+const adminActions = ['getUsers', 'createUser', 'updateUser', 'deleteUser'];
 
 serve(async (req) => {
   // Handle CORS preflight requests
@@ -57,8 +176,37 @@ serve(async (req) => {
       );
     }
 
-    const { action, data } = await req.json();
+    // Clone request for auth check (body can only be read once)
+    const bodyText = await req.text();
+    const { action, data } = JSON.parse(bodyText);
     console.log(`Executing action: ${action}`);
+
+    // Check authentication for protected actions
+    if (!publicActions.includes(action)) {
+      const authUser = await getAuthenticatedUser(req);
+      
+      if (!authUser) {
+        console.log(`Unauthorized access attempt for action: ${action}`);
+        return new Response(
+          JSON.stringify({ error: 'Não autorizado. Faça login novamente.' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Check admin role for admin actions
+      if (adminActions.includes(action) && authUser.role !== 'admin') {
+        console.log(`Admin access denied for user: ${authUser.email}`);
+        return new Response(
+          JSON.stringify({ error: 'Acesso negado. Apenas administradores.' }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // IMPORTANT: Use authenticated user_id instead of client-supplied
+      // This prevents user_id spoofing attacks
+      data.authenticated_user_id = authUser.user_id;
+      data.authenticated_role = authUser.role;
+    }
 
     client = new Client(config);
     await client.connect();
@@ -120,11 +268,27 @@ serve(async (req) => {
           );
         }
         
+        if (!foundUser.ativo) {
+          return new Response(
+            JSON.stringify({ error: 'Usuário inativo. Contate o administrador.' }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        
+        // Generate JWT token
+        const token = await createJwt({
+          user_id: foundUser.id,
+          role: foundUser.role,
+          email: foundUser.email
+        });
+        
         // Remove senha_hash from response
         delete foundUser.senha_hash;
         
+        console.log(`User ${foundUser.email} logged in successfully`);
+        
         return new Response(
-          JSON.stringify({ user: foundUser }),
+          JSON.stringify({ user: foundUser, token }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
 
@@ -178,11 +342,14 @@ serve(async (req) => {
         );
 
       case 'updateProfile':
+        // Use authenticated user_id - users can only update their own profile
+        const profileUserId = data.authenticated_user_id;
+        
         // If updating password, verify current password first
         if (data.nova_senha) {
           const currentUserResult = await client.queryObject(`
             SELECT senha_hash FROM usuarios WHERE id = $1
-          `, [data.id]);
+          `, [profileUserId]);
           
           if (currentUserResult.rows.length === 0) {
             return new Response(
@@ -205,12 +372,12 @@ serve(async (req) => {
           await client.queryObject(`
             UPDATE usuarios SET nome = $2, email = $3, titulo_sistema = $4, avatar_url = $5, senha_hash = $6, updated_at = NOW()
             WHERE id = $1
-          `, [data.id, data.nome, data.email, data.titulo_sistema, data.avatar_url || null, newHash]);
+          `, [profileUserId, data.nome, data.email, data.titulo_sistema, data.avatar_url || null, newHash]);
         } else {
           await client.queryObject(`
             UPDATE usuarios SET nome = $2, email = $3, titulo_sistema = $4, avatar_url = $5, updated_at = NOW()
             WHERE id = $1
-          `, [data.id, data.nome, data.email, data.titulo_sistema, data.avatar_url || null]);
+          `, [profileUserId, data.nome, data.email, data.titulo_sistema, data.avatar_url || null]);
         }
         
         return new Response(
@@ -218,11 +385,12 @@ serve(async (req) => {
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
 
-      // ================== SORTEIOS (filtered by user) ==================
+      // ================== SORTEIOS (filtered by authenticated user) ==================
       case 'getSorteios':
+        // Use authenticated user_id instead of client-supplied
         result = await client.queryObject(`
           SELECT * FROM sorteios WHERE user_id = $1 ORDER BY created_at DESC
-        `, [data.user_id]);
+        `, [data.authenticated_user_id]);
         break;
 
       case 'createSorteio': {
@@ -230,11 +398,12 @@ serve(async (req) => {
         const premiosCreate = data.premios || (data.premio ? [data.premio] : []);
         const premioCreate = premiosCreate[0] || '';
         
+        // Use authenticated user_id instead of client-supplied
         result = await client.queryObject(`
           INSERT INTO sorteios (user_id, nome, data_sorteio, premio, premios, valor_cartela, quantidade_cartelas, status)
           VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8)
           RETURNING *
-        `, [data.user_id, data.nome, data.data_sorteio, premioCreate, JSON.stringify(premiosCreate), data.valor_cartela, data.quantidade_cartelas, data.status]);
+        `, [data.authenticated_user_id, data.nome, data.data_sorteio, premioCreate, JSON.stringify(premiosCreate), data.valor_cartela, data.quantidade_cartelas, data.status]);
         
         // Generate cartelas automatically (batched)
         const newSorteioId = (result.rows[0] as any).id;
