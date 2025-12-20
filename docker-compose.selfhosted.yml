@@ -1,0 +1,74 @@
+version: "3.8"
+
+services:
+  # ============================================
+  # PostgreSQL Database
+  # ============================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: bingo-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-bingo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bingo123}
+      POSTGRES_DB: ${POSTGRES_DB:-bingo_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bingo} -d ${POSTGRES_DB:-bingo_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - bingo-network
+
+  # ============================================
+  # Supabase Studio (opcional - interface admin)
+  # ============================================
+  # Descomente se quiser interface visual para o banco
+  # studio:
+  #   image: supabase/studio:latest
+  #   restart: unless-stopped
+  #   ports:
+  #     - "3001:3000"
+  #   environment:
+  #     SUPABASE_URL: http://kong:8000
+  #     STUDIO_PG_META_URL: http://postgres:5432
+  #   networks:
+  #     - bingo-network
+
+  # ============================================
+  # Frontend Application
+  # ============================================
+  app:
+    image: josemaeldon/bingo-system:selfhosted
+    # Ou build local:
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile.selfhosted
+    container_name: bingo-app
+    restart: unless-stopped
+    environment:
+      # Configurar com suas credenciais Supabase self-hosted
+      # ou deixar vazio para usar API direta ao PostgreSQL
+      VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-}
+      VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-}
+      VITE_SUPABASE_PROJECT_ID: ${VITE_SUPABASE_PROJECT_ID:-local}
+    ports:
+      - "80:80"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - bingo-network
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  bingo-network:
+    driver: bridge
