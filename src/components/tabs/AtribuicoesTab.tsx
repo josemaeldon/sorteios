@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useBingo } from '@/contexts/BingoContext';
-import { ListTodo, Plus, Search, Filter, Eraser, Eye, Trash2, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react';
+import { ListTodo, Plus, Search, Filter, Eraser, Edit, Trash2, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -33,9 +33,7 @@ const AtribuicoesTab: React.FC = () => {
     filtrosAtribuicoes, 
     setFiltrosAtribuicoes,
     deleteAtribuicao,
-    removeCartelaFromAtribuicao,
-    updateCartelaStatusInAtribuicao,
-    atualizarStatusCartela
+    removeCartelaFromAtribuicao
   } = useBingo();
   const { toast } = useToast();
 
@@ -73,14 +71,14 @@ const AtribuicoesTab: React.FC = () => {
     return true;
   });
 
-  const handleDevolverCartela = (atribuicaoId: string, vendedorId: string, numeroCartela: number) => {
-    setDeletingAtribuicao({ id: atribuicaoId, vendedorId, cartela: numeroCartela });
+  const handleDevolverCartela = (atribuicaoId: string, numeroCartela: number) => {
+    setDeletingAtribuicao({ id: atribuicaoId, vendedorId: '', cartela: numeroCartela });
     setActionType('devolver');
     setDeleteDialogOpen(true);
   };
 
-  const handleExcluirCartela = (atribuicaoId: string, vendedorId: string, numeroCartela: number) => {
-    setDeletingAtribuicao({ id: atribuicaoId, vendedorId, cartela: numeroCartela });
+  const handleExcluirCartela = (atribuicaoId: string, numeroCartela: number) => {
+    setDeletingAtribuicao({ id: atribuicaoId, vendedorId: '', cartela: numeroCartela });
     setActionType('excluir-cartela');
     setDeleteDialogOpen(true);
   };
@@ -91,33 +89,32 @@ const AtribuicoesTab: React.FC = () => {
     setDeleteDialogOpen(true);
   };
 
-  const confirmAction = () => {
+  const handleEditarAtribuicao = (atribuicao: Atribuicao) => {
+    setEditingAtribuicao(atribuicao);
+    setIsModalOpen(true);
+  };
+
+  const confirmAction = async () => {
     if (!deletingAtribuicao) return;
     
     const atribuicao = atribuicoes.find(a => a.id === deletingAtribuicao.id);
     if (!atribuicao) return;
 
     if (actionType === 'devolver' && deletingAtribuicao.cartela) {
-      updateCartelaStatusInAtribuicao(deletingAtribuicao.vendedorId, deletingAtribuicao.cartela, 'devolvida');
-      // Return cartela to available status so it can be reassigned
-      atualizarStatusCartela(deletingAtribuicao.cartela, 'disponivel');
+      // Remove the cartela from the attribution and return to available
+      await removeCartelaFromAtribuicao(deletingAtribuicao.id, deletingAtribuicao.cartela);
       toast({
         title: "Cartela devolvida",
-        description: `A cartela ${formatarNumeroCartela(deletingAtribuicao.cartela)} foi devolvida.`
+        description: `A cartela ${formatarNumeroCartela(deletingAtribuicao.cartela)} foi devolvida e está disponível para novas atribuições.`
       });
     } else if (actionType === 'excluir-cartela' && deletingAtribuicao.cartela) {
-      removeCartelaFromAtribuicao(deletingAtribuicao.vendedorId, deletingAtribuicao.cartela);
-      atualizarStatusCartela(deletingAtribuicao.cartela, 'disponivel');
+      await removeCartelaFromAtribuicao(deletingAtribuicao.id, deletingAtribuicao.cartela);
       toast({
         title: "Cartela removida",
         description: `A cartela ${formatarNumeroCartela(deletingAtribuicao.cartela)} foi removida da atribuição.`
       });
     } else if (actionType === 'excluir-atribuicao') {
-      // Voltar todas as cartelas para disponível
-      atribuicao.cartelas.forEach(c => {
-        atualizarStatusCartela(c.numero, 'disponivel');
-      });
-      deleteAtribuicao(deletingAtribuicao.id);
+      await deleteAtribuicao(deletingAtribuicao.id);
       toast({
         title: "Atribuição excluída",
         description: `A atribuição de ${atribuicao.vendedor_nome} foi excluída.`
@@ -267,6 +264,16 @@ const AtribuicoesTab: React.FC = () => {
                         <div className="flex items-center gap-2">
                           <Button 
                             size="sm" 
+                            variant="outline"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleEditarAtribuicao(atribuicao);
+                            }}
+                          >
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          <Button 
+                            size="sm" 
                             variant="destructive"
                             onClick={(e) => {
                               e.stopPropagation();
@@ -338,7 +345,7 @@ const AtribuicoesTab: React.FC = () => {
                                       <Button 
                                         size="sm" 
                                         variant="outline" 
-                                        onClick={() => handleDevolverCartela(atribuicao.id, atribuicao.vendedor_id, cartela.numero)}
+                                        onClick={() => handleDevolverCartela(atribuicao.id, cartela.numero)}
                                         className="gap-1"
                                       >
                                         <RotateCcw className="w-4 h-4" />
@@ -349,7 +356,7 @@ const AtribuicoesTab: React.FC = () => {
                                       <Button 
                                         size="sm" 
                                         variant="destructive" 
-                                        onClick={() => handleExcluirCartela(atribuicao.id, atribuicao.vendedor_id, cartela.numero)}
+                                        onClick={() => handleExcluirCartela(atribuicao.id, cartela.numero)}
                                       >
                                         <Trash2 className="w-4 h-4" />
                                       </Button>
