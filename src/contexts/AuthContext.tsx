@@ -13,24 +13,44 @@ interface AuthContextType extends AuthState {
   checkFirstAccess: () => Promise<boolean>;
   setupAdmin: (email: string, senha: string, nome: string, titulo_sistema: string) => Promise<{ success: boolean; error?: string }>;
   updateProfile: (data: { nome: string; email: string; titulo_sistema: string; avatar_url?: string; senha_atual?: string; nova_senha?: string }) => Promise<{ success: boolean; error?: string }>;
+  getAuthToken: () => string | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const AUTH_KEY = 'bingo_auth_user';
+const TOKEN_KEY = 'bingo_auth_token';
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { toast } = useToast();
   const [user, setUser] = useState<User | null>(null);
+  const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  const getAuthToken = useCallback(() => token, [token]);
+
   const callApi = async (action: string, data: any = {}) => {
+    const headers: Record<string, string> = {};
+    const currentToken = localStorage.getItem(TOKEN_KEY);
+    
+    if (currentToken) {
+      headers['Authorization'] = `Bearer ${currentToken}`;
+    }
+
     const response = await supabase.functions.invoke('postgres-api', {
-      body: { action, data }
+      body: { action, data },
+      headers
     });
     
     if (response.error) {
       console.error('API Error:', response.error);
+      // If unauthorized, clear auth state
+      if (response.error.message?.includes('401') || response.error.message?.includes('Não autorizado')) {
+        setUser(null);
+        setToken(null);
+        localStorage.removeItem(AUTH_KEY);
+        localStorage.removeItem(TOKEN_KEY);
+      }
       throw new Error(response.error.message);
     }
     
@@ -40,12 +60,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // Check stored auth on mount
   useEffect(() => {
     const stored = localStorage.getItem(AUTH_KEY);
-    if (stored) {
+    const storedToken = localStorage.getItem(TOKEN_KEY);
+    if (stored && storedToken) {
       try {
         const parsed = JSON.parse(stored);
         setUser(parsed);
+        setToken(storedToken);
       } catch (e) {
         localStorage.removeItem(AUTH_KEY);
+        localStorage.removeItem(TOKEN_KEY);
       }
     }
     setIsLoading(false);
@@ -87,13 +110,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setIsLoading(true);
       const result = await callApi('login', credentials);
       
-      if (result.user) {
-        if (!result.user.ativo) {
-          return { success: false, error: 'Usuário inativo. Contate o administrador.' };
-        }
-        
+      if (result.user && result.token) {
         setUser(result.user);
+        setToken(result.token);
         localStorage.setItem(AUTH_KEY, JSON.stringify(result.user));
+        localStorage.setItem(TOKEN_KEY, result.token);
         toast({
           title: "Login realizado",
           description: `Bem-vindo, ${result.user.nome}!`,
@@ -112,7 +133,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const logout = useCallback(() => {
     setUser(null);
+    setToken(null);
     localStorage.removeItem(AUTH_KEY);
+    localStorage.removeItem(TOKEN_KEY);
     toast({
       title: "Logout realizado",
       description: "Você foi desconectado.",
@@ -245,7 +268,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const value: AuthContextType = {
     user,
     isLoading,
-    isAuthenticated: !!user,
+    isAuthenticated: !!user && !!token,
     login,
     logout,
     createUser,
@@ -255,6 +278,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     checkFirstAccess,
     setupAdmin,
     updateProfile,
+    getAuthToken,
   };
 
   return (

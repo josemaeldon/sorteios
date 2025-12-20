@@ -118,10 +118,18 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     periodo: 'todos'
   });
 
-  // API call helper
+  // API call helper with authentication
   const callApi = useCallback(async (action: string, data: Record<string, any> = {}) => {
+    const headers: Record<string, string> = {};
+    const token = localStorage.getItem('bingo_auth_token');
+    
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
     const response = await supabase.functions.invoke('postgres-api', {
-      body: { action, data }
+      body: { action, data },
+      headers
     });
     
     if (response.error) {
