@@ -1,31 +1,11 @@
 version: "3.7"
 
 # =====================================================
-# BINGO SYSTEM - PORTAINER STACK (Traefik Externo)
-# Stack para ambiente com Traefik já instalado
+# BINGO SYSTEM - PORTAINER STACK
+# Traefik externo + PostgreSQL externo
 # =====================================================
 
 services:
-  # ============================================
-  # PostgreSQL Database
-  # ============================================
-  postgres:
-    image: supabase/postgres:15.1.1.78
-    environment:
-      POSTGRES_HOST: /var/run/postgresql
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-BingoSystem2024!}
-      POSTGRES_DB: postgres
-    volumes:
-      - bingo_postgres_data:/var/lib/postgresql/data
-    deploy:
-      replicas: 1
-      placement:
-        constraints:
-          - node.role == manager
-    networks:
-      - bingo-internal
-
   # ============================================
   # Supabase Auth (GoTrue)
   # ============================================
@@ -36,7 +16,7 @@ services:
       GOTRUE_API_PORT: 9999
       API_EXTERNAL_URL: https://api.${DOMAIN}
       GOTRUE_DB_DRIVER: postgres
-      GOTRUE_DB_DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-BingoSystem2024!}@postgres:5432/postgres?search_path=auth
+      GOTRUE_DB_DATABASE_URL: postgres://${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${DB_NAME}?search_path=auth
       GOTRUE_SITE_URL: https://${DOMAIN}
       GOTRUE_URI_ALLOW_LIST: ""
       GOTRUE_DISABLE_SIGNUP: "false"
@@ -59,7 +39,7 @@ services:
   rest:
     image: postgrest/postgrest:v12.0.1
     environment:
-      PGRST_DB_URI: postgres://postgres:${POSTGRES_PASSWORD:-BingoSystem2024!}@postgres:5432/postgres
+      PGRST_DB_URI: postgres://${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${DB_NAME}
       PGRST_DB_SCHEMAS: public,storage,auth
       PGRST_DB_ANON_ROLE: anon
       PGRST_JWT_SECRET: ${JWT_SECRET}
@@ -79,11 +59,11 @@ services:
     image: supabase/realtime:v2.28.32
     environment:
       PORT: 4000
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_USER: postgres
-      DB_PASSWORD: ${POSTGRES_PASSWORD:-BingoSystem2024!}
-      DB_NAME: postgres
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASS}
+      DB_NAME: ${DB_NAME}
       DB_SSL: "false"
       JWT_SECRET: ${JWT_SECRET}
       REPLICATION_MODE: RLS
@@ -109,7 +89,7 @@ services:
       SERVICE_KEY: ${SERVICE_ROLE_KEY}
       POSTGREST_URL: http://rest:3000
       PGRST_JWT_SECRET: ${JWT_SECRET}
-      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-BingoSystem2024!}@postgres:5432/postgres
+      DATABASE_URL: postgres://${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${DB_NAME}
       FILE_SIZE_LIMIT: 52428800
       STORAGE_BACKEND: file
       FILE_STORAGE_BACKEND_PATH: /var/lib/storage
@@ -170,11 +150,11 @@ services:
     image: supabase/postgres-meta:v0.80.0
     environment:
       PG_META_PORT: 8080
-      PG_META_DB_HOST: postgres
-      PG_META_DB_PORT: 5432
-      PG_META_DB_NAME: postgres
-      PG_META_DB_USER: postgres
-      PG_META_DB_PASSWORD: ${POSTGRES_PASSWORD:-BingoSystem2024!}
+      PG_META_DB_HOST: ${DB_HOST}
+      PG_META_DB_PORT: ${DB_PORT}
+      PG_META_DB_NAME: ${DB_NAME}
+      PG_META_DB_USER: ${DB_USER}
+      PG_META_DB_PASSWORD: ${DB_PASS}
     deploy:
       replicas: 1
       placement:
@@ -190,7 +170,7 @@ services:
     image: supabase/studio:20240101-8e4a094
     environment:
       STUDIO_PG_META_URL: http://meta:8080
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-BingoSystem2024!}
+      POSTGRES_PASSWORD: ${DB_PASS}
       DEFAULT_ORGANIZATION_NAME: Bingo System
       DEFAULT_PROJECT_NAME: Bingo
       SUPABASE_URL: http://kong:8000
@@ -398,8 +378,6 @@ configs:
 # Volumes
 # ============================================
 volumes:
-  bingo_postgres_data:
-    external: true
   bingo_storage_data:
     external: true
 
