@@ -12,7 +12,7 @@ interface AuthContextType extends AuthState {
   getAllUsers: () => Promise<User[]>;
   checkFirstAccess: () => Promise<boolean>;
   setupAdmin: (email: string, senha: string, nome: string, titulo_sistema: string) => Promise<{ success: boolean; error?: string }>;
-  updateProfile: (data: { titulo_sistema: string }) => Promise<{ success: boolean; error?: string }>;
+  updateProfile: (data: { titulo_sistema: string; avatar_url?: string }) => Promise<{ success: boolean; error?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -206,16 +206,20 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [user]);
 
-  const updateProfile = useCallback(async (data: { titulo_sistema: string }) => {
+  const updateProfile = useCallback(async (data: { titulo_sistema: string; avatar_url?: string }) => {
     if (!user) {
       return { success: false, error: 'Usuário não autenticado' };
     }
 
     try {
-      const result = await callApi('updateProfile', { id: user.id, titulo_sistema: data.titulo_sistema });
+      const result = await callApi('updateProfile', { 
+        id: user.id, 
+        titulo_sistema: data.titulo_sistema,
+        avatar_url: data.avatar_url 
+      });
       
       if (result.success) {
-        const updatedUser = { ...user, titulo_sistema: data.titulo_sistema };
+        const updatedUser = { ...user, titulo_sistema: data.titulo_sistema, avatar_url: data.avatar_url };
         setUser(updatedUser);
         localStorage.setItem(AUTH_KEY, JSON.stringify(updatedUser));
         return { success: true };
