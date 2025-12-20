@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { DollarSign, Save } from 'lucide-react';
+import { DollarSign, Save, Loader2 } from 'lucide-react';
 
 interface PagamentoModalProps {
   isOpen: boolean;
@@ -20,25 +20,32 @@ const PagamentoModal: React.FC<PagamentoModalProps> = ({ isOpen, onClose, vendaI
   const { toast } = useToast();
   const [valor, setValor] = useState('');
   const [formaPagamento, setFormaPagamento] = useState<'dinheiro' | 'pix' | 'cartao' | 'transferencia'>('dinheiro');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const venda = vendas.find(v => v.id === vendaId);
   const saldoRestante = venda ? venda.valor_total - venda.valor_pago : 0;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!vendaId || !venda) return;
 
-    const valorPagamento = parseFloat(valor) || 0;
-    const novoValorPago = venda.valor_pago + valorPagamento;
-    
-    updateVenda(vendaId, {
-      valor_pago: novoValorPago,
-      status: novoValorPago >= venda.valor_total ? 'concluida' : 'pendente'
-    });
+    setIsSubmitting(true);
 
-    toast({ title: "Pagamento registrado", description: `Pagamento de ${formatarMoeda(valorPagamento)} registrado.` });
-    setValor('');
-    onClose();
+    try {
+      const valorPagamento = parseFloat(valor) || 0;
+      const novoValorPago = venda.valor_pago + valorPagamento;
+      
+      await updateVenda(vendaId, {
+        valor_pago: novoValorPago,
+        status: novoValorPago >= venda.valor_total ? 'concluida' : 'pendente'
+      });
+
+      toast({ title: "Pagamento registrado", description: `Pagamento de ${formatarMoeda(valorPagamento)} registrado.` });
+      setValor('');
+      onClose();
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   if (!venda) return null;
@@ -75,8 +82,11 @@ const PagamentoModal: React.FC<PagamentoModalProps> = ({ isOpen, onClose, vendaI
             </Select>
           </div>
           <div className="flex gap-4 pt-4">
-            <Button type="submit" className="flex-1 gap-2"><Save className="w-4 h-4" />Registrar</Button>
-            <Button type="button" variant="outline" onClick={onClose} className="flex-1">Cancelar</Button>
+            <Button type="submit" className="flex-1 gap-2" disabled={isSubmitting}>
+              {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              {isSubmitting ? 'Registrando...' : 'Registrar'}
+            </Button>
+            <Button type="button" variant="outline" onClick={onClose} className="flex-1" disabled={isSubmitting}>Cancelar</Button>
           </div>
         </form>
       </DialogContent>

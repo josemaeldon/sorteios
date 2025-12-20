@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ShoppingCart, Save, Plus, Trash2, X } from 'lucide-react';
+import { ShoppingCart, Save, Plus, Trash2, X, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface VendaModalProps {
@@ -33,6 +33,7 @@ const VendaModal: React.FC<VendaModalProps> = ({ isOpen, onClose, editingId }) =
   const [tipoSelecao, setTipoSelecao] = useState<TipoSelecao>('individual');
   const [faixaInput, setFaixaInput] = useState('');
   const [aleatorioInput, setAleatorioInput] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const vendedoresAtivos = vendedores.filter(v => v.ativo);
   const cartelasDoVendedor = cartelas.filter(c => c.vendedor_id === vendedorId && c.status === 'ativa');
@@ -172,31 +173,37 @@ const VendaModal: React.FC<VendaModalProps> = ({ isOpen, onClose, editingId }) =
       return;
     }
 
-    const vendedor = vendedores.find(v => v.id === vendedorId);
-    
-    // Filter out zero-value payments
-    const pagamentosValidos = pagamentos.filter(p => p.valor > 0);
-    const totalPago = pagamentosValidos.reduce((sum, p) => sum + p.valor, 0);
+    setIsSubmitting(true);
 
-    const vendaData = {
-      vendedor_id: vendedorId,
-      vendedor_nome: vendedor?.nome,
-      cliente_nome: clienteNome,
-      cliente_telefone: clienteTelefone,
-      numeros_cartelas: cartelasSelecionadas.join(','),
-      valor_total: valorTotal,
-      valor_pago: totalPago,
-      pagamentos: pagamentosValidos.length > 0 ? pagamentosValidos : undefined,
-      status: (totalPago >= valorTotal ? 'concluida' : 'pendente') as 'concluida' | 'pendente',
-      data_venda: new Date().toISOString()
-    };
+    try {
+      const vendedor = vendedores.find(v => v.id === vendedorId);
+      
+      // Filter out zero-value payments
+      const pagamentosValidos = pagamentos.filter(p => p.valor > 0);
+      const totalPago = pagamentosValidos.reduce((sum, p) => sum + p.valor, 0);
 
-    if (editingId) {
-      await updateVenda(editingId, vendaData);
-    } else {
-      await addVenda(vendaData as any);
+      const vendaData = {
+        vendedor_id: vendedorId,
+        vendedor_nome: vendedor?.nome,
+        cliente_nome: clienteNome,
+        cliente_telefone: clienteTelefone,
+        numeros_cartelas: cartelasSelecionadas.join(','),
+        valor_total: valorTotal,
+        valor_pago: totalPago,
+        pagamentos: pagamentosValidos.length > 0 ? pagamentosValidos : undefined,
+        status: (totalPago >= valorTotal ? 'concluida' : 'pendente') as 'concluida' | 'pendente',
+        data_venda: new Date().toISOString()
+      };
+
+      if (editingId) {
+        await updateVenda(editingId, vendaData);
+      } else {
+        await addVenda(vendaData as any);
+      }
+      onClose();
+    } finally {
+      setIsSubmitting(false);
     }
-    onClose();
   };
 
   // Get all available cartelas (from vendedor + already in sale when editing)
@@ -404,8 +411,11 @@ const VendaModal: React.FC<VendaModalProps> = ({ isOpen, onClose, editingId }) =
           </div>
           
           <div className="flex gap-4 pt-4">
-            <Button type="submit" className="flex-1 gap-2"><Save className="w-4 h-4" />{editingId ? 'Salvar' : 'Registrar'}</Button>
-            <Button type="button" variant="outline" onClick={onClose} className="flex-1">Cancelar</Button>
+            <Button type="submit" className="flex-1 gap-2" disabled={isSubmitting}>
+              {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              {isSubmitting ? 'Salvando...' : (editingId ? 'Salvar' : 'Registrar')}
+            </Button>
+            <Button type="button" variant="outline" onClick={onClose} className="flex-1" disabled={isSubmitting}>Cancelar</Button>
           </div>
         </form>
       </DialogContent>

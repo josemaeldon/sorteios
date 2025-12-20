@@ -14,7 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { UserPlus, Save } from 'lucide-react';
+import { UserPlus, Save, Loader2 } from 'lucide-react';
 
 interface VendedorModalProps {
   isOpen: boolean;
@@ -34,6 +34,7 @@ const VendedorModal: React.FC<VendedorModalProps> = ({ isOpen, onClose, editingI
     endereco: '',
     ativo: true
   });
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     if (editingId) {
@@ -60,7 +61,7 @@ const VendedorModal: React.FC<VendedorModalProps> = ({ isOpen, onClose, editingI
     }
   }, [editingId, vendedores, isOpen]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!formData.nome) {
@@ -81,34 +82,40 @@ const VendedorModal: React.FC<VendedorModalProps> = ({ isOpen, onClose, editingI
       return;
     }
 
-    const vendedorData: Vendedor = {
-      id: editingId || gerarId(),
-      sorteio_id: sorteioAtivo.id,
-      nome: formData.nome,
-      telefone: formData.telefone,
-      email: formData.email,
-      cpf: formData.cpf,
-      endereco: formData.endereco,
-      ativo: formData.ativo,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    };
+    setIsSubmitting(true);
 
-    if (editingId) {
-      updateVendedor(editingId, vendedorData);
-      toast({
-        title: "Vendedor atualizado",
-        description: `O vendedor "${formData.nome}" foi atualizado com sucesso.`
-      });
-    } else {
-      addVendedor(vendedorData);
-      toast({
-        title: "Vendedor criado",
-        description: `O vendedor "${formData.nome}" foi criado com sucesso.`
-      });
+    try {
+      const vendedorData: Vendedor = {
+        id: editingId || gerarId(),
+        sorteio_id: sorteioAtivo.id,
+        nome: formData.nome,
+        telefone: formData.telefone,
+        email: formData.email,
+        cpf: formData.cpf,
+        endereco: formData.endereco,
+        ativo: formData.ativo,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      if (editingId) {
+        await updateVendedor(editingId, vendedorData);
+        toast({
+          title: "Vendedor atualizado",
+          description: `O vendedor "${formData.nome}" foi atualizado com sucesso.`
+        });
+      } else {
+        await addVendedor(vendedorData);
+        toast({
+          title: "Vendedor criado",
+          description: `O vendedor "${formData.nome}" foi criado com sucesso.`
+        });
+      }
+
+      onClose();
+    } finally {
+      setIsSubmitting(false);
     }
-
-    onClose();
   };
 
   return (
@@ -188,11 +195,11 @@ const VendedorModal: React.FC<VendedorModalProps> = ({ isOpen, onClose, editingI
           </div>
 
           <div className="flex gap-4 pt-4">
-            <Button type="submit" className="flex-1 gap-2">
-              <Save className="w-4 h-4" />
-              {editingId ? 'Salvar Alterações' : 'Cadastrar Vendedor'}
+            <Button type="submit" className="flex-1 gap-2" disabled={isSubmitting}>
+              {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              {isSubmitting ? 'Salvando...' : (editingId ? 'Salvar Alterações' : 'Cadastrar Vendedor')}
             </Button>
-            <Button type="button" variant="outline" onClick={onClose} className="flex-1">
+            <Button type="button" variant="outline" onClick={onClose} className="flex-1" disabled={isSubmitting}>
               Cancelar
             </Button>
           </div>
