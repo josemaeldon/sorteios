@@ -226,11 +226,15 @@ serve(async (req) => {
         break;
 
       case 'createSorteio':
+        // premios is an array, premio is the first item for backwards compatibility
+        const premiosCreate = data.premios || (data.premio ? [data.premio] : []);
+        const premioCreate = premiosCreate[0] || '';
+        
         result = await client.queryObject(`
-          INSERT INTO sorteios (user_id, nome, data_sorteio, premio, valor_cartela, quantidade_cartelas, status)
-          VALUES ($1, $2, $3, $4, $5, $6, $7)
+          INSERT INTO sorteios (user_id, nome, data_sorteio, premio, premios, valor_cartela, quantidade_cartelas, status)
+          VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8)
           RETURNING *
-        `, [data.user_id, data.nome, data.data_sorteio, data.premio, data.valor_cartela, data.quantidade_cartelas, data.status]);
+        `, [data.user_id, data.nome, data.data_sorteio, premioCreate, JSON.stringify(premiosCreate), data.valor_cartela, data.quantidade_cartelas, data.status]);
         
         // Generate cartelas automatically
         const newSorteioId = (result.rows[0] as any).id;
@@ -247,12 +251,16 @@ serve(async (req) => {
         break;
 
       case 'updateSorteio':
+        // premios is an array, premio is the first item for backwards compatibility
+        const premiosUpdate = data.premios || (data.premio ? [data.premio] : []);
+        const premioUpdate = premiosUpdate[0] || '';
+        
         result = await client.queryObject(`
           UPDATE sorteios 
-          SET nome = $2, data_sorteio = $3, premio = $4, valor_cartela = $5, quantidade_cartelas = $6, status = $7, updated_at = NOW()
+          SET nome = $2, data_sorteio = $3, premio = $4, premios = $5::jsonb, valor_cartela = $6, quantidade_cartelas = $7, status = $8, updated_at = NOW()
           WHERE id = $1
           RETURNING *
-        `, [data.id, data.nome, data.data_sorteio, data.premio, data.valor_cartela, data.quantidade_cartelas, data.status]);
+        `, [data.id, data.nome, data.data_sorteio, premioUpdate, JSON.stringify(premiosUpdate), data.valor_cartela, data.quantidade_cartelas, data.status]);
         break;
 
       case 'deleteSorteio':

@@ -3,6 +3,7 @@ export interface Sorteio {
   nome: string;
   data_sorteio: string;
   premio: string;
+  premios?: string[];
   valor_cartela: number;
   quantidade_cartelas: number;
   status: 'agendado' | 'em_andamento' | 'concluido';
