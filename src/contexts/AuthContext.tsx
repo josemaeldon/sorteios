@@ -12,7 +12,7 @@ interface AuthContextType extends AuthState {
   getAllUsers: () => Promise<User[]>;
   checkFirstAccess: () => Promise<boolean>;
   setupAdmin: (email: string, senha: string, nome: string, titulo_sistema: string) => Promise<{ success: boolean; error?: string }>;
-  updateProfile: (data: { titulo_sistema: string; avatar_url?: string }) => Promise<{ success: boolean; error?: string }>;
+  updateProfile: (data: { nome: string; email: string; titulo_sistema: string; avatar_url?: string; senha_atual?: string; nova_senha?: string }) => Promise<{ success: boolean; error?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -206,7 +206,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [user]);
 
-  const updateProfile = useCallback(async (data: { titulo_sistema: string; avatar_url?: string }) => {
+  const updateProfile = useCallback(async (data: { nome: string; email: string; titulo_sistema: string; avatar_url?: string; senha_atual?: string; nova_senha?: string }) => {
     if (!user) {
       return { success: false, error: 'Usuário não autenticado' };
     }
@@ -214,12 +214,22 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       const result = await callApi('updateProfile', { 
         id: user.id, 
+        nome: data.nome,
+        email: data.email,
         titulo_sistema: data.titulo_sistema,
-        avatar_url: data.avatar_url 
+        avatar_url: data.avatar_url,
+        senha_atual: data.senha_atual,
+        nova_senha: data.nova_senha,
       });
       
       if (result.success) {
-        const updatedUser = { ...user, titulo_sistema: data.titulo_sistema, avatar_url: data.avatar_url };
+        const updatedUser = { 
+          ...user, 
+          nome: data.nome,
+          email: data.email,
+          titulo_sistema: data.titulo_sistema, 
+          avatar_url: data.avatar_url 
+        };
         setUser(updatedUser);
         localStorage.setItem(AUTH_KEY, JSON.stringify(updatedUser));
         return { success: true };
