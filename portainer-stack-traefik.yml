@@ -30,6 +30,10 @@ services:
       placement:
         constraints:
           - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
     networks:
       - bingo-internal
 
@@ -40,7 +44,7 @@ services:
     image: postgrest/postgrest:v12.0.1
     environment:
       PGRST_DB_URI: postgres://${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${DB_NAME}
-      PGRST_DB_SCHEMAS: public,storage,auth
+      PGRST_DB_SCHEMAS: public,storage
       PGRST_DB_ANON_ROLE: anon
       PGRST_JWT_SECRET: ${JWT_SECRET}
       PGRST_DB_USE_LEGACY_GUCS: "false"
@@ -49,6 +53,10 @@ services:
       placement:
         constraints:
           - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
     networks:
       - bingo-internal
 
@@ -65,17 +73,24 @@ services:
       DB_PASSWORD: ${DB_PASS}
       DB_NAME: ${DB_NAME}
       DB_SSL: "false"
-      JWT_SECRET: ${JWT_SECRET}
-      REPLICATION_MODE: RLS
-      REPLICATION_POLL_INTERVAL: 100
-      SECURE_CHANNELS: "true"
-      SLOT_NAME: supabase_realtime_rls
-      TEMPORARY_SLOT: "true"
+      DB_AFTER_CONNECT_QUERY: "SET search_path TO _realtime"
+      DB_ENC_KEY: supabaserealtime
+      API_JWT_SECRET: ${JWT_SECRET}
+      FLY_ALLOC_ID: fly123
+      FLY_APP_NAME: realtime
+      SECRET_KEY_BASE: UpNVntn3cDxHJpq99YMc1T1AQgQpc8kfYTuRgBiYa15BLrx8etQoXz3gZv1/u2oq
+      ERL_AFLAGS: -proto_dist inet_tcp
+      ENABLE_TAILSCALE: "false"
+      DNS_NODES: "''"
     deploy:
       replicas: 1
       placement:
         constraints:
           - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
     networks:
       - bingo-internal
 
@@ -103,6 +118,10 @@ services:
       placement:
         constraints:
           - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
     networks:
       - bingo-internal
 
@@ -113,21 +132,24 @@ services:
     image: kong:2.8.1
     environment:
       KONG_DATABASE: "off"
-      KONG_DECLARATIVE_CONFIG: /var/lib/kong/kong.yml
+      KONG_DECLARATIVE_CONFIG: /home/kong/kong.yml
       KONG_DNS_ORDER: LAST,A,CNAME
       KONG_PLUGINS: request-transformer,cors,key-auth,acl,basic-auth
       KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
       KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
       SUPABASE_ANON_KEY: ${ANON_KEY}
       SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
-    configs:
-      - source: kong_config
-        target: /var/lib/kong/kong.yml
+    volumes:
+      - ./kong.yml:/home/kong/kong.yml:ro
     deploy:
       replicas: 1
       placement:
         constraints:
           - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 5
       labels:
         - "traefik.enable=true"
         - "traefik.docker.network=luzianet"
@@ -160,6 +182,10 @@ services:
       placement:
         constraints:
           - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
     networks:
       - bingo-internal
 
@@ -182,6 +208,10 @@ services:
       placement:
         constraints:
           - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 5
       labels:
         - "traefik.enable=true"
         - "traefik.docker.network=luzianet"
@@ -211,6 +241,10 @@ services:
       placement:
         constraints:
           - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
       labels:
         - "traefik.enable=true"
         - "traefik.docker.network=luzianet"
@@ -225,154 +259,6 @@ services:
     networks:
       - bingo-internal
       - luzianet
-
-# ============================================
-# Configs (Kong inline)
-# ============================================
-configs:
-  kong_config:
-    content: |
-      _format_version: "2.1"
-      _transform: true
-
-      consumers:
-        - username: DASHBOARD
-        - username: anon
-          keyauth_credentials:
-            - key: ${ANON_KEY}
-        - username: service_role
-          keyauth_credentials:
-            - key: ${SERVICE_ROLE_KEY}
-
-      acls:
-        - consumer: anon
-          group: anon
-        - consumer: service_role
-          group: admin
-
-      services:
-        - name: auth-v1-open
-          url: http://auth:9999/verify
-          routes:
-            - name: auth-v1-open
-              strip_path: true
-              paths:
-                - /auth/v1/verify
-          plugins:
-            - name: cors
-
-        - name: auth-v1-open-callback
-          url: http://auth:9999/callback
-          routes:
-            - name: auth-v1-open-callback
-              strip_path: true
-              paths:
-                - /auth/v1/callback
-          plugins:
-            - name: cors
-
-        - name: auth-v1-open-authorize
-          url: http://auth:9999/authorize
-          routes:
-            - name: auth-v1-open-authorize
-              strip_path: true
-              paths:
-                - /auth/v1/authorize
-          plugins:
-            - name: cors
-
-        - name: auth-v1
-          url: http://auth:9999
-          routes:
-            - name: auth-v1
-              strip_path: true
-              paths:
-                - /auth/v1/
-          plugins:
-            - name: cors
-            - name: key-auth
-              config:
-                hide_credentials: false
-            - name: acl
-              config:
-                hide_groups_header: true
-                allow:
-                  - admin
-                  - anon
-
-        - name: rest-v1
-          url: http://rest:3000
-          routes:
-            - name: rest-v1
-              strip_path: true
-              paths:
-                - /rest/v1/
-          plugins:
-            - name: cors
-            - name: key-auth
-              config:
-                hide_credentials: false
-            - name: acl
-              config:
-                hide_groups_header: true
-                allow:
-                  - admin
-                  - anon
-
-        - name: realtime-v1
-          url: http://realtime:4000/socket
-          routes:
-            - name: realtime-v1
-              strip_path: true
-              paths:
-                - /realtime/v1/
-          plugins:
-            - name: cors
-            - name: key-auth
-              config:
-                hide_credentials: false
-            - name: acl
-              config:
-                hide_groups_header: true
-                allow:
-                  - admin
-                  - anon
-
-        - name: storage-v1
-          url: http://storage:5000
-          routes:
-            - name: storage-v1
-              strip_path: true
-              paths:
-                - /storage/v1/
-          plugins:
-            - name: cors
-            - name: key-auth
-              config:
-                hide_credentials: false
-            - name: acl
-              config:
-                hide_groups_header: true
-                allow:
-                  - admin
-                  - anon
-
-        - name: meta
-          url: http://meta:8080
-          routes:
-            - name: meta
-              strip_path: true
-              paths:
-                - /pg/
-          plugins:
-            - name: key-auth
-              config:
-                hide_credentials: false
-            - name: acl
-              config:
-                hide_groups_header: true
-                allow:
-                  - admin
 
 # ============================================
 # Volumes
