@@ -1,127 +1,82 @@
-version: "3.8"
+version: "3.7"
 
 # =====================================================
-# BINGO SYSTEM - PORTAINER STACK COM TRAEFIK
-# Stack completa com SSL automático via Let's Encrypt
+# BINGO SYSTEM - PORTAINER STACK (Traefik Externo)
+# Stack para ambiente com Traefik já instalado
 # =====================================================
 
 services:
-  # ============================================
-  # Traefik Reverse Proxy
-  # ============================================
-  traefik:
-    image: traefik:v2.10
-    container_name: traefik
-    restart: unless-stopped
-    command:
-      - "--api.dashboard=true"
-      - "--api.insecure=false"
-      - "--providers.docker=true"
-      - "--providers.docker.exposedbydefault=false"
-      - "--providers.docker.network=supabase-network"
-      - "--entrypoints.web.address=:80"
-      - "--entrypoints.websecure.address=:443"
-      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
-      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
-      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
-      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:-admin@example.com}"
-      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - traefik_letsencrypt:/letsencrypt
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.traefik.rule=Host(`traefik.${DOMAIN:-localhost}`)"
-      - "traefik.http.routers.traefik.entrypoints=websecure"
-      - "traefik.http.routers.traefik.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.traefik.service=api@internal"
-      - "traefik.http.routers.traefik.middlewares=auth"
-      - "traefik.http.middlewares.auth.basicauth.users=${TRAEFIK_AUTH:-admin:$$apr1$$xyz$$hash}"
-    networks:
-      - supabase-network
-
   # ============================================
   # PostgreSQL Database
   # ============================================
   postgres:
     image: supabase/postgres:15.1.1.78
-    container_name: supabase-postgres
-    restart: unless-stopped
     environment:
       POSTGRES_HOST: /var/run/postgresql
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-BingoSystem2024!}
       POSTGRES_DB: postgres
     volumes:
-      - supabase_postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD", "pg_isready", "-U", "postgres", "-h", "localhost"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
+      - bingo_postgres_data:/var/lib/postgresql/data
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
     networks:
-      - supabase-network
+      - bingo-internal
 
   # ============================================
   # Supabase Auth (GoTrue)
   # ============================================
   auth:
     image: supabase/gotrue:v2.143.0
-    container_name: supabase-auth
-    restart: unless-stopped
     environment:
       GOTRUE_API_HOST: 0.0.0.0
       GOTRUE_API_PORT: 9999
-      API_EXTERNAL_URL: https://api.${DOMAIN:-localhost}
+      API_EXTERNAL_URL: https://api.${DOMAIN}
       GOTRUE_DB_DRIVER: postgres
       GOTRUE_DB_DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-BingoSystem2024!}@postgres:5432/postgres?search_path=auth
-      GOTRUE_SITE_URL: https://${DOMAIN:-localhost}
-      GOTRUE_URI_ALLOW_LIST: ${ADDITIONAL_REDIRECT_URLS:-}
+      GOTRUE_SITE_URL: https://${DOMAIN}
+      GOTRUE_URI_ALLOW_LIST: ""
       GOTRUE_DISABLE_SIGNUP: "false"
-      GOTRUE_JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-token-for-bingo-system-2024-min32chars}
+      GOTRUE_JWT_SECRET: ${JWT_SECRET}
       GOTRUE_JWT_EXP: 3600
       GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
       GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
       GOTRUE_MAILER_AUTOCONFIRM: "true"
-      GOTRUE_SMTP_ADMIN_EMAIL: ${SMTP_ADMIN_EMAIL:-admin@bingo.local}
-      GOTRUE_SMTP_HOST: ${SMTP_HOST:-localhost}
-      GOTRUE_SMTP_PORT: ${SMTP_PORT:-25}
-      GOTRUE_SMTP_USER: ${SMTP_USER:-}
-      GOTRUE_SMTP_PASS: ${SMTP_PASS:-}
-      GOTRUE_SMTP_SENDER_NAME: ${SMTP_SENDER_NAME:-Bingo System}
-    depends_on:
-      - postgres
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
     networks:
-      - supabase-network
+      - bingo-internal
 
   # ============================================
   # Supabase REST API (PostgREST)
   # ============================================
   rest:
     image: postgrest/postgrest:v12.0.1
-    container_name: supabase-rest
-    restart: unless-stopped
     environment:
       PGRST_DB_URI: postgres://postgres:${POSTGRES_PASSWORD:-BingoSystem2024!}@postgres:5432/postgres
       PGRST_DB_SCHEMAS: public,storage,auth
       PGRST_DB_ANON_ROLE: anon
-      PGRST_JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-token-for-bingo-system-2024-min32chars}
+      PGRST_JWT_SECRET: ${JWT_SECRET}
       PGRST_DB_USE_LEGACY_GUCS: "false"
-    depends_on:
-      - postgres
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
     networks:
-      - supabase-network
+      - bingo-internal
 
   # ============================================
   # Supabase Realtime
   # ============================================
   realtime:
     image: supabase/realtime:v2.28.32
-    container_name: supabase-realtime
-    restart: unless-stopped
     environment:
       PORT: 4000
       DB_HOST: postgres
@@ -130,29 +85,30 @@ services:
       DB_PASSWORD: ${POSTGRES_PASSWORD:-BingoSystem2024!}
       DB_NAME: postgres
       DB_SSL: "false"
-      JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-token-for-bingo-system-2024-min32chars}
+      JWT_SECRET: ${JWT_SECRET}
       REPLICATION_MODE: RLS
       REPLICATION_POLL_INTERVAL: 100
       SECURE_CHANNELS: "true"
       SLOT_NAME: supabase_realtime_rls
       TEMPORARY_SLOT: "true"
-    depends_on:
-      - postgres
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
     networks:
-      - supabase-network
+      - bingo-internal
 
   # ============================================
   # Supabase Storage
   # ============================================
   storage:
     image: supabase/storage-api:v0.46.4
-    container_name: supabase-storage
-    restart: unless-stopped
     environment:
-      ANON_KEY: ${ANON_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0}
-      SERVICE_KEY: ${SERVICE_ROLE_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU}
+      ANON_KEY: ${ANON_KEY}
+      SERVICE_KEY: ${SERVICE_ROLE_KEY}
       POSTGREST_URL: http://rest:3000
-      PGRST_JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-token-for-bingo-system-2024-min32chars}
+      PGRST_JWT_SECRET: ${JWT_SECRET}
       DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-BingoSystem2024!}@postgres:5432/postgres
       FILE_SIZE_LIMIT: 52428800
       STORAGE_BACKEND: file
@@ -161,20 +117,20 @@ services:
       REGION: stub
       GLOBAL_S3_BUCKET: stub
     volumes:
-      - supabase_storage_data:/var/lib/storage
-    depends_on:
-      - postgres
-      - rest
+      - bingo_storage_data:/var/lib/storage
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
     networks:
-      - supabase-network
+      - bingo-internal
 
   # ============================================
   # Kong API Gateway
   # ============================================
   kong:
     image: kong:2.8.1
-    container_name: supabase-kong
-    restart: unless-stopped
     environment:
       KONG_DATABASE: "off"
       KONG_DECLARATIVE_CONFIG: /var/lib/kong/kong.yml
@@ -182,32 +138,36 @@ services:
       KONG_PLUGINS: request-transformer,cors,key-auth,acl,basic-auth
       KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
       KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
-      SUPABASE_ANON_KEY: ${ANON_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0}
-      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU}
+      SUPABASE_ANON_KEY: ${ANON_KEY}
+      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
     configs:
       - source: kong_config
         target: /var/lib/kong/kong.yml
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.kong.rule=Host(`api.${DOMAIN:-localhost}`)"
-      - "traefik.http.routers.kong.entrypoints=websecure"
-      - "traefik.http.routers.kong.tls.certresolver=letsencrypt"
-      - "traefik.http.services.kong.loadbalancer.server.port=8000"
-    depends_on:
-      - auth
-      - rest
-      - realtime
-      - storage
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=luzianet"
+        - "traefik.http.routers.bingo-api.rule=Host(`api.${DOMAIN}`)"
+        - "traefik.http.routers.bingo-api.entrypoints=websecure"
+        - "traefik.http.routers.bingo-api.tls=true"
+        - "traefik.http.routers.bingo-api.tls.certresolver=letsencryptresolver"
+        - "traefik.http.middlewares.bingo-api-redirect.redirectscheme.scheme=https"
+        - "traefik.http.routers.bingo-api.middlewares=bingo-api-redirect"
+        - "traefik.http.routers.bingo-api.service=bingo-api-service"
+        - "traefik.http.services.bingo-api-service.loadbalancer.server.port=8000"
     networks:
-      - supabase-network
+      - bingo-internal
+      - luzianet
 
   # ============================================
   # Supabase Meta (pg-meta)
   # ============================================
   meta:
     image: supabase/postgres-meta:v0.80.0
-    container_name: supabase-meta
-    restart: unless-stopped
     environment:
       PG_META_PORT: 8080
       PG_META_DB_HOST: postgres
@@ -215,60 +175,76 @@ services:
       PG_META_DB_NAME: postgres
       PG_META_DB_USER: postgres
       PG_META_DB_PASSWORD: ${POSTGRES_PASSWORD:-BingoSystem2024!}
-    depends_on:
-      - postgres
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
     networks:
-      - supabase-network
+      - bingo-internal
 
   # ============================================
   # Supabase Studio (Admin Dashboard)
   # ============================================
   studio:
     image: supabase/studio:20240101-8e4a094
-    container_name: supabase-studio
-    restart: unless-stopped
     environment:
       STUDIO_PG_META_URL: http://meta:8080
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-BingoSystem2024!}
       DEFAULT_ORGANIZATION_NAME: Bingo System
       DEFAULT_PROJECT_NAME: Bingo
       SUPABASE_URL: http://kong:8000
-      SUPABASE_PUBLIC_URL: https://api.${DOMAIN:-localhost}
-      SUPABASE_ANON_KEY: ${ANON_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0}
-      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU}
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.studio.rule=Host(`studio.${DOMAIN:-localhost}`)"
-      - "traefik.http.routers.studio.entrypoints=websecure"
-      - "traefik.http.routers.studio.tls.certresolver=letsencrypt"
-      - "traefik.http.services.studio.loadbalancer.server.port=3000"
-    depends_on:
-      - kong
-      - meta
+      SUPABASE_PUBLIC_URL: https://api.${DOMAIN}
+      SUPABASE_ANON_KEY: ${ANON_KEY}
+      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=luzianet"
+        - "traefik.http.routers.bingo-studio.rule=Host(`studio.${DOMAIN}`)"
+        - "traefik.http.routers.bingo-studio.entrypoints=websecure"
+        - "traefik.http.routers.bingo-studio.tls=true"
+        - "traefik.http.routers.bingo-studio.tls.certresolver=letsencryptresolver"
+        - "traefik.http.middlewares.bingo-studio-redirect.redirectscheme.scheme=https"
+        - "traefik.http.routers.bingo-studio.middlewares=bingo-studio-redirect"
+        - "traefik.http.routers.bingo-studio.service=bingo-studio-service"
+        - "traefik.http.services.bingo-studio-service.loadbalancer.server.port=3000"
     networks:
-      - supabase-network
+      - bingo-internal
+      - luzianet
 
   # ============================================
   # Bingo Frontend Application
   # ============================================
   app:
     image: josemaeldon/bingo-system:selfhosted
-    container_name: bingo-app
-    restart: unless-stopped
     environment:
-      VITE_SUPABASE_URL: https://api.${DOMAIN:-localhost}
-      VITE_SUPABASE_ANON_KEY: ${ANON_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0}
+      VITE_SUPABASE_URL: https://api.${DOMAIN}
+      VITE_SUPABASE_ANON_KEY: ${ANON_KEY}
       VITE_SUPABASE_PROJECT_ID: local
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.app.rule=Host(`${DOMAIN:-localhost}`)"
-      - "traefik.http.routers.app.entrypoints=websecure"
-      - "traefik.http.routers.app.tls.certresolver=letsencrypt"
-      - "traefik.http.services.app.loadbalancer.server.port=80"
-    depends_on:
-      - kong
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=luzianet"
+        - "traefik.http.routers.bingo-app.rule=Host(`${DOMAIN}`)"
+        - "traefik.http.routers.bingo-app.entrypoints=websecure"
+        - "traefik.http.routers.bingo-app.tls=true"
+        - "traefik.http.routers.bingo-app.tls.certresolver=letsencryptresolver"
+        - "traefik.http.middlewares.bingo-app-redirect.redirectscheme.scheme=https"
+        - "traefik.http.routers.bingo-app.middlewares=bingo-app-redirect"
+        - "traefik.http.routers.bingo-app.service=bingo-app-service"
+        - "traefik.http.services.bingo-app-service.loadbalancer.server.port=80"
     networks:
-      - supabase-network
+      - bingo-internal
+      - luzianet
 
 # ============================================
 # Configs (Kong inline)
@@ -283,10 +259,10 @@ configs:
         - username: DASHBOARD
         - username: anon
           keyauth_credentials:
-            - key: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0
+            - key: ${ANON_KEY}
         - username: service_role
           keyauth_credentials:
-            - key: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU
+            - key: ${SERVICE_ROLE_KEY}
 
       acls:
         - consumer: anon
@@ -422,16 +398,16 @@ configs:
 # Volumes
 # ============================================
 volumes:
-  traefik_letsencrypt:
-    driver: local
-  supabase_postgres_data:
-    driver: local
-  supabase_storage_data:
-    driver: local
+  bingo_postgres_data:
+    external: true
+  bingo_storage_data:
+    external: true
 
 # ============================================
 # Networks
 # ============================================
 networks:
-  supabase-network:
-    driver: bridge
+  bingo-internal:
+    driver: overlay
+  luzianet:
+    external: true
