@@ -290,9 +290,148 @@ docker exec -i bingo-database psql -U bingo_user bingo_db < backup.sql
 
 ---
 
-### Configuração com Traefik (Proxy Reverso)
+### Publicando Imagem no Docker Hub
 
-Para usar com Traefik e SSL automático, atualize o `docker-compose.yml`:
+Para disponibilizar sua imagem Docker para deploy em qualquer servidor:
+
+#### 1. Fazer login no Docker Hub
+
+```bash
+docker login
+```
+
+#### 2. Build e tag da imagem
+
+```bash
+# Build da imagem
+docker build -t seuusuario/bingo-system:latest .
+
+# Tag com versão específica
+docker build -t seuusuario/bingo-system:1.0.0 .
+```
+
+#### 3. Push para o Docker Hub
+
+```bash
+docker push seuusuario/bingo-system:latest
+docker push seuusuario/bingo-system:1.0.0
+```
+
+---
+
+### Deploy em Docker Swarm Mode com Traefik
+
+Para deploy em ambiente de produção com Docker Swarm, Traefik e SSL automático via Let's Encrypt:
+
+#### docker-compose.swarm.yml
+
+```yaml
+version: "3.7"
+
+services:
+  app:
+    image: seuusuario/bingo-system:latest  ## Substitua pelo seu usuário do Docker Hub
+    working_dir: /usr/share/nginx/html
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=sua-rede"
+        - "traefik.http.routers.bingo.rule=Host(`bingo.seudominio.com`)"
+        - "traefik.http.routers.bingo.entrypoints=websecure"
+        - "traefik.http.routers.bingo.tls=true"
+        - "traefik.http.routers.bingo.tls.certresolver=letsencryptresolver"
+        - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+        - "traefik.http.routers.bingo.middlewares=redirect-to-https"
+        - "traefik.http.routers.bingo.service=bingo-service"
+        - "traefik.http.services.bingo-service.loadbalancer.server.port=80"
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+    networks:
+      - sua-rede
+
+networks:
+  sua-rede:
+    external: true
+```
+
+#### Deploy da Stack no Swarm
+
+```bash
+# Inicializar Swarm (se ainda não estiver)
+docker swarm init
+
+# Criar rede externa (se não existir)
+docker network create --driver=overlay --attachable sua-rede
+
+# Deploy da stack
+docker stack deploy -c docker-compose.swarm.yml bingo
+
+# Verificar status
+docker stack services bingo
+
+# Ver logs
+docker service logs bingo_app -f
+
+# Atualizar para nova versão
+docker service update --image seuusuario/bingo-system:1.0.1 bingo_app
+```
+
+#### Exemplo Completo com Traefik já configurado
+
+Se você já tem o Traefik rodando no seu cluster:
+
+```yaml
+version: "3.7"
+
+services:
+  app:
+    image: seuusuario/bingo-system:1.0.0
+    deploy:
+      replicas: 2
+      placement:
+        constraints:
+          - node.role == manager
+      labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=luzianet"
+        - "traefik.http.routers.bingo.rule=Host(`bingo.santaluzia.org`)"
+        - "traefik.http.routers.bingo.entrypoints=websecure"
+        - "traefik.http.routers.bingo.tls=true"
+        - "traefik.http.routers.bingo.tls.certresolver=letsencryptresolver"
+        - "traefik.http.middlewares.bingo-redirect.redirectscheme.scheme=https"
+        - "traefik.http.routers.bingo.middlewares=bingo-redirect"
+        - "traefik.http.routers.bingo.service=bingo-service"
+        - "traefik.http.services.bingo-service.loadbalancer.server.port=80"
+      update_config:
+        parallelism: 1
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+    networks:
+      - luzianet
+
+networks:
+  luzianet:
+    external: true
+```
+
+> **Nota:** Lembre-se de marcar o registro como "Proxied" na CloudFlare para proteção adicional.
+
+---
+
+### Configuração Traefik Standalone (Compose simples)
+
+Para usar com Traefik em docker-compose tradicional (sem Swarm):
 
 ```yaml
 version: '3.8'
