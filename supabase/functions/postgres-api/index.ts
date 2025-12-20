@@ -638,63 +638,62 @@ serve(async (req) => {
         result = { rows: [{ success: true }] };
         break;
 
-      case 'transferirCartela':
-        // Get the origin cartela data
-        const origemCartela = await client.queryObject(`
-          SELECT * FROM atribuicao_cartelas WHERE atribuicao_id = $1 AND numero_cartela = $2
-        `, [data.atribuicao_origem_id, data.numero_cartela]);
-        
-        if ((origemCartela.rows as any[]).length === 0) {
-          throw new Error('Cartela não encontrada na atribuição de origem');
+      case 'transferirCartelas':
+        // Validate cartelas exist in origin
+        const cartelas = data.numeros_cartelas as number[];
+        if (!cartelas || cartelas.length === 0) {
+          throw new Error('Nenhuma cartela selecionada para transferência');
         }
 
-        // Remove from origin attribution
-        await client.queryObject(`
-          DELETE FROM atribuicao_cartelas WHERE atribuicao_id = $1 AND numero_cartela = $2
-        `, [data.atribuicao_origem_id, data.numero_cartela]);
-
         // Check if destination seller already has an attribution
-        const destAtribuicao = await client.queryObject(`
+        const destAtrib = await client.queryObject(`
           SELECT id FROM atribuicoes WHERE sorteio_id = $1 AND vendedor_id = $2
         `, [data.sorteio_id, data.vendedor_destino_id]);
 
-        let destAtribuicaoId: string;
+        let destAtribId: string;
 
-        if ((destAtribuicao.rows as any[]).length > 0) {
-          // Add to existing attribution
-          destAtribuicaoId = (destAtribuicao.rows[0] as any).id;
+        if ((destAtrib.rows as any[]).length > 0) {
+          destAtribId = (destAtrib.rows[0] as any).id;
         } else {
           // Create new attribution for destination seller
-          const newAtrib = await client.queryObject(`
+          const newAtribResult = await client.queryObject(`
             INSERT INTO atribuicoes (sorteio_id, vendedor_id)
             VALUES ($1, $2)
             RETURNING id
           `, [data.sorteio_id, data.vendedor_destino_id]);
-          destAtribuicaoId = (newAtrib.rows[0] as any).id;
+          destAtribId = (newAtribResult.rows[0] as any).id;
         }
 
-        // Add cartela to destination attribution
-        await client.queryObject(`
-          INSERT INTO atribuicao_cartelas (atribuicao_id, numero_cartela, status, data_atribuicao)
-          VALUES ($1, $2, 'ativa', NOW())
-        `, [destAtribuicaoId, data.numero_cartela]);
+        // Transfer each cartela
+        for (const numeroCartela of cartelas) {
+          // Remove from origin attribution
+          await client.queryObject(`
+            DELETE FROM atribuicao_cartelas WHERE atribuicao_id = $1 AND numero_cartela = $2
+          `, [data.atribuicao_origem_id, numeroCartela]);
 
-        // Update cartela vendedor_id
-        await client.queryObject(`
-          UPDATE cartelas SET vendedor_id = $1 WHERE sorteio_id = $2 AND numero = $3
-        `, [data.vendedor_destino_id, data.sorteio_id, data.numero_cartela]);
+          // Add to destination attribution
+          await client.queryObject(`
+            INSERT INTO atribuicao_cartelas (atribuicao_id, numero_cartela, status, data_atribuicao)
+            VALUES ($1, $2, 'ativa', NOW())
+          `, [destAtribId, numeroCartela]);
+
+          // Update cartela vendedor_id
+          await client.queryObject(`
+            UPDATE cartelas SET vendedor_id = $1 WHERE sorteio_id = $2 AND numero = $3
+          `, [data.vendedor_destino_id, data.sorteio_id, numeroCartela]);
+        }
 
         // Check if origin attribution has no more cartelas, delete it
-        const remainingCartelas = await client.queryObject(`
+        const remainingInOrigin = await client.queryObject(`
           SELECT COUNT(*) as count FROM atribuicao_cartelas WHERE atribuicao_id = $1
         `, [data.atribuicao_origem_id]);
         
-        if (parseInt((remainingCartelas.rows[0] as any).count) === 0) {
+        if (parseInt((remainingInOrigin.rows[0] as any).count) === 0) {
           await client.queryObject(`DELETE FROM atribuicoes WHERE id = $1`, [data.atribuicao_origem_id]);
         }
 
-        console.log(`Cartela ${data.numero_cartela} transferred to vendedor ${data.vendedor_destino_id}`);
-        result = { rows: [{ success: true }] };
+        console.log(`${cartelas.length} cartelas transferred to vendedor ${data.vendedor_destino_id}`);
+        result = { rows: [{ success: true, count: cartelas.length }] };
         break;
 
       case 'deleteAtribuicao':
