@@ -164,10 +164,13 @@ CREATE INDEX IF NOT EXISTS objects_owner_idx ON storage.objects(owner);
 -- =====================================================
 -- Schema REALTIME (para Realtime Server)
 -- =====================================================
-CREATE SCHEMA IF NOT EXISTS _realtime;
+-- Obs: o Realtime Server procura por tabelas sem schema explícito (ex: FROM "tenants"),
+-- então ele depende do search_path. O padrão esperado é o schema "realtime".
+
+CREATE SCHEMA IF NOT EXISTS realtime;
 
 -- Tabela de tenants (CRÍTICA para o Realtime funcionar)
-CREATE TABLE IF NOT EXISTS _realtime.tenants (
+CREATE TABLE IF NOT EXISTS realtime.tenants (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name TEXT,
   external_id TEXT UNIQUE NOT NULL,
@@ -186,51 +189,29 @@ CREATE TABLE IF NOT EXISTS _realtime.tenants (
 );
 
 -- Tabela de extensions para os tenants
-CREATE TABLE IF NOT EXISTS _realtime.extensions (
+CREATE TABLE IF NOT EXISTS realtime.extensions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   type TEXT NOT NULL,
   settings JSONB,
-  tenant_external_id TEXT REFERENCES _realtime.tenants(external_id) ON DELETE CASCADE,
+  tenant_external_id TEXT REFERENCES realtime.tenants(external_id) ON DELETE CASCADE,
   inserted_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Tabela de schema migrations do realtime
-CREATE TABLE IF NOT EXISTS _realtime.schema_migrations (
+CREATE TABLE IF NOT EXISTS realtime.schema_migrations (
   version BIGINT PRIMARY KEY,
   inserted_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Índices para realtime
-CREATE INDEX IF NOT EXISTS tenants_external_id_idx ON _realtime.tenants(external_id);
-CREATE INDEX IF NOT EXISTS extensions_tenant_external_id_idx ON _realtime.extensions(tenant_external_id);
+CREATE INDEX IF NOT EXISTS realtime_tenants_external_id_idx ON realtime.tenants(external_id);
+CREATE INDEX IF NOT EXISTS realtime_extensions_tenant_external_id_idx ON realtime.extensions(tenant_external_id);
 
--- Inserir tenant padrão para o Bingo
--- IMPORTANTE: O external_id deve corresponder ao host usado nas requisições
-INSERT INTO _realtime.tenants (
-  name, 
-  external_id, 
-  jwt_secret,
-  max_concurrent_users,
-  max_events_per_second,
-  max_bytes_per_second,
-  max_channels_per_client,
-  max_joins_per_second
-) VALUES (
-  'Bingo System',
-  'realtime-dev.supabase.localhost',
-  current_setting('app.settings.jwt_secret', true),
-  200,
-  100,
-  100000,
-  100,
-  100
-) ON CONFLICT (external_id) DO NOTHING;
-
--- Inserir também para localhost (usado nos health checks)
-INSERT INTO _realtime.tenants (
-  name, 
-  external_id, 
+-- Inserir tenant padrão para health-checks locais (Requisição do próprio container usa Host=localhost)
+INSERT INTO realtime.tenants (
+  name,
+  external_id,
   jwt_secret,
   max_concurrent_users,
   max_events_per_second,
@@ -248,27 +229,48 @@ INSERT INTO _realtime.tenants (
   100
 ) ON CONFLICT (external_id) DO NOTHING;
 
+-- (Opcional) Tenant para desenvolvimento local padrão do stack supabase
+INSERT INTO realtime.tenants (
+  name,
+  external_id,
+  jwt_secret,
+  max_concurrent_users,
+  max_events_per_second,
+  max_bytes_per_second,
+  max_channels_per_client,
+  max_joins_per_second
+) VALUES (
+  'Bingo System',
+  'realtime-dev.supabase.localhost',
+  current_setting('app.settings.jwt_secret', true),
+  200,
+  100,
+  100000,
+  100,
+  100
+) ON CONFLICT (external_id) DO NOTHING;
+
 -- Extension para broadcast
-INSERT INTO _realtime.extensions (type, settings, tenant_external_id)
+INSERT INTO realtime.extensions (type, settings, tenant_external_id)
 SELECT 'broadcast', '{}', 'localhost'
 WHERE NOT EXISTS (
-  SELECT 1 FROM _realtime.extensions 
+  SELECT 1 FROM realtime.extensions
   WHERE type = 'broadcast' AND tenant_external_id = 'localhost'
 );
 
 -- Extension para presence
-INSERT INTO _realtime.extensions (type, settings, tenant_external_id)
+INSERT INTO realtime.extensions (type, settings, tenant_external_id)
 SELECT 'presence', '{}', 'localhost'
 WHERE NOT EXISTS (
-  SELECT 1 FROM _realtime.extensions 
+  SELECT 1 FROM realtime.extensions
   WHERE type = 'presence' AND tenant_external_id = 'localhost'
 );
 
 -- Extension para postgres_cdc_rls
-INSERT INTO _realtime.extensions (type, settings, tenant_external_id)
-SELECT 'postgres_cdc_rls', '{"region": "local", "db_host": "localhost", "db_name": "postgres", "db_port": "5432", "slot_name": "supabase_realtime_rls", "poll_interval_ms": 100, "poll_max_changes": 100, "poll_max_record_bytes": 1048576}', 'localhost'
+INSERT INTO realtime.extensions (type, settings, tenant_external_id)
+SELECT 'postgres_cdc_rls', '{"region": "local", "slot_name": "supabase_realtime_rls", "poll_interval_ms": 100, "poll_max_changes": 100, "poll_max_record_bytes": 1048576}', 'localhost'
 WHERE NOT EXISTS (
-  SELECT 1 FROM _realtime.extensions 
+  SELECT 1 FROM realtime.extensions
   WHERE type = 'postgres_cdc_rls' AND tenant_external_id = 'localhost'
 );
 
