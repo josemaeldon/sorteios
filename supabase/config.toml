@@ -1,1 +1,4 @@
 project_id = "oyoukitreqzlawtygadp"
+
+[functions.postgres-api]
+verify_jwt = false

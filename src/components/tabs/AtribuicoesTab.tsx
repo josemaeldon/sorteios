@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils';
 import { formatarData, formatarNumeroCartela, getStatusLabel } from '@/lib/utils/formatters';
 import AtribuicaoModal from '@/components/modals/AtribuicaoModal';
 import { useToast } from '@/hooks/use-toast';
-import { CartelaAtribuida } from '@/types/bingo';
+import { CartelaAtribuida, Atribuicao } from '@/types/bingo';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -40,6 +40,7 @@ const AtribuicoesTab: React.FC = () => {
   const { toast } = useToast();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingAtribuicao, setEditingAtribuicao] = useState<Atribuicao | null>(null);
   const [expandedAtribuicao, setExpandedAtribuicao] = useState<string | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deletingAtribuicao, setDeletingAtribuicao] = useState<{ id: string; vendedorId: string; cartela?: number } | null>(null);
@@ -98,7 +99,8 @@ const AtribuicoesTab: React.FC = () => {
 
     if (actionType === 'devolver' && deletingAtribuicao.cartela) {
       updateCartelaStatusInAtribuicao(deletingAtribuicao.vendedorId, deletingAtribuicao.cartela, 'devolvida');
-      atualizarStatusCartela(deletingAtribuicao.cartela, 'devolvida');
+      // Return cartela to available status so it can be reassigned
+      atualizarStatusCartela(deletingAtribuicao.cartela, 'disponivel');
       toast({
         title: "Cartela devolvida",
         description: `A cartela ${formatarNumeroCartela(deletingAtribuicao.cartela)} foi devolvida.`
@@ -149,7 +151,7 @@ const AtribuicoesTab: React.FC = () => {
           <ListTodo className="w-6 h-6" />
           Atribuições - {sorteioAtivo.nome}
         </h2>
-        <Button onClick={() => setIsModalOpen(true)} className="gap-2">
+        <Button onClick={() => { setEditingAtribuicao(null); setIsModalOpen(true); }} className="gap-2">
           <Plus className="w-4 h-4" />
           Nova Atribuição
         </Button>
@@ -392,7 +394,8 @@ const AtribuicoesTab: React.FC = () => {
 
       <AtribuicaoModal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => { setIsModalOpen(false); setEditingAtribuicao(null); }}
+        editingAtribuicao={editingAtribuicao}
       />
 
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
