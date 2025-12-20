@@ -14,7 +14,348 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      atribuicao_cartelas: {
+        Row: {
+          atribuicao_id: string
+          created_at: string
+          data_atribuicao: string | null
+          data_devolucao: string | null
+          id: string
+          numero_cartela: number
+          status: string | null
+          venda_id: string | null
+        }
+        Insert: {
+          atribuicao_id: string
+          created_at?: string
+          data_atribuicao?: string | null
+          data_devolucao?: string | null
+          id?: string
+          numero_cartela: number
+          status?: string | null
+          venda_id?: string | null
+        }
+        Update: {
+          atribuicao_id?: string
+          created_at?: string
+          data_atribuicao?: string | null
+          data_devolucao?: string | null
+          id?: string
+          numero_cartela?: number
+          status?: string | null
+          venda_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "atribuicao_cartelas_atribuicao_id_fkey"
+            columns: ["atribuicao_id"]
+            isOneToOne: false
+            referencedRelation: "atribuicoes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      atribuicoes: {
+        Row: {
+          created_at: string
+          id: string
+          sorteio_id: string
+          updated_at: string | null
+          vendedor_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          sorteio_id: string
+          updated_at?: string | null
+          vendedor_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          sorteio_id?: string
+          updated_at?: string | null
+          vendedor_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "atribuicoes_sorteio_id_fkey"
+            columns: ["sorteio_id"]
+            isOneToOne: false
+            referencedRelation: "sorteios"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "atribuicoes_vendedor_id_fkey"
+            columns: ["vendedor_id"]
+            isOneToOne: false
+            referencedRelation: "vendedores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cartelas: {
+        Row: {
+          created_at: string
+          id: string
+          numero: number
+          sorteio_id: string
+          status: string | null
+          updated_at: string | null
+          vendedor_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          numero: number
+          sorteio_id: string
+          status?: string | null
+          updated_at?: string | null
+          vendedor_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          numero?: number
+          sorteio_id?: string
+          status?: string | null
+          updated_at?: string | null
+          vendedor_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cartelas_sorteio_id_fkey"
+            columns: ["sorteio_id"]
+            isOneToOne: false
+            referencedRelation: "sorteios"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cartelas_vendedor_id_fkey"
+            columns: ["vendedor_id"]
+            isOneToOne: false
+            referencedRelation: "vendedores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pagamentos: {
+        Row: {
+          created_at: string
+          data_pagamento: string | null
+          forma_pagamento: string | null
+          id: string
+          valor: number | null
+          venda_id: string
+        }
+        Insert: {
+          created_at?: string
+          data_pagamento?: string | null
+          forma_pagamento?: string | null
+          id?: string
+          valor?: number | null
+          venda_id: string
+        }
+        Update: {
+          created_at?: string
+          data_pagamento?: string | null
+          forma_pagamento?: string | null
+          id?: string
+          valor?: number | null
+          venda_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pagamentos_venda_id_fkey"
+            columns: ["venda_id"]
+            isOneToOne: false
+            referencedRelation: "vendas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sorteios: {
+        Row: {
+          created_at: string
+          data_sorteio: string | null
+          id: string
+          nome: string
+          premio: string | null
+          quantidade_cartelas: number | null
+          status: string | null
+          updated_at: string | null
+          user_id: string
+          valor_cartela: number | null
+        }
+        Insert: {
+          created_at?: string
+          data_sorteio?: string | null
+          id?: string
+          nome: string
+          premio?: string | null
+          quantidade_cartelas?: number | null
+          status?: string | null
+          updated_at?: string | null
+          user_id: string
+          valor_cartela?: number | null
+        }
+        Update: {
+          created_at?: string
+          data_sorteio?: string | null
+          id?: string
+          nome?: string
+          premio?: string | null
+          quantidade_cartelas?: number | null
+          status?: string | null
+          updated_at?: string | null
+          user_id?: string
+          valor_cartela?: number | null
+        }
+        Relationships: []
+      }
+      usuarios: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          email: string
+          id: string
+          nome: string
+          role: string
+          senha_hash: string
+          titulo_sistema: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          email: string
+          id?: string
+          nome: string
+          role?: string
+          senha_hash: string
+          titulo_sistema?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          email?: string
+          id?: string
+          nome?: string
+          role?: string
+          senha_hash?: string
+          titulo_sistema?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      vendas: {
+        Row: {
+          cliente_nome: string | null
+          cliente_telefone: string | null
+          created_at: string
+          data_venda: string | null
+          id: string
+          numeros_cartelas: string | null
+          sorteio_id: string
+          status: string | null
+          updated_at: string | null
+          valor_pago: number | null
+          valor_total: number | null
+          vendedor_id: string | null
+        }
+        Insert: {
+          cliente_nome?: string | null
+          cliente_telefone?: string | null
+          created_at?: string
+          data_venda?: string | null
+          id?: string
+          numeros_cartelas?: string | null
+          sorteio_id: string
+          status?: string | null
+          updated_at?: string | null
+          valor_pago?: number | null
+          valor_total?: number | null
+          vendedor_id?: string | null
+        }
+        Update: {
+          cliente_nome?: string | null
+          cliente_telefone?: string | null
+          created_at?: string
+          data_venda?: string | null
+          id?: string
+          numeros_cartelas?: string | null
+          sorteio_id?: string
+          status?: string | null
+          updated_at?: string | null
+          valor_pago?: number | null
+          valor_total?: number | null
+          vendedor_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vendas_sorteio_id_fkey"
+            columns: ["sorteio_id"]
+            isOneToOne: false
+            referencedRelation: "sorteios"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vendas_vendedor_id_fkey"
+            columns: ["vendedor_id"]
+            isOneToOne: false
+            referencedRelation: "vendedores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      vendedores: {
+        Row: {
+          ativo: boolean | null
+          cpf: string | null
+          created_at: string
+          email: string | null
+          endereco: string | null
+          id: string
+          nome: string
+          sorteio_id: string
+          telefone: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          ativo?: boolean | null
+          cpf?: string | null
+          created_at?: string
+          email?: string | null
+          endereco?: string | null
+          id?: string
+          nome: string
+          sorteio_id: string
+          telefone?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          ativo?: boolean | null
+          cpf?: string | null
+          created_at?: string
+          email?: string | null
+          endereco?: string | null
+          id?: string
+          nome?: string
+          sorteio_id?: string
+          telefone?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vendedores_sorteio_id_fkey"
+            columns: ["sorteio_id"]
+            isOneToOne: false
+            referencedRelation: "sorteios"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
