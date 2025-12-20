@@ -2,7 +2,7 @@ version: "3.7"
 
 services:
   app:
-    image: seuusuario/bingo-system:latest  ## Substitua pelo seu usuário do Docker Hub
+    image: josemaeldon/bingo-system:latest
     working_dir: /usr/share/nginx/html
     deploy:
       replicas: 1
