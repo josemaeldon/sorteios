@@ -13,7 +13,7 @@ import {
 } from '@/types/bingo';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
+import { callApi as callBackendApi } from '@/lib/apiClient';
 
 interface BingoContextType {
   // State
@@ -119,26 +119,9 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     periodo: 'todos'
   });
 
-  // API call helper with authentication
+  // API call helper (funciona em qualquer modo)
   const callApi = useCallback(async (action: string, data: Record<string, any> = {}) => {
-    const headers: Record<string, string> = {};
-    const token = localStorage.getItem('bingo_auth_token');
-    
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-
-    const response = await supabase.functions.invoke('postgres-api', {
-      body: { action, data },
-      headers
-    });
-    
-    if (response.error) {
-      console.error('API Error:', response.error);
-      throw new Error(response.error.message);
-    }
-    
-    return response.data;
+    return callBackendApi(action, data);
   }, []);
 
   // ================== SORTEIOS ==================

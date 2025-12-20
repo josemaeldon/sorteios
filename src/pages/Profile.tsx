@@ -10,7 +10,7 @@ import { Separator } from '@/components/ui/separator';
 import { ArrowLeft, User, Loader2, Save, Camera, X, Lock, Mail, Type } from 'lucide-react';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
+import { isSelfhostedMode } from '@/lib/apiClient';
 
 const profileSchema = z.object({
   nome: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres').max(100),
@@ -83,9 +83,23 @@ const Profile: React.FC = () => {
       return;
     }
 
+    if (isSelfhostedMode()) {
+      toast({
+        title: "Indisponível",
+        description: "Upload de avatar não está habilitado nesta instalação.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsUploading(true);
 
     try {
+      const { supabase } = await import('@/integrations/supabase/client');
+      if (!supabase) {
+        throw new Error('Serviço de armazenamento não está configurado.');
+      }
+
       const fileExt = file.name.split('.').pop();
       const fileName = `${user?.id}-${Date.now()}.${fileExt}`;
       const filePath = `avatars/${fileName}`;
@@ -101,7 +115,7 @@ const Profile: React.FC = () => {
         .getPublicUrl(filePath);
 
       setFormData(prev => ({ ...prev, avatar_url: publicUrl }));
-      
+
       toast({
         title: "Imagem carregada",
         description: "Clique em Salvar para confirmar as alterações.",

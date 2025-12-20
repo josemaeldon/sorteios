@@ -1,21 +1,28 @@
-// API Client that works in both modes:
-// 1. Lovable Cloud (Supabase Edge Functions)
-// 2. Selfhosted (direct HTTP to backend API)
+// API Client que funciona em dois modos:
+// - Instalação com backend integrado
+// - Instalação selfhosted (HTTP direto para a API)
 
 interface ApiConfig {
-  mode: 'cloud' | 'selfhosted';
+  mode: 'integrated' | 'selfhosted';
   baseUrl: string;
   basicAuth?: { username: string; password: string };
 }
 
-// Detect mode based on environment variables
+const isPlaceholder = (value: string): boolean => value.startsWith('__') && value.endsWith('__');
+
+const getEnv = (key: string): string => {
+  const v = (import.meta as any).env?.[key] ?? '';
+  return typeof v === 'string' && !isPlaceholder(v) ? v : '';
+};
+
+// Detecta modo baseado nas variáveis de ambiente
 const getApiConfig = (): ApiConfig => {
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '';
-  const basicAuthUser = import.meta.env.VITE_BASIC_AUTH_USER || '';
-  const basicAuthPass = import.meta.env.VITE_BASIC_AUTH_PASS || '';
-  
-  // If API_BASE_URL is set, we're in selfhosted mode
+  const apiBaseUrl = getEnv('VITE_API_BASE_URL');
+  const backendUrl = getEnv('VITE_SUPABASE_URL');
+  const basicAuthUser = getEnv('VITE_BASIC_AUTH_USER');
+  const basicAuthPass = getEnv('VITE_BASIC_AUTH_PASS');
+
+  // Se API_BASE_URL estiver configurado, estamos em selfhosted
   if (apiBaseUrl) {
     return {
       mode: 'selfhosted',
@@ -23,11 +30,11 @@ const getApiConfig = (): ApiConfig => {
       basicAuth: basicAuthUser ? { username: basicAuthUser, password: basicAuthPass } : undefined,
     };
   }
-  
-  // Otherwise, use Supabase
+
+  // Caso contrário, usa o backend integrado
   return {
-    mode: 'cloud',
-    baseUrl: supabaseUrl,
+    mode: 'integrated',
+    baseUrl: backendUrl,
   };
 };
 
@@ -71,7 +78,7 @@ const getAuthHeaders = (): Record<string, string> => {
 
 // API call function that works in both modes
 export const callApi = async (action: string, data: Record<string, any> = {}): Promise<any> => {
-  console.log(`API Call [${apiConfig.mode}]: ${action}`, data);
+  console.log(`API Call: ${action}`, data);
   
   if (apiConfig.mode === 'selfhosted') {
     // Direct HTTP call to backend API
@@ -92,13 +99,12 @@ export const callApi = async (action: string, data: Record<string, any> = {}): P
     
     return response.json();
   } else {
-    // Supabase Edge Function call
     const { supabase } = await import('@/integrations/supabase/client');
     
     if (!supabase) {
-      throw new Error('Supabase client não está configurado. Verifique as variáveis de ambiente.');
+      throw new Error('Backend não está configurado. Verifique as variáveis de ambiente.');
     }
-    
+
     const response = await supabase.functions.invoke('postgres-api', {
       body: { action, data },
     });
@@ -115,5 +121,5 @@ export const callApi = async (action: string, data: Record<string, any> = {}): P
   }
 };
 
-export const isCloudMode = (): boolean => apiConfig.mode === 'cloud';
+export const isIntegratedMode = (): boolean => apiConfig.mode === 'integrated';
 export const isSelfhostedMode = (): boolean => apiConfig.mode === 'selfhosted';
