@@ -19,7 +19,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Dice5, Save } from 'lucide-react';
+import { Progress } from '@/components/ui/progress';
+import { Dice5, Save, Loader2 } from 'lucide-react';
 
 interface SorteioModalProps {
   isOpen: boolean;
@@ -39,6 +40,9 @@ const SorteioModal: React.FC<SorteioModalProps> = ({ isOpen, onClose, editingId 
     quantidade_cartelas: '',
     status: 'agendado' as 'agendado' | 'em_andamento' | 'concluido'
   });
+
+  const [isCreating, setIsCreating] = useState(false);
+  const [progress, setProgress] = useState(0);
 
   useEffect(() => {
     if (editingId) {
@@ -65,7 +69,36 @@ const SorteioModal: React.FC<SorteioModalProps> = ({ isOpen, onClose, editingId 
     }
   }, [editingId, sorteios, isOpen]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Reset progress when modal opens/closes
+  useEffect(() => {
+    if (!isOpen) {
+      setIsCreating(false);
+      setProgress(0);
+    }
+  }, [isOpen]);
+
+  const simulateProgress = (quantidade: number) => {
+    // Estimate time based on quantity (approximately 50ms per cartela)
+    const estimatedTimeMs = Math.min(quantidade * 20, 10000); // Max 10 seconds
+    const intervalMs = 100;
+    const steps = estimatedTimeMs / intervalMs;
+    const increment = 90 / steps; // Go up to 90%, then jump to 100% when done
+
+    let currentProgress = 0;
+    const interval = setInterval(() => {
+      currentProgress += increment;
+      if (currentProgress >= 90) {
+        clearInterval(interval);
+        setProgress(90);
+      } else {
+        setProgress(currentProgress);
+      }
+    }, intervalMs);
+
+    return interval;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!formData.nome || !formData.data_sorteio || !formData.premio || 
@@ -95,21 +128,67 @@ const SorteioModal: React.FC<SorteioModalProps> = ({ isOpen, onClose, editingId 
     };
 
     if (editingId) {
-      updateSorteio(editingId, sorteioData);
+      await updateSorteio(editingId, sorteioData);
       toast({
         title: "Sorteio atualizado",
         description: `O sorteio "${formData.nome}" foi atualizado com sucesso.`
       });
+      onClose();
     } else {
-      addSorteio(sorteioData);
-      toast({
-        title: "Sorteio criado",
-        description: `O sorteio "${formData.nome}" foi criado com sucesso.`
-      });
+      // Show progress for creation
+      setIsCreating(true);
+      setProgress(0);
+      
+      const quantidade = parseInt(formData.quantidade_cartelas);
+      const progressInterval = simulateProgress(quantidade);
+      
+      try {
+        await addSorteio(sorteioData);
+        clearInterval(progressInterval);
+        setProgress(100);
+        
+        // Wait a moment to show 100% before closing
+        setTimeout(() => {
+          toast({
+            title: "Sorteio criado",
+            description: `O sorteio "${formData.nome}" foi criado com ${quantidade} cartelas.`
+          });
+          onClose();
+        }, 500);
+      } catch (error) {
+        clearInterval(progressInterval);
+        setIsCreating(false);
+        setProgress(0);
+      }
     }
-
-    onClose();
   };
+
+  if (isCreating) {
+    return (
+      <Dialog open={isOpen}>
+        <DialogContent className="sm:max-w-[400px]" hideCloseButton>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Loader2 className="w-5 h-5 animate-spin" />
+              Criando Sorteio
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <p className="text-sm text-muted-foreground text-center">
+              Gerando {formData.quantidade_cartelas} cartelas...
+            </p>
+            
+            <Progress value={progress} className="h-3" />
+            
+            <p className="text-center text-sm font-medium">
+              {Math.round(progress)}%
+            </p>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
