@@ -31,7 +31,12 @@ const CartelasTab: React.FC = () => {
       if (!c.numero.toString().includes(filtrosCartelas.busca)) return false;
     }
     if (filtrosCartelas.status !== 'todos') {
-      if (c.status !== filtrosCartelas.status) return false;
+      // Cartelas devolvidas também aparecem no filtro de disponíveis
+      if (filtrosCartelas.status === 'disponivel') {
+        if (c.status !== 'disponivel' && c.status !== 'devolvida') return false;
+      } else {
+        if (c.status !== filtrosCartelas.status) return false;
+      }
     }
     if (filtrosCartelas.vendedor !== 'todos') {
       if (!c.vendedor_id || c.vendedor_id !== filtrosCartelas.vendedor) return false;
@@ -61,11 +66,17 @@ const CartelasTab: React.FC = () => {
   };
 
   const getTooltip = (cartela: typeof cartelas[0]) => {
+    // Busca o nome do vendedor diretamente da lista de vendedores
+    const vendedor = cartela.vendedor_id 
+      ? vendedores.find(v => v.id === cartela.vendedor_id)
+      : null;
+    const nomeVendedor = vendedor?.nome || cartela.vendedor_nome || 'N/A';
+    
     switch (cartela.status) {
       case 'disponivel': return 'Disponível';
-      case 'ativa': return `Atribuída: ${cartela.vendedor_nome || 'N/A'}`;
-      case 'vendida': return `Vendida: ${cartela.vendedor_nome || 'N/A'}`;
-      case 'devolvida': return `Devolvida: ${cartela.vendedor_nome || 'N/A'}`;
+      case 'ativa': return `Atribuída: ${nomeVendedor}`;
+      case 'vendida': return `Vendida: ${nomeVendedor}`;
+      case 'devolvida': return `Devolvida: ${nomeVendedor}`;
       default: return '';
     }
   };
