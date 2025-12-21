@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { useBingo } from '@/contexts/BingoContext';
-import { ListTodo, Plus, Search, Filter, Eraser, Edit, Trash2, ChevronDown, ChevronUp, RotateCcw, ArrowRightLeft } from 'lucide-react';
+import { ListTodo, Plus, Search, Filter, Eraser, Edit, Trash2, ChevronDown, ChevronUp, RotateCcw, ArrowRightLeft, DollarSign } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import { formatarData, formatarNumeroCartela, getStatusLabel } from '@/lib/utils/formatters';
+import { formatarData, formatarNumeroCartela, getStatusLabel, formatarMoeda } from '@/lib/utils/formatters';
 import AtribuicaoModal from '@/components/modals/AtribuicaoModal';
 import TransferenciaModal from '@/components/modals/TransferenciaModal';
 import { useToast } from '@/hooks/use-toast';
@@ -247,12 +247,16 @@ const AtribuicoesTab: React.FC = () => {
                             {atribuicao.vendedor_nome?.charAt(0).toUpperCase()}
                           </span>
                         </div>
-                        <div>
-                          <h3 className="font-bold text-foreground text-lg">{atribuicao.vendedor_nome}</h3>
-                          <p className="text-sm text-muted-foreground">
-                            {atribuicao.cartelas.length} cartela(s) atribuída(s)
-                          </p>
-                        </div>
+                                        <div>
+                                          <h3 className="font-bold text-foreground text-lg">{atribuicao.vendedor_nome}</h3>
+                                          <p className="text-sm text-muted-foreground">
+                                            {atribuicao.cartelas.length} cartela(s) atribuída(s)
+                                          </p>
+                                          <p className="text-sm text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-medium">
+                                            <DollarSign className="w-3 h-3" />
+                                            Previsão: {formatarMoeda(atribuicao.cartelas.length * (sorteioAtivo?.valor_cartela || 0))}
+                                          </p>
+                                        </div>
                       </div>
                       
                       <div className="flex items-center gap-4">
