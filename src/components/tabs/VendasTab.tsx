@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useBingo } from '@/contexts/BingoContext';
-import { ShoppingCart, Plus, Search, Filter, Eraser, Edit, Trash2, DollarSign, Calendar, User } from 'lucide-react';
+import { ShoppingCart, Plus, Search, Filter, Eraser, Edit, Trash2, DollarSign, Calendar, User, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -28,7 +28,8 @@ const VendasTab: React.FC = () => {
     filtrosVendas, 
     setFiltrosVendas,
     deleteVenda,
-    atualizarStatusCartela
+    atualizarStatusCartela,
+    isLoading
   } = useBingo();
   const { toast } = useToast();
 
@@ -229,6 +230,12 @@ const VendasTab: React.FC = () => {
 
       {/* Tabela */}
       <div className="table-container overflow-x-auto">
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            <span className="ml-2 text-muted-foreground">Carregando vendas...</span>
+          </div>
+        ) : (
         <table className="w-full">
           <thead>
             <tr className="bg-muted/50">
@@ -315,6 +322,7 @@ const VendasTab: React.FC = () => {
             )}
           </tbody>
         </table>
+        )}
       </div>
 
       <VendaModal
