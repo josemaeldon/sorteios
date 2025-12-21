@@ -1,6 +1,6 @@
 import React from 'react';
 import { useBingo } from '@/contexts/BingoContext';
-import { Grid3X3, Search, Filter, Eraser, User } from 'lucide-react';
+import { Grid3X3, Search, Filter, Eraser, User, Loader2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
@@ -13,7 +13,8 @@ const CartelasTab: React.FC = () => {
     cartelas, 
     vendedores,
     filtrosCartelas, 
-    setFiltrosCartelas 
+    setFiltrosCartelas,
+    isLoading
   } = useBingo();
 
   if (!sorteioAtivo) {
@@ -97,7 +98,14 @@ const CartelasTab: React.FC = () => {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <div className="stat-card">
           <div className="text-sm text-muted-foreground">Disponíveis</div>
-          <div className="text-2xl font-bold text-foreground">{contadores.disponivel}</div>
+          <div className="text-2xl font-bold text-foreground">
+            {contadores.disponivel}
+            {contadores.devolvida > 0 && (
+              <span className="text-sm font-normal text-muted-foreground ml-1">
+                (+{contadores.devolvida} devolvidas)
+              </span>
+            )}
+          </div>
         </div>
         <div className="stat-card">
           <div className="text-sm text-muted-foreground">Atribuídas</div>
@@ -202,6 +210,12 @@ const CartelasTab: React.FC = () => {
 
       {/* Grid de Cartelas */}
       <div className="bg-card p-6 rounded-xl border border-border">
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            <span className="ml-2 text-muted-foreground">Carregando cartelas...</span>
+          </div>
+        ) : (
         <div className="flex flex-wrap justify-start">
           {cartelasFiltradas.map((cartela) => (
             <div
@@ -220,6 +234,7 @@ const CartelasTab: React.FC = () => {
             </div>
           )}
         </div>
+        )}
       </div>
     </div>
   );
