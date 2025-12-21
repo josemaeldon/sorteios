@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { useBingo } from '@/contexts/BingoContext';
-import { ShoppingCart, Plus, Search, Filter, Eraser, Edit, Trash2, DollarSign, Calendar, User, Loader2 } from 'lucide-react';
+import { ShoppingCart, Plus, Search, Filter, Eraser, Edit, Trash2, DollarSign, Calendar, User, Loader2, Hash } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import { formatarData, formatarMoeda, getStatusLabel } from '@/lib/utils/formatters';
+import { formatarData, formatarMoeda, getStatusLabel, formatarNumeroCartela } from '@/lib/utils/formatters';
 import VendaModal from '@/components/modals/VendaModal';
 import PagamentoModal from '@/components/modals/PagamentoModal';
 import { useToast } from '@/hooks/use-toast';
@@ -242,7 +242,12 @@ const VendasTab: React.FC = () => {
               <th className="p-4 text-left font-semibold text-foreground">Data</th>
               <th className="p-4 text-left font-semibold text-foreground">Cliente</th>
               <th className="p-4 text-left font-semibold text-foreground">Vendedor</th>
-              <th className="p-4 text-center font-semibold text-foreground">Cartelas</th>
+              <th className="p-4 text-left font-semibold text-foreground">
+                <span className="flex items-center gap-1">
+                  <Hash className="w-4 h-4" />
+                  Números Vendidos
+                </span>
+              </th>
               <th className="p-4 text-right font-semibold text-foreground">Valor Total</th>
               <th className="p-4 text-right font-semibold text-foreground">Valor Pago</th>
               <th className="p-4 text-center font-semibold text-foreground">Status</th>
@@ -255,10 +260,17 @@ const VendasTab: React.FC = () => {
                 <td className="p-4 text-muted-foreground">{formatarData(venda.data_venda)}</td>
                 <td className="p-4 font-semibold text-foreground">{venda.cliente_nome}</td>
                 <td className="p-4 text-muted-foreground">{venda.vendedor_nome || 'N/A'}</td>
-                <td className="p-4 text-center">
-                  <span className="px-2 py-1 bg-primary/10 text-primary rounded-full text-sm font-semibold">
-                    {venda.numeros_cartelas.split(',').length}
-                  </span>
+                <td className="p-4">
+                  <div className="flex flex-wrap gap-1.5 max-w-xs">
+                    {venda.numeros_cartelas.split(',').map((num, idx) => (
+                      <span 
+                        key={idx} 
+                        className="inline-flex items-center justify-center min-w-[2.5rem] px-2 py-1 bg-emerald-500 text-white rounded-md text-sm font-bold shadow-sm"
+                      >
+                        {formatarNumeroCartela(parseInt(num.trim()))}
+                      </span>
+                    ))}
+                  </div>
                 </td>
                 <td className="p-4 text-right font-bold text-foreground">{formatarMoeda(venda.valor_total)}</td>
                 <td className="p-4 text-right">
