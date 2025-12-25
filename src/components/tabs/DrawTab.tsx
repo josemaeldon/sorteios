@@ -12,7 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 // Animation constants
 const ANIMATION_CYCLES = 20;
 const ANIMATION_INTERVAL_MS = 100;
-const FULLSCREEN_FONT_SIZE = 400; // Font size in pixels for fullscreen display
+const FULLSCREEN_FONT_SIZE_DEFAULT = 300; // Default font size in pixels for fullscreen display
 
 const DrawTab: React.FC = () => {
   const { sorteioAtivo } = useBingo();
@@ -25,10 +25,13 @@ const DrawTab: React.FC = () => {
   const [isConfigured, setIsConfigured] = useState(false);
   const [availableNumbers, setAvailableNumbers] = useState<number[]>([]);
   const [fontSize, setFontSize] = useState<number>(300);
+  const [fullscreenFontSize, setFullscreenFontSize] = useState<number>(FULLSCREEN_FONT_SIZE_DEFAULT);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [registro, setRegistro] = useState<string>('');
   const animationIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const fullscreenRef = useRef<HTMLDivElement>(null);
+  const saveRegistroTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Load draw history when sorteio changes
   useEffect(() => {
@@ -40,6 +43,7 @@ const DrawTab: React.FC = () => {
       setDrawnNumbers([]);
       setIsConfigured(false);
       setAvailableNumbers([]);
+      setRegistro('');
     }
   }, [sorteioAtivo?.id]);
 
@@ -61,6 +65,7 @@ const DrawTab: React.FC = () => {
         const firstItem = sortedHistory[0];
         const start = firstItem.range_start;
         const end = firstItem.range_end;
+        const loadedRegistro = firstItem.registro || '';
         
         // Generate available numbers
         const allNumbers: number[] = [];
@@ -73,6 +78,7 @@ const DrawTab: React.FC = () => {
         setRangeEnd(end);
         setAvailableNumbers(allNumbers);
         setIsConfigured(true);
+        setRegistro(loadedRegistro);
         
         // Set current number to the last drawn number
         if (numbers.length > 0) {
@@ -95,12 +101,31 @@ const DrawTab: React.FC = () => {
         numero_sorteado: numero,
         range_start: rangeStart,
         range_end: rangeEnd,
-        ordem: ordem
+        ordem: ordem,
+        registro: registro
       });
     } catch (error: any) {
       console.error('Error saving drawn number:', error);
       toast({
         title: "Erro ao salvar número",
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  };
+
+  const saveRegistro = async (newRegistro: string) => {
+    if (!sorteioAtivo) return;
+    
+    try {
+      await callApi('updateSorteioRegistro', {
+        sorteio_id: sorteioAtivo.id,
+        registro: newRegistro
+      });
+    } catch (error: any) {
+      console.error('Error saving registro:', error);
+      toast({
+        title: "Erro ao salvar registro",
         description: error.message,
         variant: "destructive"
       });
@@ -128,8 +153,32 @@ const DrawTab: React.FC = () => {
       if (animationIntervalRef.current) {
         clearInterval(animationIntervalRef.current);
       }
+      if (saveRegistroTimeoutRef.current) {
+        clearTimeout(saveRegistroTimeoutRef.current);
+      }
     };
   }, []);
+
+  // Auto-save registro with debounce
+  useEffect(() => {
+    if (!isConfigured || !sorteioAtivo) return;
+    
+    // Clear existing timeout
+    if (saveRegistroTimeoutRef.current) {
+      clearTimeout(saveRegistroTimeoutRef.current);
+    }
+    
+    // Set new timeout to save after 1 second of no typing
+    saveRegistroTimeoutRef.current = setTimeout(() => {
+      saveRegistro(registro);
+    }, 1000);
+    
+    return () => {
+      if (saveRegistroTimeoutRef.current) {
+        clearTimeout(saveRegistroTimeoutRef.current);
+      }
+    };
+  }, [registro, isConfigured, sorteioAtivo]);
 
   // Fullscreen handlers
   const toggleFullscreen = async () => {
@@ -154,11 +203,19 @@ const DrawTab: React.FC = () => {
   }, []);
 
   const increaseFontSize = () => {
-    setFontSize(prev => Math.min(prev + 20, 500));
+    if (isFullscreen) {
+      setFullscreenFontSize(prev => Math.min(prev + 20, 600));
+    } else {
+      setFontSize(prev => Math.min(prev + 20, 500));
+    }
   };
 
   const decreaseFontSize = () => {
-    setFontSize(prev => Math.max(prev - 20, 100));
+    if (isFullscreen) {
+      setFullscreenFontSize(prev => Math.max(prev - 20, 100));
+    } else {
+      setFontSize(prev => Math.max(prev - 20, 100));
+    }
   };
 
   if (!sorteioAtivo) {
@@ -251,6 +308,7 @@ const DrawTab: React.FC = () => {
     setIsDrawing(false);
     setIsConfigured(false);
     setAvailableNumbers([]);
+    setRegistro('');
   };
 
   const reconfigure = () => {
@@ -338,7 +396,7 @@ const DrawTab: React.FC = () => {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-4">
-        <div>
+        <div className="flex-1">
           <h2 className="text-3xl font-bold text-foreground">Sortear: {sorteioAtivo.nome}</h2>
           <p className="text-muted-foreground mt-1">
             Faixa: {rangeStart} a {rangeEnd} | Sorteados: {drawnNumbers.length} | Restantes: {remainingNumbers.length}
@@ -377,13 +435,54 @@ const DrawTab: React.FC = () => {
         </div>
       </div>
 
+      {/* Draw Registration Field */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex items-center gap-4">
+            <div className="flex-1 space-y-2">
+              <Label htmlFor="registro">Registro do Sorteio</Label>
+              <Input
+                id="registro"
+                value={registro}
+                onChange={(e) => setRegistro(e.target.value)}
+                placeholder="Ex: Sorteio 001, Rodada 1, etc..."
+                className="text-lg"
+              />
+              <p className="text-xs text-muted-foreground">
+                {registro ? 'Salvando automaticamente...' : 'Digite para registrar este sorteio'}
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="grid grid-cols-1 gap-6">
         {/* Current Number Display with Fullscreen */}
         <div ref={fullscreenRef} className={cn(isFullscreen && "bg-background p-8 min-h-screen flex flex-col")}>
-          <Card className="border-2 flex-1">
-            <CardHeader className="flex flex-row items-center justify-between">
+          <Card className="border-2 flex-1 flex flex-col">
+            <CardHeader className="flex flex-row items-center justify-between flex-shrink-0">
               <CardTitle>Número Sorteado</CardTitle>
               <div className="flex gap-2">
+                {isFullscreen && (
+                  <>
+                    <Button
+                      onClick={decreaseFontSize}
+                      variant="outline"
+                      size="icon"
+                      title="Diminuir tamanho"
+                    >
+                      <ZoomOut className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      onClick={increaseFontSize}
+                      variant="outline"
+                      size="icon"
+                      title="Aumentar tamanho"
+                    >
+                      <ZoomIn className="w-4 h-4" />
+                    </Button>
+                  </>
+                )}
                 {!isFullscreen && (
                   <>
                     <Button
@@ -414,7 +513,7 @@ const DrawTab: React.FC = () => {
                 </Button>
               </div>
             </CardHeader>
-            <CardContent className="flex-1 flex flex-col">
+            <CardContent className="flex-1 flex flex-col overflow-hidden">
               <div className="flex items-center justify-center flex-1 min-h-[400px]">
                 {currentNumber !== null ? (
                   <div
@@ -422,7 +521,7 @@ const DrawTab: React.FC = () => {
                       "font-black leading-none transition-all duration-300",
                       isDrawing ? "animate-pulse text-primary" : "text-primary"
                     )}
-                    style={{ fontSize: `${isFullscreen ? FULLSCREEN_FONT_SIZE + 'px' : fontSize + 'px'}` }}
+                    style={{ fontSize: `${isFullscreen ? fullscreenFontSize + 'px' : fontSize + 'px'}` }}
                   >
                     {currentNumber}
                   </div>
@@ -436,7 +535,7 @@ const DrawTab: React.FC = () => {
               
               {/* Fullscreen controls */}
               {isFullscreen && (
-                <div className="mt-8 space-y-6">
+                <div className="mt-8 space-y-6 flex-shrink-0">
                   {/* Draw button in fullscreen */}
                   <div className="flex justify-center gap-4">
                     <Button

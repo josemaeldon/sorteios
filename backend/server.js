@@ -398,17 +398,24 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         return res.json({ data: result.rows });
 
       case 'saveSorteioNumero': {
-        const { sorteio_id, numero_sorteado, range_start, range_end, ordem } = data;
+        const { sorteio_id, numero_sorteado, range_start, range_end, ordem, registro } = data;
         result = await client.query(`
-          INSERT INTO sorteio_historico (sorteio_id, numero_sorteado, range_start, range_end, ordem)
-          VALUES ($1, $2, $3, $4, $5)
+          INSERT INTO sorteio_historico (sorteio_id, numero_sorteado, range_start, range_end, ordem, registro)
+          VALUES ($1, $2, $3, $4, $5, $6)
           RETURNING *
-        `, [sorteio_id, numero_sorteado, range_start, range_end, ordem]);
+        `, [sorteio_id, numero_sorteado, range_start, range_end, ordem, registro || null]);
         return res.json({ data: result.rows[0] });
       }
 
       case 'clearSorteioHistorico':
         await client.query('DELETE FROM sorteio_historico WHERE sorteio_id = $1', [data.sorteio_id]);
+        return res.json({ data: [{ success: true }] });
+
+      case 'updateSorteioRegistro':
+        await client.query(
+          'UPDATE sorteio_historico SET registro = $1 WHERE sorteio_id = $2',
+          [data.registro, data.sorteio_id]
+        );
         return res.json({ data: [{ success: true }] });
 
       // ================== VENDEDORES ==================
