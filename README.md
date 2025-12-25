@@ -2,6 +2,8 @@
 
 Sistema completo para gerenciamento de sorteios de bingo, vendedores, cartelas e vendas.
 
+> **🆕 Nova Versão**: Agora com suporte para PostgreSQL **E** MySQL! Escolha o banco de dados na primeira configuração.
+
 ## 📋 Índice
 
 - [Funcionalidades](#-funcionalidades)
@@ -37,8 +39,8 @@ Sistema completo para gerenciamento de sorteios de bingo, vendedores, cartelas e
 | Camada | Tecnologias |
 |--------|-------------|
 | **Frontend** | React, TypeScript, Vite, Tailwind CSS, shadcn/ui |
-| **Backend** | Supabase Edge Functions |
-| **Banco de Dados** | PostgreSQL |
+| **Backend** | Node.js + Express |
+| **Banco de Dados** | PostgreSQL **ou** MySQL (configurável) |
 | **Infraestrutura** | Docker, Nginx, Traefik |
 
 ---
