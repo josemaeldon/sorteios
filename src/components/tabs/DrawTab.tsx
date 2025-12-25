@@ -35,13 +35,15 @@ const DrawTab: React.FC = () => {
   }, []);
 
   // Fullscreen handlers
-  const toggleFullscreen = () => {
-    if (!document.fullscreenElement) {
-      fullscreenRef.current?.requestFullscreen();
-      setIsFullscreen(true);
-    } else {
-      document.exitFullscreen();
-      setIsFullscreen(false);
+  const toggleFullscreen = async () => {
+    try {
+      if (!document.fullscreenElement) {
+        await fullscreenRef.current?.requestFullscreen();
+      } else {
+        await document.exitFullscreen();
+      }
+    } catch (error) {
+      console.error('Fullscreen toggle error:', error);
     }
   };
 
@@ -328,7 +330,7 @@ const DrawTab: React.FC = () => {
                   <div
                     key={index}
                     className={cn(
-                      "flex items-center justify-center w-16 h-16 rounded-lg font-bold text-xl border-2 transition-all",
+                      "flex items-center justify-center w-16 h-16 rounded-lg font-bold text-xl border-2 transition-transform",
                       index === drawnNumbers.length - 1
                         ? "bg-primary text-primary-foreground border-primary scale-110"
                         : "bg-muted text-foreground border-border"
