@@ -5,10 +5,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { User, CheckCircle2, AlertCircle, Loader2, Settings, Database } from 'lucide-react';
+import { User, CheckCircle2, AlertCircle, Loader2, Settings, Database, ArrowRight } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { callApi } from '@/lib/apiClient';
 
-type SetupStep = 'check' | 'admin' | 'complete';
+type SetupStep = 'check' | 'database' | 'admin' | 'complete';
 
 const Setup: React.FC = () => {
   const navigate = useNavigate();
@@ -16,7 +17,17 @@ const Setup: React.FC = () => {
   
   const [currentStep, setCurrentStep] = useState<SetupStep>('check');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
   const [error, setError] = useState<string>('');
+  
+  // Database configuration data
+  const [dbData, setDbData] = useState({
+    host: 'localhost',
+    port: '5432',
+    database: 'bingo',
+    user: 'postgres',
+    password: ''
+  });
   
   // Admin user data
   const [adminData, setAdminData] = useState({
@@ -33,11 +44,43 @@ const Setup: React.FC = () => {
 
   const checkSetupRequired = async () => {
     try {
+      // First check if database is configured
+      const dbConfigResponse = await fetch('/api', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'checkDbConfig' })
+      });
+      
+      if (!dbConfigResponse.ok) {
+        // If server error, try to handle gracefully
+        console.error('Failed to check database config');
+        setCurrentStep('database');
+        return;
+      }
+      
+      const dbConfigData = await dbConfigResponse.json();
+      
+      if (!dbConfigData.configured) {
+        // Database not configured, show database configuration step
+        setCurrentStep('database');
+        return;
+      }
+      
+      // Database is configured, check if admin exists
       const response = await fetch('/api', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'checkFirstAccess' })
       });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        if (errorData.needsDbConfig) {
+          setCurrentStep('database');
+          return;
+        }
+        throw new Error('Erro ao verificar sistema');
+      }
       
       const data = await response.json();
       
@@ -55,8 +98,112 @@ const Setup: React.FC = () => {
       setCurrentStep('admin');
     } catch (error) {
       console.error('Error checking setup:', error);
-      setError('Erro ao verificar o sistema. Certifique-se de que o banco de dados está acessível.');
-      setCurrentStep('admin');
+      // If error, assume database needs configuration
+      setCurrentStep('database');
+    }
+  };
+
+  const testDatabaseConnection = async (): Promise<{ success: boolean; error?: string; message?: string }> => {
+    try {
+      const response = await fetch('/api', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'testDbConnection',
+          host: dbData.host,
+          port: dbData.port,
+          database: dbData.database,
+          user: dbData.user,
+          password: dbData.password
+        })
+      });
+
+      const data = await response.json();
+      return data;
+    } catch (error: any) {
+      return { success: false, error: error.message || 'Erro ao testar conexão' };
+    }
+  };
+
+  const handleTestConnection = async () => {
+    setIsTesting(true);
+    setError('');
+
+    const result = await testDatabaseConnection();
+
+    if (result.success) {
+      toast({
+        title: "Conexão bem-sucedida",
+        description: result.message,
+      });
+    } else {
+      setError(result.error || 'Erro ao testar conexão');
+    }
+
+    setIsTesting(false);
+  };
+
+  const handleDatabaseSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    setError('');
+
+    try {
+      // First test the connection
+      const testResult = await testDatabaseConnection();
+
+      if (!testResult.success) {
+        setError(testResult.error || 'Erro ao conectar ao banco de dados');
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Save the configuration
+      const saveResponse = await fetch('/api', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'saveDbConfig',
+          host: dbData.host,
+          port: dbData.port,
+          database: dbData.database,
+          user: dbData.user,
+          password: dbData.password
+        })
+      });
+
+      const saveData = await saveResponse.json();
+
+      if (!saveData.success) {
+        setError(saveData.error || 'Erro ao salvar configuração');
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Initialize the database
+      const initResponse = await fetch('/api', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'initializeDatabase'
+        })
+      });
+
+      const initData = await initResponse.json();
+
+      if (initData.success) {
+        toast({
+          title: "Banco de dados configurado",
+          description: "Agora configure o usuário administrador.",
+        });
+        setCurrentStep('admin');
+      } else {
+        setError(initData.error || 'Erro ao inicializar banco de dados');
+      }
+    } catch (error: any) {
+      setError(error.message || 'Erro ao configurar banco de dados');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -131,6 +278,143 @@ const Setup: React.FC = () => {
     );
   }
 
+  if (currentStep === 'database') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-50 to-blue-50 dark:from-gray-900 dark:to-gray-800 p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <div className="mx-auto mb-4 w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center">
+              <Database className="w-8 h-8 text-primary" />
+            </div>
+            <CardTitle className="text-2xl">Configuração do Banco de Dados</CardTitle>
+            <CardDescription>
+              Configure a conexão com o PostgreSQL
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {error && (
+              <Alert variant="destructive" className="mb-4">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+
+            <Alert className="mb-4">
+              <Database className="h-4 w-4" />
+              <AlertDescription className="text-sm">
+                <strong>Importante:</strong> Certifique-se de que o PostgreSQL está instalado e em execução.
+                O sistema criará as tabelas automaticamente.
+              </AlertDescription>
+            </Alert>
+            
+            <form onSubmit={handleDatabaseSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="host">Host</Label>
+                <Input
+                  id="host"
+                  value={dbData.host}
+                  onChange={(e) => setDbData({ ...dbData, host: e.target.value })}
+                  placeholder="localhost"
+                  required
+                />
+                <p className="text-xs text-muted-foreground">
+                  Endereço do servidor PostgreSQL (ex: localhost, 192.168.1.100)
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="port">Porta</Label>
+                <Input
+                  id="port"
+                  value={dbData.port}
+                  onChange={(e) => setDbData({ ...dbData, port: e.target.value })}
+                  placeholder="5432"
+                  required
+                />
+                <p className="text-xs text-muted-foreground">
+                  Porta do PostgreSQL (padrão: 5432)
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="database">Nome do Banco</Label>
+                <Input
+                  id="database"
+                  value={dbData.database}
+                  onChange={(e) => setDbData({ ...dbData, database: e.target.value })}
+                  placeholder="bingo"
+                  required
+                />
+                <p className="text-xs text-muted-foreground">
+                  Nome do banco de dados (será criado se não existir)
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="user">Usuário</Label>
+                <Input
+                  id="user"
+                  value={dbData.user}
+                  onChange={(e) => setDbData({ ...dbData, user: e.target.value })}
+                  placeholder="postgres"
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="password">Senha</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  value={dbData.password}
+                  onChange={(e) => setDbData({ ...dbData, password: e.target.value })}
+                  placeholder="••••••••"
+                  required
+                />
+              </div>
+
+              <div className="flex gap-2">
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  className="flex-1" 
+                  onClick={handleTestConnection}
+                  disabled={isTesting || isSubmitting}
+                >
+                  {isTesting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Testando...
+                    </>
+                  ) : (
+                    <>
+                      <Database className="mr-2 h-4 w-4" />
+                      Testar Conexão
+                    </>
+                  )}
+                </Button>
+
+                <Button type="submit" className="flex-1" disabled={isSubmitting || isTesting}>
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Configurando...
+                    </>
+                  ) : (
+                    <>
+                      <ArrowRight className="mr-2 h-4 w-4" />
+                      Continuar
+                    </>
+                  )}
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   if (currentStep === 'admin') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-50 to-blue-50 dark:from-gray-900 dark:to-gray-800 p-4">
@@ -151,14 +435,6 @@ const Setup: React.FC = () => {
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
-
-            <Alert className="mb-4">
-              <Database className="h-4 w-4" />
-              <AlertDescription className="text-sm">
-                <strong>Requisitos:</strong> O banco de dados PostgreSQL deve estar configurado e acessível.
-                As tabelas serão criadas automaticamente se não existirem.
-              </AlertDescription>
-            </Alert>
             
             <form onSubmit={handleAdminSubmit} className="space-y-4">
               <div className="space-y-2">
