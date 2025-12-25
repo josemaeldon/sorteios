@@ -95,4 +95,4 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
           repository: ${{ env.DOCKER_USER }}/${{ env.IMAGE_NAME }}
-          readme-filepath: ./README-POSTGRES-ONLY.md
+          readme-filepath: ./docs/README-POSTGRES-ONLY.md
