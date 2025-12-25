@@ -6,13 +6,17 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Shuffle, RotateCcw, Play, Settings, Maximize, Minimize, ZoomIn, ZoomOut } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { callApi } from '@/lib/apiClient';
+import { useToast } from '@/hooks/use-toast';
 
 // Animation constants
 const ANIMATION_CYCLES = 20;
 const ANIMATION_INTERVAL_MS = 100;
+const FULLSCREEN_FONT_SIZE = 400; // Font size in pixels for fullscreen display
 
 const DrawTab: React.FC = () => {
   const { sorteioAtivo } = useBingo();
+  const { toast } = useToast();
   const [currentNumber, setCurrentNumber] = useState<number | null>(null);
   const [drawnNumbers, setDrawnNumbers] = useState<number[]>([]);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -22,8 +26,101 @@ const DrawTab: React.FC = () => {
   const [availableNumbers, setAvailableNumbers] = useState<number[]>([]);
   const [fontSize, setFontSize] = useState<number>(300);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const animationIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const fullscreenRef = useRef<HTMLDivElement>(null);
+
+  // Load draw history when sorteio changes
+  useEffect(() => {
+    if (sorteioAtivo) {
+      loadDrawHistory();
+    } else {
+      // Reset state when no sorteio is active
+      setCurrentNumber(null);
+      setDrawnNumbers([]);
+      setIsConfigured(false);
+      setAvailableNumbers([]);
+    }
+  }, [sorteioAtivo?.id]);
+
+  const loadDrawHistory = async () => {
+    if (!sorteioAtivo) return;
+    
+    try {
+      setIsLoadingHistory(true);
+      const result = await callApi('getSorteioHistorico', { sorteio_id: sorteioAtivo.id });
+      
+      if (result.data && result.data.length > 0) {
+        // Sort by ordem to ensure correct order
+        const sortedHistory = result.data.sort((a: any, b: any) => a.ordem - b.ordem);
+        
+        // Extract the drawn numbers
+        const numbers = sortedHistory.map((item: any) => item.numero_sorteado);
+        
+        // Get range configuration from the first item
+        const firstItem = sortedHistory[0];
+        const start = firstItem.range_start;
+        const end = firstItem.range_end;
+        
+        // Generate available numbers
+        const allNumbers: number[] = [];
+        for (let i = start; i <= end; i++) {
+          allNumbers.push(i);
+        }
+        
+        setDrawnNumbers(numbers);
+        setRangeStart(start);
+        setRangeEnd(end);
+        setAvailableNumbers(allNumbers);
+        setIsConfigured(true);
+        
+        // Set current number to the last drawn number
+        if (numbers.length > 0) {
+          setCurrentNumber(numbers[numbers.length - 1]);
+        }
+      }
+    } catch (error: any) {
+      console.error('Error loading draw history:', error);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
+
+  const saveDrawnNumber = async (numero: number, ordem: number) => {
+    if (!sorteioAtivo) return;
+    
+    try {
+      await callApi('saveSorteioNumero', {
+        sorteio_id: sorteioAtivo.id,
+        numero_sorteado: numero,
+        range_start: rangeStart,
+        range_end: rangeEnd,
+        ordem: ordem
+      });
+    } catch (error: any) {
+      console.error('Error saving drawn number:', error);
+      toast({
+        title: "Erro ao salvar número",
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  };
+
+  const clearDrawHistory = async () => {
+    if (!sorteioAtivo) return;
+    
+    try {
+      await callApi('clearSorteioHistorico', { sorteio_id: sorteioAtivo.id });
+    } catch (error: any) {
+      console.error('Error clearing draw history:', error);
+      toast({
+        title: "Erro ao limpar histórico",
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  };
 
   // Cleanup interval on unmount
   useEffect(() => {
@@ -74,10 +171,24 @@ const DrawTab: React.FC = () => {
     );
   }
 
-  const startDraw = () => {
+  if (isLoadingHistory) {
+    return (
+      <div className="text-center py-12">
+        <Shuffle className="w-16 h-16 mx-auto text-muted-foreground mb-4 animate-pulse" />
+        <h2 className="text-2xl font-bold text-foreground mb-2">Carregando...</h2>
+        <p className="text-muted-foreground">Carregando histórico do sorteio</p>
+      </div>
+    );
+  }
+
+  const startDraw = async () => {
     if (rangeStart >= rangeEnd || isNaN(rangeStart) || isNaN(rangeEnd)) {
       return;
     }
+
+    // Clear previous history for this sorteio when starting a new draw session
+    // This ensures a fresh start with the new configuration
+    await clearDrawHistory();
 
     // Generate number range
     const numbers: number[] = [];
@@ -117,15 +228,24 @@ const DrawTab: React.FC = () => {
         const finalIndex = Math.floor(Math.random() * remainingNumbers.length);
         const finalNumber = remainingNumbers[finalIndex];
         setCurrentNumber(finalNumber);
-        setDrawnNumbers(prev => [...prev, finalNumber]);
+        
+        // Update local state
+        const newDrawnNumbers = [...drawnNumbers, finalNumber];
+        setDrawnNumbers(newDrawnNumbers);
         setIsDrawing(false);
+        
+        // Save to database
+        saveDrawnNumber(finalNumber, newDrawnNumbers.length);
       }
     }, ANIMATION_INTERVAL_MS);
     
     animationIntervalRef.current = interval;
   };
 
-  const resetDraw = () => {
+  const resetDraw = async () => {
+    // Clear history from database
+    await clearDrawHistory();
+    
     setCurrentNumber(null);
     setDrawnNumbers([]);
     setIsDrawing(false);
@@ -259,27 +379,31 @@ const DrawTab: React.FC = () => {
 
       <div className="grid grid-cols-1 gap-6">
         {/* Current Number Display with Fullscreen */}
-        <div ref={fullscreenRef} className={cn(isFullscreen && "bg-background p-8")}>
-          <Card className="border-2">
+        <div ref={fullscreenRef} className={cn(isFullscreen && "bg-background p-8 min-h-screen flex flex-col")}>
+          <Card className="border-2 flex-1">
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle>Número Sorteado</CardTitle>
               <div className="flex gap-2">
-                <Button
-                  onClick={decreaseFontSize}
-                  variant="outline"
-                  size="icon"
-                  title="Diminuir tamanho"
-                >
-                  <ZoomOut className="w-4 h-4" />
-                </Button>
-                <Button
-                  onClick={increaseFontSize}
-                  variant="outline"
-                  size="icon"
-                  title="Aumentar tamanho"
-                >
-                  <ZoomIn className="w-4 h-4" />
-                </Button>
+                {!isFullscreen && (
+                  <>
+                    <Button
+                      onClick={decreaseFontSize}
+                      variant="outline"
+                      size="icon"
+                      title="Diminuir tamanho"
+                    >
+                      <ZoomOut className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      onClick={increaseFontSize}
+                      variant="outline"
+                      size="icon"
+                      title="Aumentar tamanho"
+                    >
+                      <ZoomIn className="w-4 h-4" />
+                    </Button>
+                  </>
+                )}
                 <Button
                   onClick={toggleFullscreen}
                   variant="outline"
@@ -290,15 +414,15 @@ const DrawTab: React.FC = () => {
                 </Button>
               </div>
             </CardHeader>
-            <CardContent>
-              <div className="flex items-center justify-center min-h-[400px]">
+            <CardContent className="flex-1 flex flex-col">
+              <div className="flex items-center justify-center flex-1 min-h-[400px]">
                 {currentNumber !== null ? (
                   <div
                     className={cn(
                       "font-black leading-none transition-all duration-300",
                       isDrawing ? "animate-pulse text-primary" : "text-primary"
                     )}
-                    style={{ fontSize: `${fontSize}px` }}
+                    style={{ fontSize: `${isFullscreen ? FULLSCREEN_FONT_SIZE + 'px' : fontSize + 'px'}` }}
                   >
                     {currentNumber}
                   </div>
@@ -309,12 +433,57 @@ const DrawTab: React.FC = () => {
                   </div>
                 )}
               </div>
+              
+              {/* Fullscreen controls */}
+              {isFullscreen && (
+                <div className="mt-8 space-y-6">
+                  {/* Draw button in fullscreen */}
+                  <div className="flex justify-center gap-4">
+                    <Button
+                      onClick={drawNumber}
+                      disabled={isDrawing || remainingNumbers.length === 0}
+                      size="lg"
+                      className="gap-2 text-xl px-12 py-8 h-auto"
+                    >
+                      <Shuffle className="w-8 h-8" />
+                      Sortear Próximo
+                    </Button>
+                  </div>
+                  
+                  {/* Drawn numbers in fullscreen */}
+                  {drawnNumbers.length > 0 && (
+                    <div className="bg-card rounded-lg p-6">
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-2xl font-bold">Números Sorteados</h3>
+                        <span className="text-lg text-muted-foreground">
+                          {drawnNumbers.length} / {availableNumbers.length}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap gap-3 max-h-[200px] overflow-y-auto">
+                        {drawnNumbers.map((num, index) => (
+                          <div
+                            key={index}
+                            className={cn(
+                              "flex items-center justify-center w-20 h-20 rounded-lg font-bold text-2xl border-2",
+                              index === drawnNumbers.length - 1
+                                ? "bg-primary text-primary-foreground border-primary scale-110"
+                                : "bg-muted text-foreground border-border"
+                            )}
+                          >
+                            {num}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
 
-        {/* Drawn Numbers History - Compact Grid */}
-        {drawnNumbers.length > 0 && (
+        {/* Drawn Numbers History - Compact Grid (only show when not fullscreen) */}
+        {!isFullscreen && drawnNumbers.length > 0 && (
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center justify-between">

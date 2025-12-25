@@ -111,6 +111,18 @@ CREATE TABLE IF NOT EXISTS pagamentos (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Histórico de sorteios (números sorteados)
+CREATE TABLE IF NOT EXISTS sorteio_historico (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    sorteio_id UUID NOT NULL REFERENCES sorteios(id) ON DELETE CASCADE,
+    numero_sorteado INTEGER NOT NULL,
+    range_start INTEGER NOT NULL,
+    range_end INTEGER NOT NULL,
+    ordem INTEGER NOT NULL,
+    data_sorteio TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- ================== ÍNDICES ==================
 CREATE INDEX IF NOT EXISTS idx_sorteios_user_id ON sorteios(user_id);
 CREATE INDEX IF NOT EXISTS idx_vendedores_sorteio_id ON vendedores(sorteio_id);
@@ -120,6 +132,8 @@ CREATE INDEX IF NOT EXISTS idx_atribuicoes_sorteio_id ON atribuicoes(sorteio_id)
 CREATE INDEX IF NOT EXISTS idx_atribuicao_cartelas_atribuicao_id ON atribuicao_cartelas(atribuicao_id);
 CREATE INDEX IF NOT EXISTS idx_vendas_sorteio_id ON vendas(sorteio_id);
 CREATE INDEX IF NOT EXISTS idx_pagamentos_venda_id ON pagamentos(venda_id);
+CREATE INDEX IF NOT EXISTS idx_sorteio_historico_sorteio_id ON sorteio_historico(sorteio_id);
+CREATE INDEX IF NOT EXISTS idx_sorteio_historico_ordem ON sorteio_historico(sorteio_id, ordem);
 
 -- ================== CONCLUÍDO ==================
 DO $$ 
