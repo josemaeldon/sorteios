@@ -251,6 +251,12 @@ const DrawTab: React.FC = () => {
     // This ensures a fresh start with the new configuration
     await clearDrawHistory();
 
+    // Save the registro immediately when starting the draw
+    // This ensures the draw record name is saved before any numbers are drawn
+    if (registro.trim() !== '') {
+      await saveRegistro(registro);
+    }
+
     // Generate number range
     const numbers: number[] = [];
     for (let i = rangeStart; i <= rangeEnd; i++) {
@@ -341,6 +347,20 @@ const DrawTab: React.FC = () => {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
+            <div className="space-y-2">
+              <Label htmlFor="registro-config">Registro do Sorteio</Label>
+              <Input
+                id="registro-config"
+                value={registro}
+                onChange={(e) => setRegistro(e.target.value)}
+                placeholder="Ex: Sorteio 001, Rodada 1, etc..."
+                className="text-lg"
+              />
+              <p className="text-xs text-muted-foreground">
+                Digite um nome para identificar este sorteio no histórico
+              </p>
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="rangeStart">Número Inicial</Label>
@@ -453,7 +473,7 @@ const DrawTab: React.FC = () => {
                 className="text-lg"
               />
               <p className="text-xs text-muted-foreground">
-                {registro.trim() ? 'Salvo automaticamente' : 'Digite para registrar este sorteio'}
+                {registro.trim() ? 'Alterações salvas automaticamente' : 'Digite para atualizar o registro deste sorteio'}
               </p>
             </div>
           </div>
