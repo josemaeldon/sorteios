@@ -325,15 +325,26 @@ app.post('/api', checkBasicAuth, async (req, res) => {
             
             const initScript = fs.readFileSync(initScriptPath, 'utf8');
             
-            // Split script into individual statements for MySQL compatibility
-            const statements = initScript
-              .split(';')
-              .map(s => s.trim())
-              .filter(s => s.length > 0 && !s.startsWith('--'));
-            
-            for (const statement of statements) {
-              if (statement.trim()) {
-                await client.query(statement);
+            // For PostgreSQL, we can execute the entire script at once
+            if (dbConfig.type === 'postgres') {
+              await client.query(initScript);
+            } else {
+              // For MySQL, split by semicolon but be careful with string literals
+              // This is a simple approach - for complex scripts, consider a proper SQL parser
+              const statements = initScript
+                .split(/;[\s]*(\n|$)/)  // Split on semicolon followed by optional whitespace and newline
+                .map(s => s.trim())
+                .filter(s => s.length > 0 && !s.startsWith('--') && s !== '\n');
+              
+              for (const statement of statements) {
+                if (statement.trim()) {
+                  try {
+                    await client.query(statement);
+                  } catch (err) {
+                    console.error('Error executing statement:', statement.substring(0, 100), err.message);
+                    throw err;
+                  }
+                }
               }
             }
             

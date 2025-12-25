@@ -36,25 +36,34 @@ class DatabaseAdapter {
     }
   }
 
+  // Helper method to convert PostgreSQL placeholders to MySQL format
+  _convertPlaceholders(sql, params) {
+    if (this.type !== 'mysql' || !sql.includes('$')) {
+      return { sql, params };
+    }
+
+    // Convert $1, $2, etc. to ?
+    // This works for sequential parameters
+    let paramIndex = 0;
+    const convertedSql = sql.replace(/\$\d+/g, () => {
+      paramIndex++;
+      return '?';
+    });
+
+    return { sql: convertedSql, params };
+  }
+
   async query(sql, params = []) {
     if (!this.pool) {
       throw new Error('Database not connected');
     }
 
+    const { sql: convertedSql, params: convertedParams } = this._convertPlaceholders(sql, params);
+
     if (this.type === 'postgres') {
       const result = await this.pool.query(sql, params);
       return result;
     } else if (this.type === 'mysql') {
-      // MySQL usa ? como placeholder, PostgreSQL usa $1, $2, etc
-      // Converter placeholders $1, $2, etc para ?
-      let convertedSql = sql;
-      let convertedParams = params;
-      
-      // Se tiver $1, $2, etc, converter para ?
-      if (sql.includes('$')) {
-        convertedSql = sql.replace(/\$\d+/g, '?');
-      }
-
       const [rows, fields] = await this.pool.query(convertedSql, convertedParams);
       // Converter resultado do MySQL para formato compatível com PostgreSQL
       return { rows: rows, rowCount: rows.length };
@@ -70,14 +79,12 @@ class DatabaseAdapter {
       return await this.pool.connect();
     } else if (this.type === 'mysql') {
       const connection = await this.pool.getConnection();
+      const self = this;
       // Wrap MySQL connection to be compatible with PostgreSQL client interface
       return {
         query: async (sql, params = []) => {
-          let convertedSql = sql;
-          if (sql.includes('$')) {
-            convertedSql = sql.replace(/\$\d+/g, '?');
-          }
-          const [rows] = await connection.query(convertedSql, params);
+          const { sql: convertedSql, params: convertedParams } = self._convertPlaceholders(sql, params);
+          const [rows] = await connection.query(convertedSql, convertedParams);
           return { rows: rows, rowCount: rows.length };
         },
         release: () => connection.release(),
