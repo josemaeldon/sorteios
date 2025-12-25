@@ -137,6 +137,18 @@ CREATE TABLE IF NOT EXISTS public.pagamentos (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
 );
 
+-- Tabela de histórico de sorteios (números sorteados)
+CREATE TABLE IF NOT EXISTS public.sorteio_historico (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    sorteio_id UUID NOT NULL REFERENCES public.sorteios(id) ON DELETE CASCADE,
+    numero_sorteado INTEGER NOT NULL,
+    range_start INTEGER NOT NULL,
+    range_end INTEGER NOT NULL,
+    ordem INTEGER NOT NULL,
+    data_sorteio TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
+);
+
 -- =====================================================
 -- ÍNDICES
 -- =====================================================
@@ -145,6 +157,9 @@ CREATE INDEX IF NOT EXISTS idx_vendedores_sorteio_id ON public.vendedores(sortei
 CREATE INDEX IF NOT EXISTS idx_cartelas_sorteio_id ON public.cartelas(sorteio_id);
 CREATE INDEX IF NOT EXISTS idx_vendas_sorteio_id ON public.vendas(sorteio_id);
 CREATE INDEX IF NOT EXISTS idx_vendas_vendedor_id ON public.vendas(vendedor_id);
+CREATE INDEX IF NOT EXISTS idx_sorteio_historico_sorteio_id ON public.sorteio_historico(sorteio_id);
+CREATE INDEX IF NOT EXISTS idx_sorteio_historico_ordem ON public.sorteio_historico(sorteio_id, ordem);
+
 
 -- =====================================================
 -- FUNÇÕES
