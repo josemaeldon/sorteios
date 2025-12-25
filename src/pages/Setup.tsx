@@ -103,10 +103,7 @@ const Setup: React.FC = () => {
     }
   };
 
-  const handleTestConnection = async () => {
-    setIsTesting(true);
-    setError('');
-
+  const testDatabaseConnection = async (): Promise<{ success: boolean; error?: string; message?: string }> => {
     try {
       const response = await fetch('/api', {
         method: 'POST',
@@ -122,20 +119,28 @@ const Setup: React.FC = () => {
       });
 
       const data = await response.json();
-
-      if (data.success) {
-        toast({
-          title: "Conexão bem-sucedida",
-          description: data.message,
-        });
-      } else {
-        setError(data.error || 'Erro ao testar conexão');
-      }
+      return data;
     } catch (error: any) {
-      setError(error.message || 'Erro ao testar conexão');
-    } finally {
-      setIsTesting(false);
+      return { success: false, error: error.message || 'Erro ao testar conexão' };
     }
+  };
+
+  const handleTestConnection = async () => {
+    setIsTesting(true);
+    setError('');
+
+    const result = await testDatabaseConnection();
+
+    if (result.success) {
+      toast({
+        title: "Conexão bem-sucedida",
+        description: result.message,
+      });
+    } else {
+      setError(result.error || 'Erro ao testar conexão');
+    }
+
+    setIsTesting(false);
   };
 
   const handleDatabaseSubmit = async (e: React.FormEvent) => {
@@ -145,23 +150,10 @@ const Setup: React.FC = () => {
 
     try {
       // First test the connection
-      const testResponse = await fetch('/api', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'testDbConnection',
-          host: dbData.host,
-          port: dbData.port,
-          database: dbData.database,
-          user: dbData.user,
-          password: dbData.password
-        })
-      });
+      const testResult = await testDatabaseConnection();
 
-      const testData = await testResponse.json();
-
-      if (!testData.success) {
-        setError(testData.error || 'Erro ao conectar ao banco de dados');
+      if (!testResult.success) {
+        setError(testResult.error || 'Erro ao conectar ao banco de dados');
         setIsSubmitting(false);
         return;
       }

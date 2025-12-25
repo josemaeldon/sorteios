@@ -263,15 +263,21 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           };
           
           let testPool = null;
+          let testClient = null;
           try {
             testPool = new Pool(testConfig);
-            const testClient = await testPool.connect();
+            testClient = await testPool.connect();
             await testClient.query('SELECT 1');
             testClient.release();
             await testPool.end();
             return res.json({ success: true, message: 'Conexão estabelecida com sucesso!' });
           } catch (error) {
-            if (testPool) await testPool.end();
+            if (testClient) {
+              try { testClient.release(); } catch (e) {}
+            }
+            if (testPool) {
+              try { await testPool.end(); } catch (e) {}
+            }
             return res.json({ 
               success: false, 
               error: `Erro ao conectar: ${error.message}` 
@@ -310,13 +316,20 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           const client = await pool.connect();
           try {
             // Read and execute the database initialization script
-            const initScript = fs.readFileSync(path.join(__dirname, '..', 'database', 'init-db.sql'), 'utf8');
+            const initScriptPath = path.join(__dirname, '..', 'database', 'init-db.sql');
+            
+            if (!fs.existsSync(initScriptPath)) {
+              throw new Error('Arquivo de inicialização do banco de dados não encontrado: ' + initScriptPath);
+            }
+            
+            const initScript = fs.readFileSync(initScriptPath, 'utf8');
             await client.query(initScript);
             client.release();
             
             return res.json({ success: true, message: 'Banco de dados inicializado com sucesso!' });
           } catch (error) {
             client.release();
+            console.error('Database initialization error:', error);
             return res.json({ 
               success: false, 
               error: `Erro ao inicializar banco de dados: ${error.message}` 
