@@ -1,9 +1,14 @@
 -- =====================================================
--- SCRIPT DE INICIALIZAÇÃO DO BANCO DE DADOS
--- Sistema de Bingo - Self-Hosted
+-- BINGO SYSTEM - COMPLETE DATABASE SCHEMA
+-- Sistema Completo de Gestão de Bingo
+-- =====================================================
+-- This file contains the complete database schema including
+-- all tables, indexes, functions, and initial data
 -- =====================================================
 
--- Criar extensões necessárias
+-- =====================================================
+-- EXTENSIONS
+-- =====================================================
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
@@ -13,7 +18,7 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 CREATE TYPE public.app_role AS ENUM ('admin', 'user');
 
 -- =====================================================
--- TABELAS
+-- TABLES
 -- =====================================================
 
 -- Tabela de perfis de usuário
@@ -162,9 +167,16 @@ CREATE TABLE IF NOT EXISTS public.sorteio_historico (
     ordem INTEGER NOT NULL,
     registro VARCHAR(255),
     data_sorteio TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
-    CONSTRAINT check_sorteio_or_rodada CHECK (sorteio_id IS NOT NULL OR rodada_id IS NOT NULL)
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
 );
+
+-- =====================================================
+-- CONSTRAINTS
+-- =====================================================
+-- Ensure at least one of sorteio_id or rodada_id is provided
+ALTER TABLE public.sorteio_historico 
+ADD CONSTRAINT check_sorteio_or_rodada 
+CHECK (sorteio_id IS NOT NULL OR rodada_id IS NOT NULL);
 
 -- =====================================================
 -- ÍNDICES
@@ -178,7 +190,6 @@ CREATE INDEX IF NOT EXISTS idx_rodadas_sorteio_sorteio_id ON public.rodadas_sort
 CREATE INDEX IF NOT EXISTS idx_sorteio_historico_sorteio_id ON public.sorteio_historico(sorteio_id);
 CREATE INDEX IF NOT EXISTS idx_sorteio_historico_rodada_id ON public.sorteio_historico(rodada_id);
 CREATE INDEX IF NOT EXISTS idx_sorteio_historico_ordem ON public.sorteio_historico(sorteio_id, ordem);
-
 
 -- =====================================================
 -- FUNÇÕES
@@ -266,6 +277,35 @@ CREATE TRIGGER update_rodadas_sorteio_updated_at
     EXECUTE FUNCTION public.update_updated_at_column();
 
 -- =====================================================
+-- COMENTÁRIOS DAS TABELAS
+-- =====================================================
+COMMENT ON TABLE public.usuarios IS 'Usuários do sistema com autenticação';
+COMMENT ON TABLE public.sorteios IS 'Sorteios criados pelos usuários';
+COMMENT ON TABLE public.vendedores IS 'Vendedores associados aos sorteios';
+COMMENT ON TABLE public.cartelas IS 'Cartelas dos sorteios';
+COMMENT ON TABLE public.atribuicoes IS 'Atribuições de cartelas para vendedores';
+COMMENT ON TABLE public.atribuicao_cartelas IS 'Detalhes das cartelas atribuídas';
+COMMENT ON TABLE public.vendas IS 'Vendas realizadas';
+COMMENT ON TABLE public.pagamentos IS 'Pagamentos das vendas';
+COMMENT ON TABLE public.rodadas_sorteio IS 'Rodadas de sorteio que podem ser gerenciadas independentemente';
+COMMENT ON TABLE public.sorteio_historico IS 'Histórico de números sorteados para cada sorteio ou rodada';
+
+-- =====================================================
+-- COMENTÁRIOS DAS COLUNAS
+-- =====================================================
+COMMENT ON COLUMN public.sorteio_historico.sorteio_id IS 'ID do sorteio (nullable quando associado via rodada_id)';
+COMMENT ON COLUMN public.sorteio_historico.rodada_id IS 'ID da rodada de sorteio (quando aplicável)';
+COMMENT ON COLUMN public.sorteio_historico.numero_sorteado IS 'Número que foi sorteado';
+COMMENT ON COLUMN public.sorteio_historico.range_start IS 'Início da faixa configurada para o sorteio';
+COMMENT ON COLUMN public.sorteio_historico.range_end IS 'Fim da faixa configurada para o sorteio';
+COMMENT ON COLUMN public.sorteio_historico.ordem IS 'Ordem em que o número foi sorteado (1, 2, 3...)';
+COMMENT ON COLUMN public.sorteio_historico.registro IS 'Nome/identificador do registro do sorteio (ex: Sorteio 001)';
+COMMENT ON COLUMN public.rodadas_sorteio.nome IS 'Nome da rodada (ex: Rodada 1, Rodada 2)';
+COMMENT ON COLUMN public.rodadas_sorteio.range_start IS 'Início da faixa de números';
+COMMENT ON COLUMN public.rodadas_sorteio.range_end IS 'Fim da faixa de números';
+COMMENT ON COLUMN public.rodadas_sorteio.status IS 'Status da rodada (ativo, concluido, cancelado)';
+
+-- =====================================================
 -- USUÁRIO ADMIN PADRÃO
 -- Senha: admin123 (hash bcrypt)
 -- =====================================================
@@ -279,11 +319,25 @@ VALUES (
     true
 ) ON CONFLICT (email) DO NOTHING;
 
--- Mensagem de conclusão
+-- =====================================================
+-- MENSAGEM DE CONCLUSÃO
+-- =====================================================
 DO $$
 BEGIN
     RAISE NOTICE '=====================================================';
     RAISE NOTICE 'Banco de dados inicializado com sucesso!';
+    RAISE NOTICE 'Sistema: Bingo PGM - Gestão Completa de Bingo';
     RAISE NOTICE 'Usuário admin padrão: admin@bingo.local / admin123';
+    RAISE NOTICE '=====================================================';
+    RAISE NOTICE 'Tabelas criadas:';
+    RAISE NOTICE '  - usuarios (autenticação)';
+    RAISE NOTICE '  - sorteios (gestão de sorteios)';
+    RAISE NOTICE '  - rodadas_sorteio (rodadas independentes)';
+    RAISE NOTICE '  - sorteio_historico (histórico de números)';
+    RAISE NOTICE '  - vendedores (gestão de vendedores)';
+    RAISE NOTICE '  - cartelas (controle de cartelas)';
+    RAISE NOTICE '  - atribuicoes (atribuição de cartelas)';
+    RAISE NOTICE '  - vendas (registro de vendas)';
+    RAISE NOTICE '  - pagamentos (controle de pagamentos)';
     RAISE NOTICE '=====================================================';
 END $$;

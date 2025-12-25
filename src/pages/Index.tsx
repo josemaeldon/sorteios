@@ -3,7 +3,6 @@ import Header from '@/components/Header';
 import Navigation from '@/components/Navigation';
 import SorteiosTab from '@/components/tabs/SorteiosTab';
 import DashboardTab from '@/components/tabs/DashboardTab';
-import RodadasTab from '@/components/tabs/RodadasTab';
 import DrawTab from '@/components/tabs/DrawTab';
 import VendedoresTab from '@/components/tabs/VendedoresTab';
 import CartelasTab from '@/components/tabs/CartelasTab';
@@ -18,7 +17,6 @@ const MainContent = () => {
     switch (currentTab) {
       case 'sorteios': return <SorteiosTab />;
       case 'dashboard': return <DashboardTab />;
-      case 'rodadas': return <RodadasTab />;
       case 'sorteio': return <DrawTab />;
       case 'vendedores': return <VendedoresTab />;
       case 'cartelas': return <CartelasTab />;
