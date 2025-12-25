@@ -418,6 +418,56 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         );
         return res.json({ data: [{ success: true }] });
 
+      // ================== RODADAS DE SORTEIO ==================
+      case 'getRodadas':
+        result = await client.query(
+          'SELECT * FROM rodadas_sorteio WHERE sorteio_id = $1 ORDER BY created_at DESC',
+          [data.sorteio_id]
+        );
+        return res.json({ data: result.rows });
+
+      case 'createRodada':
+        result = await client.query(`
+          INSERT INTO rodadas_sorteio (sorteio_id, nome, range_start, range_end, status, data_inicio)
+          VALUES ($1, $2, $3, $4, $5, NOW())
+          RETURNING *
+        `, [data.sorteio_id, data.nome, data.range_start, data.range_end, data.status || 'ativo']);
+        return res.json({ data: result.rows[0] });
+
+      case 'updateRodada':
+        result = await client.query(`
+          UPDATE rodadas_sorteio 
+          SET nome = $2, range_start = $3, range_end = $4, status = $5, updated_at = NOW()
+          WHERE id = $1
+          RETURNING *
+        `, [data.id, data.nome, data.range_start, data.range_end, data.status]);
+        return res.json({ data: result.rows[0] });
+
+      case 'deleteRodada':
+        await client.query('DELETE FROM rodadas_sorteio WHERE id = $1', [data.id]);
+        return res.json({ data: [{ success: true }] });
+
+      case 'getRodadaHistorico':
+        result = await client.query(
+          'SELECT * FROM sorteio_historico WHERE rodada_id = $1 ORDER BY ordem ASC',
+          [data.rodada_id]
+        );
+        return res.json({ data: result.rows });
+
+      case 'saveRodadaNumero': {
+        const { rodada_id, numero_sorteado, ordem } = data;
+        result = await client.query(`
+          INSERT INTO sorteio_historico (rodada_id, numero_sorteado, ordem, data_sorteio)
+          VALUES ($1, $2, $3, NOW())
+          RETURNING *
+        `, [rodada_id, numero_sorteado, ordem]);
+        return res.json({ data: result.rows[0] });
+      }
+
+      case 'clearRodadaHistorico':
+        await client.query('DELETE FROM sorteio_historico WHERE rodada_id = $1', [data.rodada_id]);
+        return res.json({ data: [{ success: true }] });
+
       // ================== VENDEDORES ==================
       case 'getVendedores':
         result = await client.query(

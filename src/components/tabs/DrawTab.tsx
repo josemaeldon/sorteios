@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useBingo } from '@/contexts/BingoContext';
+import { RodadaSorteio } from '@/types/bingo';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Shuffle, RotateCcw, Play, Settings, Maximize, Minimize, ZoomIn, ZoomOut } from 'lucide-react';
+import { Shuffle, RotateCcw, Play, Settings, Maximize, Minimize, ZoomIn, ZoomOut, ArrowLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { callApi } from '@/lib/apiClient';
 import { useToast } from '@/hooks/use-toast';
@@ -15,94 +16,102 @@ const ANIMATION_INTERVAL_MS = 100;
 const FULLSCREEN_FONT_SIZE_DEFAULT = 300; // Default font size in pixels for fullscreen display
 
 const DrawTab: React.FC = () => {
-  const { sorteioAtivo } = useBingo();
+  const { sorteioAtivo, setCurrentTab } = useBingo();
   const { toast } = useToast();
   const [currentNumber, setCurrentNumber] = useState<number | null>(null);
   const [drawnNumbers, setDrawnNumbers] = useState<number[]>([]);
   const [isDrawing, setIsDrawing] = useState(false);
-  const [rangeStart, setRangeStart] = useState<number>(1);
-  const [rangeEnd, setRangeEnd] = useState<number>(75);
-  const [isConfigured, setIsConfigured] = useState(false);
   const [availableNumbers, setAvailableNumbers] = useState<number[]>([]);
   const [fontSize, setFontSize] = useState<number>(300);
   const [fullscreenFontSize, setFullscreenFontSize] = useState<number>(FULLSCREEN_FONT_SIZE_DEFAULT);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
-  const [registro, setRegistro] = useState<string>('');
+  const [selectedRodada, setSelectedRodada] = useState<RodadaSorteio | null>(null);
   const animationIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const fullscreenRef = useRef<HTMLDivElement>(null);
-  const saveRegistroTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Load draw history when sorteio changes
+  // Load rodada from localStorage or load history
   useEffect(() => {
     if (sorteioAtivo) {
-      loadDrawHistory();
+      const savedRodadaId = localStorage.getItem('selectedRodadaId');
+      if (savedRodadaId) {
+        loadRodada(savedRodadaId);
+      } else {
+        // Reset state when no rodada is selected
+        setSelectedRodada(null);
+        setCurrentNumber(null);
+        setDrawnNumbers([]);
+        setAvailableNumbers([]);
+      }
     } else {
       // Reset state when no sorteio is active
+      setSelectedRodada(null);
       setCurrentNumber(null);
       setDrawnNumbers([]);
-      setIsConfigured(false);
       setAvailableNumbers([]);
-      setRegistro('');
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sorteioAtivo?.id]);
 
-  const loadDrawHistory = async () => {
-    if (!sorteioAtivo) return;
-    
+  const loadRodada = async (rodadaId: string) => {
     try {
       setIsLoadingHistory(true);
-      const result = await callApi('getSorteioHistorico', { sorteio_id: sorteioAtivo.id });
       
-      if (result.data && result.data.length > 0) {
-        // Sort by ordem to ensure correct order
-        const sortedHistory = result.data.sort((a: any, b: any) => a.ordem - b.ordem);
-        
-        // Extract the drawn numbers
+      // Load rodada details
+      const rodadasResult = await callApi('getRodadas', { sorteio_id: sorteioAtivo?.id });
+      const rodada = rodadasResult.data?.find((r: RodadaSorteio) => r.id === rodadaId);
+      
+      if (!rodada) {
+        toast({
+          title: "Rodada não encontrada",
+          description: "A rodada selecionada não existe mais.",
+          variant: "destructive"
+        });
+        localStorage.removeItem('selectedRodadaId');
+        return;
+      }
+      
+      setSelectedRodada(rodada);
+      
+      // Generate available numbers from rodada range
+      const allNumbers: number[] = [];
+      for (let i = rodada.range_start; i <= rodada.range_end; i++) {
+        allNumbers.push(i);
+      }
+      setAvailableNumbers(allNumbers);
+      
+      // Load history for this rodada
+      const historyResult = await callApi('getRodadaHistorico', { rodada_id: rodadaId });
+      
+      if (historyResult.data && historyResult.data.length > 0) {
+        const sortedHistory = historyResult.data.sort((a: any, b: any) => a.ordem - b.ordem);
         const numbers = sortedHistory.map((item: any) => item.numero_sorteado);
-        
-        // Get range configuration from the first item
-        const firstItem = sortedHistory[0];
-        const start = firstItem.range_start;
-        const end = firstItem.range_end;
-        const loadedRegistro = firstItem.registro ?? '';
-        
-        // Generate available numbers
-        const allNumbers: number[] = [];
-        for (let i = start; i <= end; i++) {
-          allNumbers.push(i);
-        }
-        
         setDrawnNumbers(numbers);
-        setRangeStart(start);
-        setRangeEnd(end);
-        setAvailableNumbers(allNumbers);
-        setIsConfigured(true);
-        setRegistro(loadedRegistro);
         
-        // Set current number to the last drawn number
         if (numbers.length > 0) {
           setCurrentNumber(numbers[numbers.length - 1]);
         }
       }
     } catch (error: any) {
-      console.error('Error loading draw history:', error);
+      console.error('Error loading rodada:', error);
+      toast({
+        title: "Erro ao carregar rodada",
+        description: error.message,
+        variant: "destructive"
+      });
     } finally {
       setIsLoadingHistory(false);
     }
   };
 
   const saveDrawnNumber = async (numero: number, ordem: number) => {
-    if (!sorteioAtivo) return;
+    if (!selectedRodada) return;
     
     try {
-      await callApi('saveSorteioNumero', {
-        sorteio_id: sorteioAtivo.id,
+      await callApi('saveRodadaNumero', {
+        rodada_id: selectedRodada.id,
         numero_sorteado: numero,
-        range_start: rangeStart,
-        range_end: rangeEnd,
-        ordem: ordem,
-        registro: registro
+        ordem: ordem
       });
     } catch (error: any) {
       console.error('Error saving drawn number:', error);
@@ -114,29 +123,11 @@ const DrawTab: React.FC = () => {
     }
   };
 
-  const saveRegistro = async (newRegistro: string) => {
-    if (!sorteioAtivo) return;
-    
-    try {
-      await callApi('updateSorteioRegistro', {
-        sorteio_id: sorteioAtivo.id,
-        registro: newRegistro
-      });
-    } catch (error: any) {
-      console.error('Error saving registro:', error);
-      toast({
-        title: "Erro ao salvar registro",
-        description: error.message,
-        variant: "destructive"
-      });
-    }
-  };
-
   const clearDrawHistory = async () => {
-    if (!sorteioAtivo) return;
+    if (!selectedRodada) return;
     
     try {
-      await callApi('clearSorteioHistorico', { sorteio_id: sorteioAtivo.id });
+      await callApi('clearRodadaHistorico', { rodada_id: selectedRodada.id });
     } catch (error: any) {
       console.error('Error clearing draw history:', error);
       toast({
@@ -153,36 +144,8 @@ const DrawTab: React.FC = () => {
       if (animationIntervalRef.current) {
         clearInterval(animationIntervalRef.current);
       }
-      if (saveRegistroTimeoutRef.current) {
-        clearTimeout(saveRegistroTimeoutRef.current);
-      }
     };
   }, []);
-
-  // Auto-save registro with debounce
-  useEffect(() => {
-    if (!isConfigured || !sorteioAtivo) return;
-    
-    // Clear existing timeout
-    if (saveRegistroTimeoutRef.current) {
-      clearTimeout(saveRegistroTimeoutRef.current);
-    }
-    
-    // Only save if registro has meaningful content (not just whitespace)
-    // This prevents unnecessary API calls when the field is empty or being cleared
-    if (registro.trim() === '') return;
-    
-    // Set new timeout to save after 1 second of no typing
-    saveRegistroTimeoutRef.current = setTimeout(() => {
-      saveRegistro(registro);
-    }, 1000);
-    
-    return () => {
-      if (saveRegistroTimeoutRef.current) {
-        clearTimeout(saveRegistroTimeoutRef.current);
-      }
-    };
-  }, [registro, isConfigured, sorteioAtivo]);
 
   // Fullscreen handlers
   const toggleFullscreen = async () => {
@@ -237,35 +200,28 @@ const DrawTab: React.FC = () => {
       <div className="text-center py-12">
         <Shuffle className="w-16 h-16 mx-auto text-muted-foreground mb-4 animate-pulse" />
         <h2 className="text-2xl font-bold text-foreground mb-2">Carregando...</h2>
-        <p className="text-muted-foreground">Carregando histórico do sorteio</p>
+        <p className="text-muted-foreground">Carregando rodada do sorteio</p>
       </div>
     );
   }
 
-  const startDraw = async () => {
-    if (rangeStart >= rangeEnd || isNaN(rangeStart) || isNaN(rangeEnd)) {
-      return;
-    }
-
-    // Clear previous history for this sorteio when starting a new draw session
-    // This ensures a fresh start with the new configuration
-    await clearDrawHistory();
-
-    // Generate number range
-    const numbers: number[] = [];
-    for (let i = rangeStart; i <= rangeEnd; i++) {
-      numbers.push(i);
-    }
-    
-    setAvailableNumbers(numbers);
-    setIsConfigured(true);
-    setDrawnNumbers([]);
-    setCurrentNumber(null);
-    
-    // Note: The registro will be saved to the database automatically:
-    // 1. When any number is drawn (via saveDrawnNumber)
-    // 2. When the user edits the field (via the auto-save effect with 1s debounce)
-  };
+  if (!selectedRodada) {
+    return (
+      <div className="text-center py-12 space-y-6">
+        <Shuffle className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
+        <div>
+          <h2 className="text-2xl font-bold text-foreground mb-2">Nenhuma rodada selecionada</h2>
+          <p className="text-muted-foreground mb-4">
+            Selecione uma rodada na aba "Rodadas" para começar a sortear
+          </p>
+        </div>
+        <Button onClick={() => setCurrentTab('rodadas')} className="gap-2">
+          <ArrowLeft className="w-4 h-4" />
+          Ir para Rodadas
+        </Button>
+      </div>
+    );
+  }
 
   const drawNumber = () => {
     if (availableNumbers.length === 0) {
@@ -314,117 +270,34 @@ const DrawTab: React.FC = () => {
     setCurrentNumber(null);
     setDrawnNumbers([]);
     setIsDrawing(false);
-    setIsConfigured(false);
-    setAvailableNumbers([]);
-    setRegistro('');
   };
 
-  const reconfigure = () => {
-    // Go back to configuration screen to change settings
-    // Note: registro is preserved to allow adjusting range without losing the name
-    // Users can manually change registro or use "Reiniciar" for a complete reset
-    setIsConfigured(false);
-    setCurrentNumber(null);
-    setDrawnNumbers([]);
-    setIsDrawing(false);
+  const goBackToRodadas = () => {
+    localStorage.removeItem('selectedRodadaId');
+    setCurrentTab('rodadas');
   };
 
   const remainingNumbers = availableNumbers.filter(n => !drawnNumbers.includes(n));
-
-  // Configuration screen
-  if (!isConfigured) {
-    return (
-      <div className="space-y-6">
-        <div>
-          <h2 className="text-3xl font-bold text-foreground">Sortear: {sorteioAtivo.nome}</h2>
-          <p className="text-muted-foreground mt-1">Configure a faixa de números para o sorteio</p>
-        </div>
-
-        <Card className="max-w-2xl mx-auto">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Settings className="w-5 h-5" />
-              Configurar Faixa de Números
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="space-y-2">
-              <Label htmlFor="registro-config">Registro do Sorteio</Label>
-              <Input
-                id="registro-config"
-                value={registro}
-                onChange={(e) => setRegistro(e.target.value)}
-                placeholder="Ex: Sorteio 001, Rodada 1, etc..."
-                className="text-lg"
-              />
-              <p className="text-xs text-muted-foreground">
-                Digite um nome para identificar este sorteio no histórico
-              </p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="rangeStart">Número Inicial</Label>
-                <Input
-                  id="rangeStart"
-                  type="number"
-                  value={rangeStart}
-                  onChange={(e) => {
-                    const val = e.target.value === '' ? 1 : parseInt(e.target.value);
-                    setRangeStart(isNaN(val) ? 1 : val);
-                  }}
-                  min={1}
-                  className="text-lg"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="rangeEnd">Número Final</Label>
-                <Input
-                  id="rangeEnd"
-                  type="number"
-                  value={rangeEnd}
-                  onChange={(e) => {
-                    const val = e.target.value === '' ? 75 : parseInt(e.target.value);
-                    setRangeEnd(isNaN(val) ? 75 : val);
-                  }}
-                  min={isNaN(rangeStart) ? 2 : rangeStart + 1}
-                  className="text-lg"
-                />
-              </div>
-            </div>
-
-            <div className="bg-muted p-4 rounded-lg">
-              <p className="text-sm text-muted-foreground">
-                Total de números no sorteio: <span className="font-bold text-foreground text-lg">{rangeEnd - rangeStart + 1}</span>
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Os números serão sorteados de {rangeStart} até {rangeEnd} sem repetir
-              </p>
-            </div>
-
-            <Button
-              onClick={startDraw}
-              disabled={rangeStart >= rangeEnd || isNaN(rangeStart) || isNaN(rangeEnd)}
-              size="lg"
-              className="w-full gap-2"
-            >
-              <Play className="w-5 h-5" />
-              Iniciar Sorteio
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
 
   // Drawing screen
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex-1">
-          <h2 className="text-3xl font-bold text-foreground">Sortear: {sorteioAtivo.nome}</h2>
+          <div className="flex items-center gap-2 mb-1">
+            <Button
+              onClick={goBackToRodadas}
+              variant="ghost"
+              size="sm"
+              className="gap-1"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Voltar
+            </Button>
+          </div>
+          <h2 className="text-3xl font-bold text-foreground">{selectedRodada.nome}</h2>
           <p className="text-muted-foreground mt-1">
-            Faixa: {rangeStart} a {rangeEnd} | Sorteados: {drawnNumbers.length} | Restantes: {remainingNumbers.length}
+            Faixa: {selectedRodada.range_start} a {selectedRodada.range_end} | Sorteados: {drawnNumbers.length} | Restantes: {remainingNumbers.length}
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
@@ -438,16 +311,6 @@ const DrawTab: React.FC = () => {
             Sortear
           </Button>
           <Button
-            onClick={reconfigure}
-            disabled={isDrawing}
-            variant="outline"
-            size="lg"
-            className="gap-2"
-          >
-            <Settings className="w-5 h-5" />
-            Configurar
-          </Button>
-          <Button
             onClick={resetDraw}
             disabled={isDrawing || drawnNumbers.length === 0}
             variant="outline"
@@ -459,27 +322,6 @@ const DrawTab: React.FC = () => {
           </Button>
         </div>
       </div>
-
-      {/* Draw Registration Field */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex items-center gap-4">
-            <div className="flex-1 space-y-2">
-              <Label htmlFor="registro">Registro do Sorteio</Label>
-              <Input
-                id="registro"
-                value={registro}
-                onChange={(e) => setRegistro(e.target.value)}
-                placeholder="Ex: Sorteio 001, Rodada 1, etc..."
-                className="text-lg"
-              />
-              <p className="text-xs text-muted-foreground">
-                {registro.trim() ? 'Alterações salvas automaticamente após 1 segundo' : 'Digite para atualizar o registro deste sorteio'}
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
 
       <div className="grid grid-cols-1 gap-6">
         {/* Current Number Display with Fullscreen */}
@@ -648,7 +490,7 @@ const DrawTab: React.FC = () => {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">{availableNumbers.length}</div>
-            <p className="text-xs text-muted-foreground mt-1">Números na faixa ({rangeStart} a {rangeEnd})</p>
+            <p className="text-xs text-muted-foreground mt-1">Números na faixa ({selectedRodada.range_start} a {selectedRodada.range_end})</p>
           </CardContent>
         </Card>
 
