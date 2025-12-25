@@ -65,7 +65,7 @@ const VendedoresTab: React.FC = () => {
     const cartelasVendidas = cartelas.filter(c => c.vendedor_id === v.id && c.status === 'vendida').length;
     const valorArrecadado = vendas
       .filter(venda => venda.vendedor_id === v.id)
-      .reduce((sum, venda) => sum + (venda.valor_pago || 0), 0);
+      .reduce((sum, venda) => sum + Number(venda.valor_pago || 0), 0);
     return {
       ...v,
       cartelas_atribuidas: cartelasAtribuidas,

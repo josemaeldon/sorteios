@@ -23,7 +23,7 @@ const PagamentoModal: React.FC<PagamentoModalProps> = ({ isOpen, onClose, vendaI
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const venda = vendas.find(v => v.id === vendaId);
-  const saldoRestante = venda ? venda.valor_total - venda.valor_pago : 0;
+  const saldoRestante = venda ? Number(venda.valor_total || 0) - Number(venda.valor_pago || 0) : 0;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,11 +33,11 @@ const PagamentoModal: React.FC<PagamentoModalProps> = ({ isOpen, onClose, vendaI
 
     try {
       const valorPagamento = parseFloat(valor) || 0;
-      const novoValorPago = venda.valor_pago + valorPagamento;
+      const novoValorPago = Number(venda.valor_pago || 0) + valorPagamento;
       
       await updateVenda(vendaId, {
         valor_pago: novoValorPago,
-        status: novoValorPago >= venda.valor_total ? 'concluida' : 'pendente'
+        status: novoValorPago >= Number(venda.valor_total || 0) ? 'concluida' : 'pendente'
       });
 
       toast({ title: "Pagamento registrado", description: `Pagamento de ${formatarMoeda(valorPagamento)} registrado.` });
