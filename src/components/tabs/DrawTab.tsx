@@ -565,8 +565,8 @@ const DrawTab: React.FC = () => {
                             <div
                               key={index}
                               className={cn(
-                                "flex items-center justify-center w-20 h-20 rounded-lg font-bold text-2xl border-2",
-                                index === drawnNumbers.length - 1
+                                "flex items-center justify-center w-20 h-20 rounded-lg font-bold text-2xl border-2 transition-all duration-300",
+                                index === drawnNumbers.length - 1 && !isDrawing
                                   ? "bg-primary text-primary-foreground border-primary scale-110"
                                   : "bg-muted text-foreground border-border"
                               )}
@@ -599,8 +599,8 @@ const DrawTab: React.FC = () => {
                     <div
                       key={index}
                       className={cn(
-                        "flex items-center justify-center w-16 h-16 rounded-lg font-bold text-xl border-2 transition-transform",
-                        index === drawnNumbers.length - 1
+                        "flex items-center justify-center w-16 h-16 rounded-lg font-bold text-xl border-2 transition-all duration-300",
+                        index === drawnNumbers.length - 1 && !isDrawing
                           ? "bg-primary text-primary-foreground border-primary scale-110"
                           : "bg-muted text-foreground border-border"
                       )}
