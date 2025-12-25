@@ -42,7 +42,7 @@ const DrawTab: React.FC = () => {
   }
 
   const startDraw = () => {
-    if (rangeStart >= rangeEnd) {
+    if (rangeStart >= rangeEnd || isNaN(rangeStart) || isNaN(rangeEnd)) {
       return;
     }
 
@@ -133,7 +133,10 @@ const DrawTab: React.FC = () => {
                   id="rangeStart"
                   type="number"
                   value={rangeStart}
-                  onChange={(e) => setRangeStart(parseInt(e.target.value) || 1)}
+                  onChange={(e) => {
+                    const val = e.target.value === '' ? 1 : parseInt(e.target.value);
+                    setRangeStart(isNaN(val) ? 1 : val);
+                  }}
                   min={1}
                   className="text-lg"
                 />
@@ -144,8 +147,11 @@ const DrawTab: React.FC = () => {
                   id="rangeEnd"
                   type="number"
                   value={rangeEnd}
-                  onChange={(e) => setRangeEnd(parseInt(e.target.value) || 75)}
-                  min={rangeStart + 1}
+                  onChange={(e) => {
+                    const val = e.target.value === '' ? 75 : parseInt(e.target.value);
+                    setRangeEnd(isNaN(val) ? 75 : val);
+                  }}
+                  min={isNaN(rangeStart) ? 2 : rangeStart + 1}
                   className="text-lg"
                 />
               </div>
@@ -162,7 +168,7 @@ const DrawTab: React.FC = () => {
 
             <Button
               onClick={startDraw}
-              disabled={rangeStart >= rangeEnd}
+              disabled={rangeStart >= rangeEnd || isNaN(rangeStart) || isNaN(rangeEnd)}
               size="lg"
               className="w-full gap-2"
             >
