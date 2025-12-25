@@ -49,8 +49,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       const result = await callApi('checkFirstAccess');
       return result.isFirstAccess === true;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error checking first access:', error);
+      // Check if the error is due to database not being configured
+      if (error.message?.includes('Banco de dados não configurado') || 
+          error.message?.includes('503')) {
+        // Redirect to setup page
+        window.location.href = '/setup';
+        return true;
+      }
       return true; // Assume first access if error
     }
   }, []);

@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { User, CheckCircle2, AlertCircle, Loader2, Settings, Database, ArrowRight } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { callApi } from '@/lib/apiClient';
 
 type SetupStep = 'check' | 'database' | 'admin' | 'complete';
 
@@ -50,6 +51,13 @@ const Setup: React.FC = () => {
         body: JSON.stringify({ action: 'checkDbConfig' })
       });
       
+      if (!dbConfigResponse.ok) {
+        // If server error, try to handle gracefully
+        console.error('Failed to check database config');
+        setCurrentStep('database');
+        return;
+      }
+      
       const dbConfigData = await dbConfigResponse.json();
       
       if (!dbConfigData.configured) {
@@ -64,6 +72,15 @@ const Setup: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'checkFirstAccess' })
       });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        if (errorData.needsDbConfig) {
+          setCurrentStep('database');
+          return;
+        }
+        throw new Error('Erro ao verificar sistema');
+      }
       
       const data = await response.json();
       
