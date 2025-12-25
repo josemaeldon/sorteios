@@ -65,7 +65,7 @@ const DrawTab: React.FC = () => {
         const firstItem = sortedHistory[0];
         const start = firstItem.range_start;
         const end = firstItem.range_end;
-        const loadedRegistro = firstItem.registro || '';
+        const loadedRegistro = firstItem.registro ?? '';
         
         // Generate available numbers
         const allNumbers: number[] = [];
@@ -167,6 +167,10 @@ const DrawTab: React.FC = () => {
     if (saveRegistroTimeoutRef.current) {
       clearTimeout(saveRegistroTimeoutRef.current);
     }
+    
+    // Only save if registro has meaningful content (not just whitespace)
+    // This prevents unnecessary API calls when the field is empty or being cleared
+    if (registro.trim() === '') return;
     
     // Set new timeout to save after 1 second of no typing
     saveRegistroTimeoutRef.current = setTimeout(() => {
@@ -449,7 +453,7 @@ const DrawTab: React.FC = () => {
                 className="text-lg"
               />
               <p className="text-xs text-muted-foreground">
-                {registro ? 'Salvando automaticamente...' : 'Digite para registrar este sorteio'}
+                {registro.trim() ? 'Salvo automaticamente' : 'Digite para registrar este sorteio'}
               </p>
             </div>
           </div>

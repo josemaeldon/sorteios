@@ -403,7 +403,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           INSERT INTO sorteio_historico (sorteio_id, numero_sorteado, range_start, range_end, ordem, registro)
           VALUES ($1, $2, $3, $4, $5, $6)
           RETURNING *
-        `, [sorteio_id, numero_sorteado, range_start, range_end, ordem, registro || null]);
+        `, [sorteio_id, numero_sorteado, range_start, range_end, ordem, registro ?? null]);
         return res.json({ data: result.rows[0] });
       }
 
