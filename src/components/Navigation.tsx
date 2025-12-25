@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils';
 const tabs: { id: TabType; label: string; icon: React.ElementType }[] = [
   { id: 'sorteios', label: 'Sorteios', icon: Dice5 },
   { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
-  { id: 'sorteio', label: 'Sorteio', icon: Shuffle },
+  { id: 'sorteio', label: 'Sortear', icon: Shuffle },
   { id: 'vendedores', label: 'Vendedores', icon: Users },
   { id: 'cartelas', label: 'Cartelas', icon: Grid3X3 },
   { id: 'atribuicoes', label: 'Atribuições', icon: ListTodo },
