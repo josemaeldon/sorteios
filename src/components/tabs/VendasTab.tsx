@@ -274,14 +274,44 @@ const VendasTab: React.FC = () => {
                 </td>
                 <td className="p-4 text-right font-bold text-foreground">{formatarMoeda(venda.valor_total)}</td>
                 <td className="p-4 text-right">
-                  <span className={cn(
-                    'px-2 py-1 rounded-full text-sm font-semibold',
-                    Number(venda.valor_pago || 0) >= Number(venda.valor_total || 0)
-                      ? 'bg-success/10 text-success' 
-                      : 'bg-warning/10 text-warning'
-                  )}>
-                    {formatarMoeda(venda.valor_pago)}
-                  </span>
+                  {venda.pagamentos && venda.pagamentos.length > 0 ? (
+                    <div className="flex flex-col gap-1 items-end">
+                      {venda.pagamentos.map((pag, idx) => (
+                        <div key={idx} className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground capitalize">
+                            {pag.forma_pagamento}:
+                          </span>
+                          <span className={cn(
+                            'px-2 py-0.5 rounded-full text-xs font-semibold',
+                            Number(venda.valor_pago || 0) >= Number(venda.valor_total || 0)
+                              ? 'bg-success/10 text-success' 
+                              : 'bg-warning/10 text-warning'
+                          )}>
+                            {formatarMoeda(pag.valor)}
+                          </span>
+                        </div>
+                      ))}
+                      <div className="border-t border-border pt-1 mt-1">
+                        <span className={cn(
+                          'px-2 py-0.5 rounded-full text-sm font-bold',
+                          Number(venda.valor_pago || 0) >= Number(venda.valor_total || 0)
+                            ? 'bg-success/10 text-success' 
+                            : 'bg-warning/10 text-warning'
+                        )}>
+                          Total: {formatarMoeda(venda.valor_pago)}
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <span className={cn(
+                      'px-2 py-1 rounded-full text-sm font-semibold',
+                      Number(venda.valor_pago || 0) >= Number(venda.valor_total || 0)
+                        ? 'bg-success/10 text-success' 
+                        : 'bg-warning/10 text-warning'
+                    )}>
+                      {formatarMoeda(venda.valor_pago)}
+                    </span>
+                  )}
                 </td>
                 <td className="p-4 text-center">
                   <span className={cn('status-badge', venda.status === 'concluida' ? 'status-pago' : 'status-pendente')}>

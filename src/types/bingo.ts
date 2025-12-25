@@ -15,6 +15,20 @@ export interface Sorteio {
   };
 }
 
+export interface RodadaSorteio {
+  id: string;
+  sorteio_id: string;
+  nome: string;
+  range_start: number;
+  range_end: number;
+  status: 'ativo' | 'concluido' | 'cancelado';
+  data_inicio?: string;
+  data_fim?: string;
+  created_at?: string;
+  updated_at?: string;
+  numeros_sorteados?: number;
+}
+
 export interface Vendedor {
   id: string;
   sorteio_id: string;
@@ -130,4 +144,4 @@ export interface FiltrosVendas {
   periodo: 'todos' | 'hoje' | 'semana' | 'mes';
 }
 
-export type TabType = 'sorteios' | 'dashboard' | 'vendedores' | 'cartelas' | 'atribuicoes' | 'vendas' | 'relatorios' | 'sorteio';
+export type TabType = 'sorteios' | 'dashboard' | 'rodadas' | 'vendedores' | 'cartelas' | 'atribuicoes' | 'vendas' | 'relatorios' | 'sorteio';
