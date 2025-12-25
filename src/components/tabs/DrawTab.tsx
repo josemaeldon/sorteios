@@ -12,6 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 // Animation constants
 const ANIMATION_CYCLES = 20;
 const ANIMATION_INTERVAL_MS = 100;
+const FULLSCREEN_FONT_SIZE = 400; // Font size in pixels for fullscreen display
 
 const DrawTab: React.FC = () => {
   const { sorteioAtivo } = useBingo();
@@ -185,7 +186,8 @@ const DrawTab: React.FC = () => {
       return;
     }
 
-    // Clear previous history for this sorteio
+    // Clear previous history for this sorteio when starting a new draw session
+    // This ensures a fresh start with the new configuration
     await clearDrawHistory();
 
     // Generate number range
@@ -420,7 +422,7 @@ const DrawTab: React.FC = () => {
                       "font-black leading-none transition-all duration-300",
                       isDrawing ? "animate-pulse text-primary" : "text-primary"
                     )}
-                    style={{ fontSize: `${isFullscreen ? '400px' : fontSize + 'px'}` }}
+                    style={{ fontSize: `${isFullscreen ? FULLSCREEN_FONT_SIZE + 'px' : fontSize + 'px'}` }}
                   >
                     {currentNumber}
                   </div>
