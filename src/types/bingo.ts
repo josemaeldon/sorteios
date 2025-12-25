@@ -130,4 +130,4 @@ export interface FiltrosVendas {
   periodo: 'todos' | 'hoje' | 'semana' | 'mes';
 }
 
-export type TabType = 'sorteios' | 'dashboard' | 'vendedores' | 'cartelas' | 'atribuicoes' | 'vendas' | 'relatorios';
+export type TabType = 'sorteios' | 'dashboard' | 'vendedores' | 'cartelas' | 'atribuicoes' | 'vendas' | 'relatorios' | 'sorteio';

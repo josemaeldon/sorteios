@@ -1,5 +1,5 @@
 import React from 'react';
-import { Dice5, BarChart3, Users, Grid3X3, ListTodo, ShoppingCart, PieChart } from 'lucide-react';
+import { Dice5, BarChart3, Users, Grid3X3, ListTodo, ShoppingCart, PieChart, Shuffle } from 'lucide-react';
 import { useBingo } from '@/contexts/BingoContext';
 import { TabType } from '@/types/bingo';
 import { cn } from '@/lib/utils';
@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 const tabs: { id: TabType; label: string; icon: React.ElementType }[] = [
   { id: 'sorteios', label: 'Sorteios', icon: Dice5 },
   { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
+  { id: 'sorteio', label: 'Sorteio', icon: Shuffle },
   { id: 'vendedores', label: 'Vendedores', icon: Users },
   { id: 'cartelas', label: 'Cartelas', icon: Grid3X3 },
   { id: 'atribuicoes', label: 'Atribuições', icon: ListTodo },
