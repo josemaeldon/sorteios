@@ -77,7 +77,7 @@ const VendasTab: React.FC = () => {
 
   const totalVendas = vendasFiltradas.length;
   const totalCartelas = vendasFiltradas.reduce((sum, v) => sum + v.numeros_cartelas.split(',').length, 0);
-  const totalArrecadado = vendasFiltradas.reduce((sum, v) => sum + v.valor_total, 0);
+  const totalArrecadado = vendasFiltradas.reduce((sum, v) => sum + Number(v.valor_total || 0), 0);
 
   const handleEdit = (id: string) => {
     setEditingVendaId(id);
@@ -276,7 +276,7 @@ const VendasTab: React.FC = () => {
                 <td className="p-4 text-right">
                   <span className={cn(
                     'px-2 py-1 rounded-full text-sm font-semibold',
-                    venda.valor_pago >= venda.valor_total 
+                    Number(venda.valor_pago || 0) >= Number(venda.valor_total || 0)
                       ? 'bg-success/10 text-success' 
                       : 'bg-warning/10 text-warning'
                   )}>

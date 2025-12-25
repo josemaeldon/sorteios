@@ -20,7 +20,7 @@ const DashboardTab: React.FC = () => {
   const cartelasVendidas = cartelas.filter(c => c.status === 'vendida').length;
   const cartelasAtribuidas = cartelas.filter(c => c.status === 'ativa').length;
   const cartelasDisponiveis = cartelas.filter(c => c.status === 'disponivel').length;
-  const totalArrecadado = vendas.reduce((sum, v) => sum + (v.valor_pago || 0), 0);
+  const totalArrecadado = vendas.reduce((sum, v) => sum + Number(v.valor_pago || 0), 0);
   const totalVendas = vendas.length;
   const vendedoresAtivos = vendedores.filter(v => v.ativo).length;
   const percentualVendido = sorteioAtivo.quantidade_cartelas > 0 
@@ -31,7 +31,7 @@ const DashboardTab: React.FC = () => {
   const rankingVendedores = vendedores
     .map(v => {
       const vendasVendedor = vendas.filter(venda => venda.vendedor_id === v.id);
-      const totalVendido = vendasVendedor.reduce((sum, venda) => sum + venda.valor_total, 0);
+      const totalVendido = vendasVendedor.reduce((sum, venda) => sum + Number(venda.valor_total || 0), 0);
       const cartelasVendidasVendedor = vendasVendedor.reduce((sum, venda) => 
         sum + venda.numeros_cartelas.split(',').length, 0);
       return {

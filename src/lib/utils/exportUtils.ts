@@ -33,8 +33,8 @@ export const exportVendasPDF = (vendas: Venda[], sorteio: Sorteio, vendedores: V
   
   // Stats
   const totalVendas = vendas.length;
-  const totalValor = vendas.reduce((acc, v) => acc + v.valor_total, 0);
-  const totalPago = vendas.reduce((acc, v) => acc + v.valor_pago, 0);
+  const totalValor = vendas.reduce((acc, v) => acc + Number(v.valor_total || 0), 0);
+  const totalPago = vendas.reduce((acc, v) => acc + Number(v.valor_pago || 0), 0);
   const totalPendente = totalValor - totalPago;
   
   doc.setFontSize(10);
@@ -183,7 +183,7 @@ export const exportVendedoresPDF = (vendedores: Vendedor[], atribuicoes: Atribui
   const tableData = vendedores.map(vendedor => {
     const atribuicao = atribuicoes.find(a => a.vendedor_id === vendedor.id);
     const vendasVendedor = vendas.filter(v => v.vendedor_id === vendedor.id);
-    const totalVendas = vendasVendedor.reduce((acc, v) => acc + v.valor_total, 0);
+    const totalVendas = vendasVendedor.reduce((acc, v) => acc + Number(v.valor_total || 0), 0);
     return [
       vendedor.nome,
       vendedor.telefone || '-',
@@ -280,7 +280,7 @@ export const exportVendedoresExcel = (vendedores: Vendedor[], atribuicoes: Atrib
   const data = vendedores.map(vendedor => {
     const atribuicao = atribuicoes.find(a => a.vendedor_id === vendedor.id);
     const vendasVendedor = vendas.filter(v => v.vendedor_id === vendedor.id);
-    const totalVendas = vendasVendedor.reduce((acc, v) => acc + v.valor_total, 0);
+    const totalVendas = vendasVendedor.reduce((acc, v) => acc + Number(v.valor_total || 0), 0);
     return {
       'Nome': vendedor.nome,
       'Telefone': vendedor.telefone || '-',
@@ -328,8 +328,8 @@ export const exportRelatorioCompletoPDF = (
   doc.text(`Data de geração: ${new Date().toLocaleString('pt-BR')}`, 105, 100, { align: 'center' });
   
   // Summary stats
-  const totalVendas = vendas.reduce((acc, v) => acc + v.valor_total, 0);
-  const totalPago = vendas.reduce((acc, v) => acc + v.valor_pago, 0);
+  const totalVendas = vendas.reduce((acc, v) => acc + Number(v.valor_total || 0), 0);
+  const totalPago = vendas.reduce((acc, v) => acc + Number(v.valor_pago || 0), 0);
   const cartelasVendidas = cartelas.filter(c => c.status === 'vendida').length;
   
   doc.setFontSize(14);
@@ -381,7 +381,7 @@ export const exportRelatorioCompletoPDF = (
   const vendedoresData = vendedores.map(vendedor => {
     const atribuicao = atribuicoes.find(a => a.vendedor_id === vendedor.id);
     const vendasVendedor = vendas.filter(v => v.vendedor_id === vendedor.id);
-    const total = vendasVendedor.reduce((acc, v) => acc + v.valor_total, 0);
+    const total = vendasVendedor.reduce((acc, v) => acc + Number(v.valor_total || 0), 0);
     return [
       vendedor.nome,
       atribuicao?.cartelas.length.toString() || '0',

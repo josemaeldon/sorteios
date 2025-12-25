@@ -32,8 +32,8 @@ const RelatoriosTab: React.FC = () => {
   }
 
   // Estatísticas
-  const totalVendas = vendas.reduce((acc, v) => acc + v.valor_total, 0);
-  const totalPago = vendas.reduce((acc, v) => acc + v.valor_pago, 0);
+  const totalVendas = vendas.reduce((acc, v) => acc + Number(v.valor_total || 0), 0);
+  const totalPago = vendas.reduce((acc, v) => acc + Number(v.valor_pago || 0), 0);
   const cartelasVendidas = cartelas.filter(c => c.status === 'vendida').length;
   const cartelasDisponiveis = cartelas.filter(c => c.status === 'disponivel').length;
   const cartelasAtribuidas = cartelas.filter(c => c.status === 'ativa').length;
