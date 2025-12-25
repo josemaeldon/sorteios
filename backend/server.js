@@ -464,7 +464,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         );
         
         if (rodadaInfo.rows.length === 0) {
-          return res.json({ error: 'Rodada não encontrada' });
+          return res.status(404).json({ error: 'Rodada não encontrada' });
         }
         
         const { range_start, range_end } = rodadaInfo.rows[0];

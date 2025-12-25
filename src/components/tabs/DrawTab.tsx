@@ -811,7 +811,7 @@ const DrawTab: React.FC = () => {
               <Label htmlFor="status">Status *</Label>
               <Select 
                 value={formData.status} 
-                onValueChange={(value: any) => setFormData({ ...formData, status: value })}
+                onValueChange={(value: 'ativo' | 'concluido' | 'cancelado') => setFormData({ ...formData, status: value })}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -826,7 +826,11 @@ const DrawTab: React.FC = () => {
 
             <div className="bg-muted p-4 rounded-lg">
               <p className="text-sm text-muted-foreground">
-                Total de números: <span className="font-bold text-foreground">{parseInt(formData.range_end || '0') - parseInt(formData.range_start || '0') + 1}</span>
+                Total de números: <span className="font-bold text-foreground">
+                  {parseInt(formData.range_end || '0') - parseInt(formData.range_start || '0') + 1 > 0 
+                    ? parseInt(formData.range_end || '0') - parseInt(formData.range_start || '0') + 1 
+                    : 0}
+                </span>
               </p>
             </div>
 
@@ -856,7 +860,7 @@ const DrawTab: React.FC = () => {
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction 
               onClick={confirmDelete}
-              className="bg-danger text-danger-foreground hover:bg-danger/90"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Excluir
             </AlertDialogAction>
