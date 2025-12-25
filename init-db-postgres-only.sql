@@ -112,15 +112,32 @@ CREATE TABLE IF NOT EXISTS pagamentos (
 );
 
 -- Histórico de sorteios (números sorteados)
-CREATE TABLE IF NOT EXISTS sorteio_historico (
+-- Rodadas de sorteio
+CREATE TABLE IF NOT EXISTS rodadas_sorteio (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     sorteio_id UUID NOT NULL REFERENCES sorteios(id) ON DELETE CASCADE,
+    nome TEXT NOT NULL,
+    range_start INTEGER NOT NULL,
+    range_end INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'ativo',
+    data_inicio TIMESTAMPTZ,
+    data_fim TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS sorteio_historico (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    sorteio_id UUID REFERENCES sorteios(id) ON DELETE CASCADE,
+    rodada_id UUID REFERENCES rodadas_sorteio(id) ON DELETE CASCADE,
     numero_sorteado INTEGER NOT NULL,
     range_start INTEGER NOT NULL,
     range_end INTEGER NOT NULL,
     ordem INTEGER NOT NULL,
+    registro VARCHAR(255),
     data_sorteio TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT check_sorteio_or_rodada CHECK (sorteio_id IS NOT NULL OR rodada_id IS NOT NULL)
 );
 
 -- ================== ÍNDICES ==================
@@ -132,7 +149,9 @@ CREATE INDEX IF NOT EXISTS idx_atribuicoes_sorteio_id ON atribuicoes(sorteio_id)
 CREATE INDEX IF NOT EXISTS idx_atribuicao_cartelas_atribuicao_id ON atribuicao_cartelas(atribuicao_id);
 CREATE INDEX IF NOT EXISTS idx_vendas_sorteio_id ON vendas(sorteio_id);
 CREATE INDEX IF NOT EXISTS idx_pagamentos_venda_id ON pagamentos(venda_id);
+CREATE INDEX IF NOT EXISTS idx_rodadas_sorteio_sorteio_id ON rodadas_sorteio(sorteio_id);
 CREATE INDEX IF NOT EXISTS idx_sorteio_historico_sorteio_id ON sorteio_historico(sorteio_id);
+CREATE INDEX IF NOT EXISTS idx_sorteio_historico_rodada_id ON sorteio_historico(rodada_id);
 CREATE INDEX IF NOT EXISTS idx_sorteio_historico_ordem ON sorteio_historico(sorteio_id, ordem);
 
 -- ================== CONCLUÍDO ==================

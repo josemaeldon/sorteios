@@ -456,11 +456,24 @@ app.post('/api', checkBasicAuth, async (req, res) => {
 
       case 'saveRodadaNumero': {
         const { rodada_id, numero_sorteado, ordem } = data;
+        
+        // Get rodada information to extract range values
+        const rodadaInfo = await client.query(
+          'SELECT range_start, range_end FROM rodadas_sorteio WHERE id = $1',
+          [rodada_id]
+        );
+        
+        if (rodadaInfo.rows.length === 0) {
+          return res.json({ error: 'Rodada não encontrada' });
+        }
+        
+        const { range_start, range_end } = rodadaInfo.rows[0];
+        
         result = await client.query(`
-          INSERT INTO sorteio_historico (rodada_id, numero_sorteado, ordem, data_sorteio)
-          VALUES ($1, $2, $3, NOW())
+          INSERT INTO sorteio_historico (rodada_id, numero_sorteado, range_start, range_end, ordem, data_sorteio)
+          VALUES ($1, $2, $3, $4, $5, NOW())
           RETURNING *
-        `, [rodada_id, numero_sorteado, ordem]);
+        `, [rodada_id, numero_sorteado, range_start, range_end, ordem]);
         return res.json({ data: result.rows[0] });
       }
 
