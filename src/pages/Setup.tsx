@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { User, CheckCircle2, AlertCircle, Loader2, Settings, Database, ArrowRight } from 'lucide-react';
@@ -22,6 +23,7 @@ const Setup: React.FC = () => {
   
   // Database configuration data
   const [dbData, setDbData] = useState({
+    type: 'postgres',
     host: 'localhost',
     port: '5432',
     database: 'bingo',
@@ -41,6 +43,16 @@ const Setup: React.FC = () => {
   useEffect(() => {
     checkSetupRequired();
   }, []);
+
+  // Handle database type change to update default port and user
+  const handleDbTypeChange = (type: 'postgres' | 'mysql') => {
+    setDbData({
+      ...dbData,
+      type,
+      port: type === 'mysql' ? '3306' : '5432',
+      user: type === 'mysql' ? 'root' : 'postgres',
+    });
+  };
 
   const checkSetupRequired = async () => {
     try {
@@ -110,6 +122,7 @@ const Setup: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'testDbConnection',
+          type: dbData.type,
           host: dbData.host,
           port: dbData.port,
           database: dbData.database,
@@ -164,6 +177,7 @@ const Setup: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'saveDbConfig',
+          type: dbData.type,
           host: dbData.host,
           port: dbData.port,
           database: dbData.database,
@@ -288,7 +302,7 @@ const Setup: React.FC = () => {
             </div>
             <CardTitle className="text-2xl">Configuração do Banco de Dados</CardTitle>
             <CardDescription>
-              Configure a conexão com o PostgreSQL
+              Escolha o tipo de banco de dados e configure a conexão
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -302,12 +316,33 @@ const Setup: React.FC = () => {
             <Alert className="mb-4">
               <Database className="h-4 w-4" />
               <AlertDescription className="text-sm">
-                <strong>Importante:</strong> Certifique-se de que o PostgreSQL está instalado e em execução.
+                <strong>Importante:</strong> Certifique-se de que o banco de dados escolhido está instalado e em execução.
                 O sistema criará as tabelas automaticamente.
               </AlertDescription>
             </Alert>
             
             <form onSubmit={handleDatabaseSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label>Tipo de Banco de Dados</Label>
+                <RadioGroup
+                  value={dbData.type}
+                  onValueChange={(value) => handleDbTypeChange(value as 'postgres' | 'mysql')}
+                  className="flex gap-4"
+                >
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="postgres" id="postgres" />
+                    <Label htmlFor="postgres" className="font-normal cursor-pointer">PostgreSQL</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="mysql" id="mysql" />
+                    <Label htmlFor="mysql" className="font-normal cursor-pointer">MySQL</Label>
+                  </div>
+                </RadioGroup>
+                <p className="text-xs text-muted-foreground">
+                  Selecione o tipo de banco de dados que você deseja usar
+                </p>
+              </div>
+
               <div className="space-y-2">
                 <Label htmlFor="host">Host</Label>
                 <Input
@@ -318,7 +353,7 @@ const Setup: React.FC = () => {
                   required
                 />
                 <p className="text-xs text-muted-foreground">
-                  Endereço do servidor PostgreSQL (ex: localhost, 192.168.1.100)
+                  Endereço do servidor de banco de dados (ex: localhost, 192.168.1.100)
                 </p>
               </div>
 
@@ -328,11 +363,11 @@ const Setup: React.FC = () => {
                   id="port"
                   value={dbData.port}
                   onChange={(e) => setDbData({ ...dbData, port: e.target.value })}
-                  placeholder="5432"
+                  placeholder={dbData.type === 'mysql' ? '3306' : '5432'}
                   required
                 />
                 <p className="text-xs text-muted-foreground">
-                  Porta do PostgreSQL (padrão: 5432)
+                  Porta do banco (padrão: {dbData.type === 'mysql' ? '3306 para MySQL' : '5432 para PostgreSQL'})
                 </p>
               </div>
 
