@@ -186,10 +186,10 @@ const DrawTab: React.FC = () => {
     const range_start = parseInt(formData.range_start);
     const range_end = parseInt(formData.range_end);
     
-    if (isNaN(range_start) || isNaN(range_end) || range_start >= range_end) {
+    if (isNaN(range_start) || isNaN(range_end) || range_start < 1 || range_start >= range_end) {
       toast({
         title: "Erro",
-        description: "A faixa de números é inválida.",
+        description: "A faixa de números é inválida. O número inicial deve ser positivo e menor que o número final.",
         variant: "destructive"
       });
       return;
@@ -827,9 +827,12 @@ const DrawTab: React.FC = () => {
             <div className="bg-muted p-4 rounded-lg">
               <p className="text-sm text-muted-foreground">
                 Total de números: <span className="font-bold text-foreground">
-                  {parseInt(formData.range_end || '0') - parseInt(formData.range_start || '0') + 1 > 0 
-                    ? parseInt(formData.range_end || '0') - parseInt(formData.range_start || '0') + 1 
-                    : 0}
+                  {(() => {
+                    const start = parseInt(formData.range_start || '0');
+                    const end = parseInt(formData.range_end || '0');
+                    const total = end - start + 1;
+                    return total > 0 ? total : 0;
+                  })()}
                 </span>
               </p>
             </div>
