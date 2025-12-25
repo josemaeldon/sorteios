@@ -251,12 +251,6 @@ const DrawTab: React.FC = () => {
     // This ensures a fresh start with the new configuration
     await clearDrawHistory();
 
-    // Save the registro immediately when starting the draw
-    // This ensures the draw record name is saved before any numbers are drawn
-    if (registro.trim() !== '') {
-      await saveRegistro(registro);
-    }
-
     // Generate number range
     const numbers: number[] = [];
     for (let i = rangeStart; i <= rangeEnd; i++) {
@@ -267,6 +261,9 @@ const DrawTab: React.FC = () => {
     setIsConfigured(true);
     setDrawnNumbers([]);
     setCurrentNumber(null);
+    
+    // Note: The registro will be saved automatically when the first number is drawn
+    // via the saveDrawnNumber function, which includes the registro in the INSERT
   };
 
   const drawNumber = () => {
