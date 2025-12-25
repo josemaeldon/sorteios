@@ -1,9 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useBingo } from '@/contexts/BingoContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Shuffle, RotateCcw, Ticket } from 'lucide-react';
 import { cn } from '@/lib/utils';
+
+// Animation constants
+const ANIMATION_CYCLES = 20;
+const ANIMATION_INTERVAL_MS = 100;
 
 const DrawTab: React.FC = () => {
   const { sorteioAtivo, cartelas } = useBingo();
@@ -11,6 +15,7 @@ const DrawTab: React.FC = () => {
   const [drawnNumbers, setDrawnNumbers] = useState<number[]>([]);
   const [isDrawing, setIsDrawing] = useState(false);
   const [availableNumbers, setAvailableNumbers] = useState<number[]>([]);
+  const animationIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     if (sorteioAtivo) {
@@ -23,6 +28,15 @@ const DrawTab: React.FC = () => {
       setAvailableNumbers(soldTickets);
     }
   }, [sorteioAtivo, cartelas]);
+
+  // Cleanup interval on unmount
+  useEffect(() => {
+    return () => {
+      if (animationIntervalRef.current) {
+        clearInterval(animationIntervalRef.current);
+      }
+    };
+  }, []);
 
   if (!sorteioAtivo) {
     return (
@@ -54,15 +68,18 @@ const DrawTab: React.FC = () => {
       setCurrentNumber(remainingNumbers[randomIndex]);
       counter++;
 
-      if (counter > 20) {
+      if (counter > ANIMATION_CYCLES) {
         clearInterval(interval);
+        animationIntervalRef.current = null;
         const finalIndex = Math.floor(Math.random() * remainingNumbers.length);
         const finalNumber = remainingNumbers[finalIndex];
         setCurrentNumber(finalNumber);
         setDrawnNumbers(prev => [...prev, finalNumber]);
         setIsDrawing(false);
       }
-    }, 100);
+    }, ANIMATION_INTERVAL_MS);
+    
+    animationIntervalRef.current = interval;
   };
 
   const resetDraw = () => {
