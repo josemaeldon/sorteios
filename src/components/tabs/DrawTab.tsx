@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Shuffle, RotateCcw, Play, Settings } from 'lucide-react';
+import { Shuffle, RotateCcw, Play, Settings, Maximize, Minimize, ZoomIn, ZoomOut } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 // Animation constants
@@ -20,7 +20,10 @@ const DrawTab: React.FC = () => {
   const [rangeEnd, setRangeEnd] = useState<number>(75);
   const [isConfigured, setIsConfigured] = useState(false);
   const [availableNumbers, setAvailableNumbers] = useState<number[]>([]);
+  const [fontSize, setFontSize] = useState<number>(300);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const animationIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const fullscreenRef = useRef<HTMLDivElement>(null);
 
   // Cleanup interval on unmount
   useEffect(() => {
@@ -31,11 +34,41 @@ const DrawTab: React.FC = () => {
     };
   }, []);
 
+  // Fullscreen handlers
+  const toggleFullscreen = async () => {
+    try {
+      if (!document.fullscreenElement) {
+        await fullscreenRef.current?.requestFullscreen();
+      } else {
+        await document.exitFullscreen();
+      }
+    } catch (error) {
+      console.error('Fullscreen toggle error:', error);
+    }
+  };
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  const increaseFontSize = () => {
+    setFontSize(prev => Math.min(prev + 20, 500));
+  };
+
+  const decreaseFontSize = () => {
+    setFontSize(prev => Math.max(prev - 20, 100));
+  };
+
   if (!sorteioAtivo) {
     return (
       <div className="text-center py-12">
         <Shuffle className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
-        <h2 className="text-2xl font-bold text-foreground mb-2">Sorteio de Números</h2>
+        <h2 className="text-2xl font-bold text-foreground mb-2">Sortear</h2>
         <p className="text-muted-foreground">Selecione um sorteio para iniciar</p>
       </div>
     );
@@ -114,7 +147,7 @@ const DrawTab: React.FC = () => {
     return (
       <div className="space-y-6">
         <div>
-          <h2 className="text-3xl font-bold text-foreground">Sorteio de Números: {sorteioAtivo.nome}</h2>
+          <h2 className="text-3xl font-bold text-foreground">Sortear: {sorteioAtivo.nome}</h2>
           <p className="text-muted-foreground mt-1">Configure a faixa de números para o sorteio</p>
         </div>
 
@@ -186,7 +219,7 @@ const DrawTab: React.FC = () => {
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h2 className="text-3xl font-bold text-foreground">Sorteio: {sorteioAtivo.nome}</h2>
+          <h2 className="text-3xl font-bold text-foreground">Sortear: {sorteioAtivo.nome}</h2>
           <p className="text-muted-foreground mt-1">
             Faixa: {rangeStart} a {rangeEnd} | Sorteados: {drawnNumbers.length} | Restantes: {remainingNumbers.length}
           </p>
@@ -224,21 +257,48 @@ const DrawTab: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Current Number Display */}
-        <div className="lg:col-span-2">
+      <div className="grid grid-cols-1 gap-6">
+        {/* Current Number Display with Fullscreen */}
+        <div ref={fullscreenRef} className={cn(isFullscreen && "bg-background p-8")}>
           <Card className="border-2">
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle>Número Sorteado</CardTitle>
+              <div className="flex gap-2">
+                <Button
+                  onClick={decreaseFontSize}
+                  variant="outline"
+                  size="icon"
+                  title="Diminuir tamanho"
+                >
+                  <ZoomOut className="w-4 h-4" />
+                </Button>
+                <Button
+                  onClick={increaseFontSize}
+                  variant="outline"
+                  size="icon"
+                  title="Aumentar tamanho"
+                >
+                  <ZoomIn className="w-4 h-4" />
+                </Button>
+                <Button
+                  onClick={toggleFullscreen}
+                  variant="outline"
+                  size="icon"
+                  title={isFullscreen ? "Sair da tela cheia" : "Tela cheia"}
+                >
+                  {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               <div className="flex items-center justify-center min-h-[400px]">
                 {currentNumber !== null ? (
                   <div
                     className={cn(
-                      "text-[200px] font-black leading-none transition-all duration-300",
+                      "font-black leading-none transition-all duration-300",
                       isDrawing ? "animate-pulse text-primary" : "text-primary"
                     )}
+                    style={{ fontSize: `${fontSize}px` }}
                   >
                     {currentNumber}
                   </div>
@@ -253,9 +313,9 @@ const DrawTab: React.FC = () => {
           </Card>
         </div>
 
-        {/* Drawn Numbers History */}
-        <div className="lg:col-span-1">
-          <Card className="h-full">
+        {/* Drawn Numbers History - Compact Grid */}
+        {drawnNumbers.length > 0 && (
+          <Card>
             <CardHeader>
               <CardTitle className="flex items-center justify-between">
                 <span>Números Sorteados</span>
@@ -265,44 +325,24 @@ const DrawTab: React.FC = () => {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {drawnNumbers.length === 0 ? (
-                <p className="text-muted-foreground text-center py-8">
-                  Nenhum número sorteado ainda
-                </p>
-              ) : (
-                <div className="space-y-2 max-h-[400px] overflow-y-auto">
-                  {drawnNumbers.map((num, index) => (
-                    <div
-                      key={index}
-                      className={cn(
-                        "flex items-center gap-3 p-3 rounded-lg border transition-all",
-                        index === drawnNumbers.length - 1
-                          ? "bg-primary/10 border-primary"
-                          : "bg-muted/50 border-border"
-                      )}
-                    >
-                      <div
-                        className={cn(
-                          "flex items-center justify-center w-12 h-12 rounded-lg font-bold text-xl",
-                          index === drawnNumbers.length - 1
-                            ? "bg-primary text-primary-foreground"
-                            : "bg-background text-foreground"
-                        )}
-                      >
-                        {num}
-                      </div>
-                      <div className="flex-1">
-                        <div className="text-sm text-muted-foreground">
-                          {index === drawnNumbers.length - 1 ? "Último sorteado" : `${index + 1}º sorteio`}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <div className="flex flex-wrap gap-2">
+                {drawnNumbers.map((num, index) => (
+                  <div
+                    key={index}
+                    className={cn(
+                      "flex items-center justify-center w-16 h-16 rounded-lg font-bold text-xl border-2 transition-transform",
+                      index === drawnNumbers.length - 1
+                        ? "bg-primary text-primary-foreground border-primary scale-110"
+                        : "bg-muted text-foreground border-border"
+                    )}
+                  >
+                    {num}
+                  </div>
+                ))}
+              </div>
             </CardContent>
           </Card>
-        </div>
+        )}
       </div>
 
       {/* Statistics */}
