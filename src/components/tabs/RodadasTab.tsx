@@ -49,6 +49,7 @@ const RodadasTab: React.FC = () => {
     if (sorteioAtivo) {
       loadRodadas();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sorteioAtivo?.id]);
 
   const loadRodadas = async () => {

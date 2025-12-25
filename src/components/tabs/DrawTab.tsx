@@ -50,6 +50,7 @@ const DrawTab: React.FC = () => {
       setDrawnNumbers([]);
       setAvailableNumbers([]);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sorteioAtivo?.id]);
 
   const loadRodada = async (rodadaId: string) => {
