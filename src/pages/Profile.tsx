@@ -10,7 +10,6 @@ import { Separator } from '@/components/ui/separator';
 import { ArrowLeft, User, Loader2, Save, Camera, X, Lock, Mail, Type } from 'lucide-react';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
-import { isSelfhostedMode } from '@/lib/apiClient';
 
 const profileSchema = z.object({
   nome: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres').max(100),
@@ -83,43 +82,29 @@ const Profile: React.FC = () => {
       return;
     }
 
-    if (isSelfhostedMode()) {
-      toast({
-        title: "Indisponível",
-        description: "Upload de avatar não está habilitado nesta instalação.",
-        variant: "destructive",
-      });
-      return;
-    }
-
     setIsUploading(true);
 
     try {
-      const { supabase } = await import('@/integrations/supabase/client');
-      if (!supabase) {
-        throw new Error('Serviço de armazenamento não está configurado.');
-      }
-
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${user?.id}-${Date.now()}.${fileExt}`;
-      const filePath = `avatars/${fileName}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('avatars')
-        .upload(filePath, file, { upsert: true });
-
-      if (uploadError) throw uploadError;
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('avatars')
-        .getPublicUrl(filePath);
-
-      setFormData(prev => ({ ...prev, avatar_url: publicUrl }));
-
-      toast({
-        title: "Imagem carregada",
-        description: "Clique em Salvar para confirmar as alterações.",
-      });
+      // Convert image to base64 for storage
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64String = reader.result as string;
+        setFormData(prev => ({ ...prev, avatar_url: base64String }));
+        toast({
+          title: "Imagem carregada",
+          description: "Clique em Salvar para confirmar as alterações.",
+        });
+        setIsUploading(false);
+      };
+      reader.onerror = () => {
+        toast({
+          title: "Erro ao carregar imagem",
+          description: "Tente novamente.",
+          variant: "destructive",
+        });
+        setIsUploading(false);
+      };
+      reader.readAsDataURL(file);
     } catch (error: any) {
       console.error('Upload error:', error);
       toast({
@@ -127,7 +112,6 @@ const Profile: React.FC = () => {
         description: error.message || "Tente novamente.",
         variant: "destructive",
       });
-    } finally {
       setIsUploading(false);
     }
   };
