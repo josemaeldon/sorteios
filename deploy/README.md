@@ -85,10 +85,29 @@ Principais variáveis:
 
 ## Portas Padrão
 
-- Frontend: `3000`
+- Frontend: `80` (dentro do container nginx)
 - Backend API: `3001`
 - PostgreSQL: `5432`
 - Traefik Dashboard: `8080`
+
+## Arquitetura da Comunicação
+
+### Modo PostgreSQL-Only (Recomendado para Deploy Simplificado)
+
+```
+Browser → Nginx (port 80) → /api → Backend (port 3001) → PostgreSQL (port 5432)
+          └─→ / → Static Files (SPA)
+```
+
+- O Nginx serve os arquivos estáticos do frontend e faz proxy das requisições `/api` para o backend
+- `VITE_API_BASE_URL` pode ser deixado vazio para usar o proxy interno
+- O backend se conecta diretamente ao PostgreSQL usando variáveis de ambiente `DB_*`
+
+### Notas Importantes
+
+1. **Proxy API**: O nginx.conf inclui configuração de proxy para `/api` que encaminha requisições para o backend
+2. **Variáveis de Ambiente**: O backend usa `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`
+3. **VITE_API_BASE_URL**: Deixe vazio ou não defina para usar o proxy interno do nginx
 
 ## Suporte
 

@@ -237,6 +237,29 @@ Para migrar de um banco para outro:
 
 ## Solução de Problemas
 
+### Erro 405: "Method Not Allowed" nas Requisições API
+
+Este erro ocorre quando o nginx não consegue rotear as requisições `/api` para o backend.
+
+**Sintomas:**
+- Mensagem no console: "Failed to load resource: the server responded with a status of 405"
+- Erro: "Failed to check database config"
+- Frontend não consegue comunicar com o backend
+
+**Solução:**
+1. **Para deploy com Docker Compose (postgres-only):**
+   - Certifique-se de que está usando a versão mais recente do `nginx.conf` que inclui o proxy para `/api`
+   - Deixe `VITE_API_BASE_URL` vazio ou não defina para usar o proxy interno
+   - Reconstrua as imagens: `docker compose build --no-cache`
+
+2. **Para deploy com domínios separados (Traefik):**
+   - Configure `VITE_API_BASE_URL` com a URL completa do backend (ex: `https://api.bingo.exemplo.com`)
+   - Não use o proxy interno do nginx neste caso
+
+3. **Para desenvolvimento local:**
+   - Use `VITE_API_BASE_URL=http://localhost:3001` no arquivo `.env`
+   - Inicie backend e frontend em terminais separados
+
 ### Erro: "The string did not match the expected pattern"
 
 Este erro geralmente ocorre quando:

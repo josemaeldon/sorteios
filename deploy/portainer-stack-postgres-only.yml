@@ -33,12 +33,12 @@ services:
   bingo_backend:
     image: josemaeldon/bingo-system:backend-latest
     environment:
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
-      - POSTGRES_DB=santaluziadb
-      - POSTGRES_SCHEMA=bingo
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=SuaSenhaSegura123
+      - DB_TYPE=postgres
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=santaluziadb
+      - DB_USER=postgres
+      - DB_PASSWORD=SuaSenhaSegura123
       - JWT_SECRET=SuaChaveJWTSuperSecreta2024
       - BASIC_AUTH_USER=
       - BASIC_AUTH_PASS=
