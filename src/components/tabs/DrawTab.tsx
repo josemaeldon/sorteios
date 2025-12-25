@@ -261,6 +261,10 @@ const DrawTab: React.FC = () => {
     setIsConfigured(true);
     setDrawnNumbers([]);
     setCurrentNumber(null);
+    
+    // Note: The registro will be saved to the database automatically:
+    // 1. When any number is drawn (via saveDrawnNumber)
+    // 2. When the user edits the field (via the auto-save effect with 1s debounce)
   };
 
   const drawNumber = () => {
@@ -316,6 +320,9 @@ const DrawTab: React.FC = () => {
   };
 
   const reconfigure = () => {
+    // Go back to configuration screen to change settings
+    // Note: registro is preserved to allow adjusting range without losing the name
+    // Users can manually change registro or use "Reiniciar" for a complete reset
     setIsConfigured(false);
     setCurrentNumber(null);
     setDrawnNumbers([]);
@@ -341,6 +348,20 @@ const DrawTab: React.FC = () => {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
+            <div className="space-y-2">
+              <Label htmlFor="registro-config">Registro do Sorteio</Label>
+              <Input
+                id="registro-config"
+                value={registro}
+                onChange={(e) => setRegistro(e.target.value)}
+                placeholder="Ex: Sorteio 001, Rodada 1, etc..."
+                className="text-lg"
+              />
+              <p className="text-xs text-muted-foreground">
+                Digite um nome para identificar este sorteio no histórico
+              </p>
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="rangeStart">Número Inicial</Label>
@@ -453,7 +474,7 @@ const DrawTab: React.FC = () => {
                 className="text-lg"
               />
               <p className="text-xs text-muted-foreground">
-                {registro.trim() ? 'Salvo automaticamente' : 'Digite para registrar este sorteio'}
+                {registro.trim() ? 'Alterações salvas automaticamente após 1 segundo' : 'Digite para atualizar o registro deste sorteio'}
               </p>
             </div>
           </div>
