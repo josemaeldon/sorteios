@@ -320,6 +320,9 @@ const DrawTab: React.FC = () => {
   };
 
   const reconfigure = () => {
+    // Go back to configuration screen to change settings
+    // Note: registro is preserved to allow adjusting range without losing the name
+    // Users can manually change registro or use "Reiniciar" for a complete reset
     setIsConfigured(false);
     setCurrentNumber(null);
     setDrawnNumbers([]);
