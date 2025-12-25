@@ -6,16 +6,13 @@ Sistema completo para gerenciamento de sorteios de bingo, vendedores, cartelas e
 
 - [Funcionalidades](#-funcionalidades)
 - [Tecnologias](#-tecnologias)
+- [Estrutura do Projeto](#-estrutura-do-projeto)
 - [Instalação Rápida](#-instalação-rápida)
 - [Opções de Deploy](#-opções-de-deploy)
 - [Deploy com Lovable Cloud](#-deploy-com-lovable-cloud)
 - [Deploy com Docker](#-deploy-com-docker)
 - [Deploy Self-Hosted](#-deploy-self-hosted-100-independente)
-- [Deploy em Docker Swarm](#-deploy-em-docker-swarm-com-traefik)
-- [Instalação Manual Linux](#-instalação-manual-em-servidor-linux)
-- [Gerenciamento](#-gerenciamento)
-- [Backup e Restauração](#-backup-e-restauração)
-- [Monitoramento](#-monitoramento)
+- [Auto-Instalador Web](#-auto-instalador-web)
 - [Primeiro Acesso](#-primeiro-acesso)
 - [Suporte](#-suporte)
 
@@ -46,25 +43,64 @@ Sistema completo para gerenciamento de sorteios de bingo, vendedores, cartelas e
 
 ---
 
-## 🚀 Instalação Rápida
+## 📁 Estrutura do Projeto
 
-### Opção 1: Self-Hosted Simples (Recomendado)
-
-```bash
-curl -sSL https://raw.githubusercontent.com/josemaeldon/bingo-system/main/install.sh | bash
+```
+bingopgm/
+├── src/                    # Código fonte do frontend
+├── backend/               # Backend Node.js
+├── database/              # Scripts SQL e migrações
+│   ├── README.md         # Documentação do banco
+│   └── init-db.sql       # Script principal de inicialização ⭐
+├── docs/                  # Documentação do projeto
+│   ├── README.md
+│   ├── IMPLEMENTATION_*.md
+│   ├── README-*.md (guias de deploy)
+│   └── VISUAL_*.md
+├── deploy/               # Arquivos de deploy
+│   ├── docker-compose.*.yml
+│   ├── portainer-stack*.yml
+│   └── kong*.yml
+├── scripts/              # Scripts auxiliares
+│   ├── install.sh
+│   └── install-swarm.sh
+└── README.md            # Este arquivo
 ```
 
-### Opção 2: Docker Swarm + Traefik (Produção)
+**Dica:** Cada diretório tem seu próprio README.md com documentação específica!
+
+---
+
+## 🚀 Instalação Rápida
+
+### Opção 1: Auto-Instalador Web (Mais Simples) ✨
+
+1. Execute o sistema com Docker:
+```bash
+docker-compose -f deploy/docker-compose.selfhosted.yml up -d
+```
+
+2. Acesse: `http://localhost:3000/setup`
+
+3. Configure o sistema através da interface web:
+   - Informe os dados do banco de dados
+   - Crie o usuário administrador
+   - Sistema pronto para usar!
+
+### Opção 2: Self-Hosted com Script
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/josemaeldon/bingo-system/main/install-swarm.sh | bash
+curl -sSL https://raw.githubusercontent.com/josemaeldon/bingopgm/main/scripts/install.sh | bash
 ```
 
 ### Opção 3: Docker Compose Manual
 
 ```bash
-docker pull josemaeldon/bingo-system:latest
-docker run -d -p 80:80 josemaeldon/bingo-system:latest
+# Inicializar banco de dados
+psql -U postgres -d bingo -f database/init-db.sql
+
+# Subir serviços
+docker-compose -f deploy/docker-compose.selfhosted.yml up -d
 ```
 
 ---
@@ -646,6 +682,45 @@ services:
       - WATCHTOWER_POLL_INTERVAL=86400
     command: --label-enable
 ```
+
+---
+
+## 🌐 Auto-Instalador Web
+
+O sistema inclui um instalador web automático para facilitar a configuração inicial.
+
+### Como Usar
+
+1. **Primeira Inicialização**
+   - Ao acessar o sistema pela primeira vez sem banco configurado
+   - Você será automaticamente redirecionado para `/setup`
+
+2. **Configuração do Banco de Dados**
+   - Informe o host, porta, nome do banco, usuário e senha
+   - O sistema testará a conexão automaticamente
+
+3. **Criação de Tabelas**
+   - O instalador criará todas as tabelas necessárias
+   - Índices e triggers serão configurados automaticamente
+
+4. **Usuário Administrador**
+   - Crie seu usuário administrador inicial
+   - Defina nome, email e senha segura
+
+5. **Pronto!**
+   - Sistema configurado e pronto para uso
+   - Você será redirecionado para o login
+
+### Requisitos
+
+- Banco de dados PostgreSQL já instalado e acessível
+- Permissões para criar tabelas no banco
+
+### Proteção
+
+- A rota `/setup` só é acessível quando o banco não está configurado
+- Após a instalação, a rota é automaticamente desabilitada
+- Para reinstalar, será necessário limpar o banco de dados manualmente
 
 ---
 

@@ -484,7 +484,7 @@ const DrawTab: React.FC = () => {
 
         <div className="grid grid-cols-1 gap-6">
           <div ref={fullscreenRef} className={cn(isFullscreen && "bg-background p-8 min-h-screen flex flex-col")}>
-            <Card className="border-2 flex-1 flex flex-col">
+            <Card className="border-2 flex-1 flex flex-col relative z-0">
               <CardHeader className="flex flex-row items-center justify-between flex-shrink-0">
                 <CardTitle>Número Sorteado</CardTitle>
                 <div className="flex gap-2">
