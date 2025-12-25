@@ -262,8 +262,9 @@ const DrawTab: React.FC = () => {
     setDrawnNumbers([]);
     setCurrentNumber(null);
     
-    // Note: The registro will be saved automatically when the first number is drawn
-    // via the saveDrawnNumber function, which includes the registro in the INSERT
+    // Note: The registro will be saved to the database automatically:
+    // 1. When any number is drawn (via saveDrawnNumber)
+    // 2. When the user edits the field (via the auto-save effect with 1s debounce)
   };
 
   const drawNumber = () => {
@@ -470,7 +471,7 @@ const DrawTab: React.FC = () => {
                 className="text-lg"
               />
               <p className="text-xs text-muted-foreground">
-                {registro.trim() ? 'Alterações salvas automaticamente' : 'Digite para atualizar o registro deste sorteio'}
+                {registro.trim() ? 'Alterações salvas automaticamente após 1 segundo' : 'Digite para atualizar o registro deste sorteio'}
               </p>
             </div>
           </div>
