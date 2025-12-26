@@ -6,11 +6,13 @@ services:
     environment:
       POSTGRES_DB: bingo
       POSTGRES_USER: postgres
+      # WARNING: Change this password for production deployments
       POSTGRES_PASSWORD: postgres
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      # Initialize database with complete schema
       - ./database/database-complete.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
@@ -28,10 +30,13 @@ services:
       DB_PORT: 5432
       DB_NAME: bingo
       DB_USER: postgres
+      # WARNING: Change this password to match your database password
       DB_PASSWORD: postgres
       PORT: 3001
+      # WARNING: Change these credentials for production deployments
       BASIC_AUTH_USER: admin
       BASIC_AUTH_PASS: admin
+      # WARNING: Generate a secure random JWT secret for production
       JWT_SECRET: bingo_jwt_secret_change_in_production
     ports:
       - "3001:3001"
@@ -46,6 +51,7 @@ services:
       dockerfile: Dockerfile
     environment:
       VITE_API_URL: http://localhost:3001
+      # WARNING: Change these to match your backend credentials
       VITE_BASIC_AUTH_USER: admin
       VITE_BASIC_AUTH_PASS: admin
     ports:

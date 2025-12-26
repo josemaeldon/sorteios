@@ -119,6 +119,13 @@ Isso iniciará:
 - Autenticação básica opcional para API
 - Validação de entrada com Zod
 
+**⚠️ IMPORTANTE para Produção:**
+- Altere todas as senhas padrão no `docker-compose.yml`
+- Gere um `JWT_SECRET` forte e aleatório
+- Use senhas fortes para `BASIC_AUTH_USER` e `BASIC_AUTH_PASS`
+- Use HTTPS em produção
+- Configure firewall para proteger portas do banco de dados
+
 ## 📝 Funcionalidades
 
 - ✅ Gestão de usuários e permissões (admin/user)
