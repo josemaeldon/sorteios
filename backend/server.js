@@ -2,8 +2,6 @@ const express = require('express');
 const cors = require('cors');
 const DatabaseAdapter = require('./db-adapter');
 const crypto = require('crypto');
-const fs = require('fs');
-const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -17,59 +15,20 @@ app.use(cors({
 
 app.use(express.json());
 
-// Database configuration file path
-const DB_CONFIG_PATH = path.join(__dirname, 'db-config.json');
+// Load database configuration from environment variables
+const dbConfig = {
+  type: process.env.DB_TYPE || 'postgres',
+  host: process.env.DB_HOST || 'localhost',
+  port: parseInt(process.env.DB_PORT || (process.env.DB_TYPE === 'mysql' ? '3306' : '5432')),
+  database: process.env.DB_NAME || 'bingo',
+  user: process.env.DB_USER || (process.env.DB_TYPE === 'mysql' ? 'root' : 'postgres'),
+  password: process.env.DB_PASSWORD || '',
+};
 
-// Function to load database configuration
-function loadDbConfig() {
-  if (fs.existsSync(DB_CONFIG_PATH)) {
-    try {
-      const config = JSON.parse(fs.readFileSync(DB_CONFIG_PATH, 'utf8'));
-      return config;
-    } catch (error) {
-      console.error('Error loading database config:', error);
-      return null;
-    }
-  }
-  return null;
-}
-
-// Function to save database configuration
-function saveDbConfig(config) {
-  try {
-    fs.writeFileSync(DB_CONFIG_PATH, JSON.stringify(config, null, 2), 'utf8');
-    return true;
-  } catch (error) {
-    console.error('Error saving database config:', error);
-    return false;
-  }
-}
-
-// Load database configuration from file or environment
-let dbConfig = loadDbConfig();
-if (!dbConfig && process.env.DB_HOST) {
-  // Use environment variables if no config file exists
-  dbConfig = {
-    type: process.env.DB_TYPE || 'postgres',
-    host: process.env.DB_HOST || 'localhost',
-    port: parseInt(process.env.DB_PORT || (process.env.DB_TYPE === 'mysql' ? '3306' : '5432')),
-    database: process.env.DB_NAME || 'bingo',
-    user: process.env.DB_USER || (process.env.DB_TYPE === 'mysql' ? 'root' : 'postgres'),
-    password: process.env.DB_PASSWORD || '',
-  };
-}
-
-// Database adapter (will be null if not configured)
-let dbAdapter = null;
-if (dbConfig) {
-  try {
-    dbAdapter = new DatabaseAdapter(dbConfig);
-    dbAdapter.connect();
-    console.log(`Database adapter initialized for ${dbConfig.type}`);
-  } catch (error) {
-    console.error('Error initializing database adapter:', error);
-  }
-}
+// Initialize database adapter
+const dbAdapter = new DatabaseAdapter(dbConfig);
+dbAdapter.connect();
+console.log(`Database adapter initialized for ${dbConfig.type}`);
 
 // Basic Auth credentials from environment
 const BASIC_AUTH_USER = process.env.BASIC_AUTH_USER || '';
@@ -189,7 +148,7 @@ function checkBasicAuth(req, res, next) {
 
 // JWT Auth middleware
 async function checkAuth(req, action) {
-  const publicActions = ['checkFirstAccess', 'setupAdmin', 'login', 'checkDbConfig', 'testDbConnection', 'saveDbConfig', 'initializeDatabase'];
+  const publicActions = ['checkFirstAccess', 'setupAdmin', 'login'];
   const adminActions = ['getUsers', 'createUser', 'updateUser', 'deleteUser'];
   
   if (publicActions.includes(action)) {
@@ -225,147 +184,6 @@ app.post('/api', checkBasicAuth, async (req, res) => {
   const { action, data = {} } = req.body;
   
   console.log(`API Call: ${action}`);
-  
-  // Actions that don't require database
-  const dbConfigActions = ['checkDbConfig', 'testDbConnection', 'saveDbConfig', 'initializeDatabase'];
-  
-  // Check if database is configured for actions that need it
-  if (!dbConfigActions.includes(action) && !dbAdapter) {
-    return res.status(503).json({ 
-      error: 'Banco de dados não configurado',
-      needsDbConfig: true 
-    });
-  }
-  
-  // Handle database configuration actions
-  if (dbConfigActions.includes(action)) {
-    try {
-      let result;
-      
-      switch (action) {
-        case 'checkDbConfig':
-          return res.json({ 
-            configured: !!dbAdapter,
-            config: dbAdapter ? {
-              type: dbConfig.type,
-              host: dbConfig.host,
-              port: dbConfig.port,
-              database: dbConfig.database,
-              user: dbConfig.user
-            } : null
-          });
-        
-        case 'testDbConnection': {
-          const testConfig = {
-            type: data.type || 'postgres',
-            host: data.host,
-            port: parseInt(data.port),
-            database: data.database,
-            user: data.user,
-            password: data.password,
-          };
-          
-          let testAdapter = null;
-          try {
-            testAdapter = new DatabaseAdapter(testConfig);
-            await testAdapter.connect();
-            await testAdapter.query('SELECT 1');
-            await testAdapter.end();
-            return res.json({ success: true, message: 'Conexão estabelecida com sucesso!' });
-          } catch (error) {
-            if (testAdapter) {
-              try { await testAdapter.end(); } catch (e) {}
-            }
-            return res.json({ 
-              success: false, 
-              error: `Erro ao conectar: ${error.message}` 
-            });
-          }
-        }
-        
-        case 'saveDbConfig': {
-          const newConfig = {
-            type: data.type || 'postgres',
-            host: data.host,
-            port: parseInt(data.port),
-            database: data.database,
-            user: data.user,
-            password: data.password,
-          };
-          
-          if (saveDbConfig(newConfig)) {
-            // Reinitialize adapter with new configuration
-            if (dbAdapter) {
-              await dbAdapter.end();
-            }
-            dbConfig = newConfig;
-            dbAdapter = new DatabaseAdapter(dbConfig);
-            await dbAdapter.connect();
-            
-            return res.json({ success: true, message: 'Configuração salva com sucesso!' });
-          } else {
-            return res.json({ success: false, error: 'Erro ao salvar configuração' });
-          }
-        }
-        
-        case 'initializeDatabase': {
-          if (!dbAdapter) {
-            return res.status(503).json({ error: 'Banco de dados não configurado' });
-          }
-          
-          const client = await dbAdapter.getConnection();
-          try {
-            // Read and execute the database initialization script based on DB type
-            const scriptName = dbConfig.type === 'mysql' ? 'init-mysql.sql' : 'init-postgres.sql';
-            const initScriptPath = path.join(__dirname, '..', 'database', scriptName);
-            
-            if (!fs.existsSync(initScriptPath)) {
-              throw new Error('Arquivo de inicialização do banco de dados não encontrado: ' + initScriptPath);
-            }
-            
-            const initScript = fs.readFileSync(initScriptPath, 'utf8');
-            
-            // For PostgreSQL, we can execute the entire script at once
-            if (dbConfig.type === 'postgres') {
-              await client.query(initScript);
-            } else {
-              // For MySQL, split by semicolon but be careful with string literals
-              // This is a simple approach - for complex scripts, consider a proper SQL parser
-              const statements = initScript
-                .split(/;[\s]*(\n|$)/)  // Split on semicolon followed by optional whitespace and newline
-                .map(s => s.trim())
-                .filter(s => s.length > 0 && !s.startsWith('--') && s !== '\n');
-              
-              for (const statement of statements) {
-                if (statement.trim()) {
-                  try {
-                    await client.query(statement);
-                  } catch (err) {
-                    console.error('Error executing statement:', statement.substring(0, 100), err.message);
-                    throw err;
-                  }
-                }
-              }
-            }
-            
-            client.release();
-            
-            return res.json({ success: true, message: 'Banco de dados inicializado com sucesso!' });
-          } catch (error) {
-            client.release();
-            console.error('Database initialization error:', error);
-            return res.json({ 
-              success: false, 
-              error: `Erro ao inicializar banco de dados: ${error.message}` 
-            });
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Database config error:', error);
-      return res.status(500).json({ error: error.message });
-    }
-  }
   
   // Check authentication
   const authResult = await checkAuth(req, action);
