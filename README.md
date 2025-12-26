@@ -2,10 +2,13 @@
 
 Sistema completo para gerenciamento de sorteios de bingo, vendedores, cartelas e vendas.
 
-> **🆕 Nova Versão**: Agora com suporte para PostgreSQL **E** MySQL! Escolha o banco de dados na primeira configuração.
+> **🆕 Nova Versão Laravel**: Agora disponível com backend PHP + MySQL! Veja [README-LARAVEL.md](README-LARAVEL.md) para a versão Laravel.
+
+> **🔄 Versão Node.js**: Suporte para PostgreSQL **E** MySQL! Escolha o banco de dados na primeira configuração.
 
 ## 📋 Índice
 
+- [Versões Disponíveis](#-versões-disponíveis)
 - [Funcionalidades](#-funcionalidades)
 - [Tecnologias](#-tecnologias)
 - [Estrutura do Projeto](#-estrutura-do-projeto)
@@ -17,6 +20,36 @@ Sistema completo para gerenciamento de sorteios de bingo, vendedores, cartelas e
 - [Auto-Instalador Web](#-auto-instalador-web)
 - [Primeiro Acesso](#-primeiro-acesso)
 - [Suporte](#-suporte)
+
+---
+
+## 🎯 Versões Disponíveis
+
+Este sistema está disponível em duas versões:
+
+### 🆕 Versão Laravel (PHP + MySQL)
+- **Backend**: PHP 8.3+ Laravel-style
+- **Banco**: MySQL 8.0+
+- **Vantagens**: Menor overhead, sem Node.js, hospedagem PHP tradicional
+- **Ideal para**: Quem prefere PHP ou já tem infraestrutura PHP
+- 📘 **[Ver documentação completa](README-LARAVEL.md)**
+
+```bash
+# Instalação rápida
+docker-compose -f docker-compose.laravel.yml up -d
+```
+
+### 🔄 Versão Node.js (Original)
+- **Backend**: Node.js + Express
+- **Banco**: PostgreSQL ou MySQL
+- **Vantagens**: JavaScript full-stack, mais recursos npm
+- **Ideal para**: Desenvolvedores JavaScript, infraestrutura Node.js
+- 📗 **[Documentação abaixo](#-instalação-rápida)**
+
+```bash
+# Instalação rápida  
+docker-compose -f deploy/docker-compose.selfhosted.yml up -d
+```
 
 ---
 
@@ -36,6 +69,17 @@ Sistema completo para gerenciamento de sorteios de bingo, vendedores, cartelas e
 
 ## 🛠 Tecnologias
 
+### Versão Laravel (Nova!)
+| Camada | Tecnologias |
+|--------|-------------|
+| **Frontend** | React, TypeScript, Vite, Tailwind CSS, shadcn/ui |
+| **Backend** | PHP 8.3+ (Laravel-style) |
+| **Banco de Dados** | MySQL 8.0+ |
+| **Infraestrutura** | Docker, Apache/Nginx |
+
+📘 [Ver documentação completa da versão Laravel](README-LARAVEL.md)
+
+### Versão Node.js (Original)
 | Camada | Tecnologias |
 |--------|-------------|
 | **Frontend** | React, TypeScript, Vite, Tailwind CSS, shadcn/ui |
