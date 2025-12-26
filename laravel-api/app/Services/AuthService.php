@@ -4,10 +4,16 @@ namespace App\Services;
 
 class AuthService
 {
-    private const JWT_SECRET = 'bingo_jwt_secret_2024_secure'; // Should be in config
+    // SECURITY NOTE: Change this in production!
+    // This secret must match across all backend instances
+    // Generate a secure random string for production use
+    private const JWT_SECRET = 'bingo_jwt_secret_2024_secure';
     private const JWT_EXPIRY_HOURS = 24;
     private const TOKEN_KEY = 'bingo_auth_token';
     
+    // COMPATIBILITY NOTE: This hashing method matches the Node.js backend for compatibility
+    // For new projects, consider using password_hash() and password_verify() instead
+    // This maintains compatibility with existing user passwords from Node.js version
     public function hashPassword($password)
     {
         return hash('sha256', $password . 'bingo_salt_2024');

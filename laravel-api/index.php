@@ -8,7 +8,9 @@
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
-// CORS headers
+// CORS configuration
+// SECURITY NOTE: In production, replace '*' with specific allowed origins
+// Example: header('Access-Control-Allow-Origin: https://yourdomain.com');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Basic-Auth');
