@@ -75,6 +75,7 @@ const DrawTab: React.FC = () => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [selectedRodada, setSelectedRodada] = useState<RodadaSorteio | null>(null);
   const [showDrawing, setShowDrawing] = useState(false);
+  const [justDrawn, setJustDrawn] = useState(false);
   
   const animationIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const fullscreenRef = useRef<HTMLDivElement>(null);
@@ -356,7 +357,10 @@ const DrawTab: React.FC = () => {
     
     if (remainingNumbers.length === 0) return;
 
+    // Clear current number immediately when starting a new draw
+    setCurrentNumber(null);
     setIsDrawing(true);
+    setJustDrawn(false);
 
     let counter = 0;
     const interval = setInterval(() => {
@@ -374,6 +378,10 @@ const DrawTab: React.FC = () => {
         const newDrawnNumbers = [...drawnNumbers, finalNumber];
         setDrawnNumbers(newDrawnNumbers);
         setIsDrawing(false);
+        setJustDrawn(true);
+        
+        // Reset justDrawn after animation completes
+        setTimeout(() => setJustDrawn(false), 1000);
         
         saveDrawnNumber(finalNumber, newDrawnNumbers.length);
       }
@@ -388,6 +396,7 @@ const DrawTab: React.FC = () => {
     setCurrentNumber(null);
     setDrawnNumbers([]);
     setIsDrawing(false);
+    setJustDrawn(false);
   };
 
   const goBackToList = () => {
@@ -396,6 +405,7 @@ const DrawTab: React.FC = () => {
     setCurrentNumber(null);
     setDrawnNumbers([]);
     setAvailableNumbers([]);
+    setJustDrawn(false);
     loadRodadas();
   };
 
@@ -524,7 +534,11 @@ const DrawTab: React.FC = () => {
                     <div
                       className={cn(
                         "font-black leading-none transition-all duration-300",
-                        isDrawing ? "animate-pulse text-primary" : "text-primary"
+                        isDrawing 
+                          ? "animate-pulse text-primary" 
+                          : justDrawn
+                            ? "text-primary animate-bingo-globe-emerge animate-bingo-globe-shine"
+                            : "text-primary"
                       )}
                       style={{ fontSize: `${isFullscreen ? fullscreenFontSize + 'px' : fontSize + 'px'}` }}
                     >
