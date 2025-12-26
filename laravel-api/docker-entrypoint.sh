@@ -16,7 +16,9 @@ if [ -n "$DB_HOST" ]; then
         fi
         
         if [ $i -eq 30 ]; then
-            echo "Warning: Could not connect to MySQL after 30 attempts"
+            echo "❌ Error: Could not connect to MySQL after 30 attempts (60 seconds)"
+            echo "   Please check if MySQL container is running and healthy."
+            exit 1
         fi
         
         echo "Attempt $i/30: MySQL not ready yet, waiting..."
