@@ -1,65 +1,16 @@
-version: "3.7"
+version: "3.8"
 
 # =====================================================
-# BINGO SYSTEM - Docker Swarm Stack
+# BINGO SYSTEM - Backend + Frontend com PostgreSQL Externo
 # =====================================================
-# OPÇÃO 1: Imagem combinada (app + backend integrado)
-# OPÇÃO 2: Frontend e Backend separados (recomendado)
+# Este arquivo é para uso quando você já tem um PostgreSQL
+# rodando em outra stack na mesma rede Docker.
+#
+# IMPORTANTE: Configure as variáveis de ambiente abaixo
+# com as credenciais do seu PostgreSQL.
 # =====================================================
 
 services:
-  # =====================================================
-  # OPÇÃO 1: Imagem Combinada (Legado)
-  # =====================================================
-  # Descomente esta seção se estiver usando a imagem combinada
-  # que inclui frontend e backend juntos
-  
-  # app:
-  #   image: josemaeldon/bingo-system:latest
-  #   working_dir: /usr/share/nginx/html
-  #   deploy:
-  #     replicas: 1
-  #     placement:
-  #       constraints:
-  #         - node.role == manager
-  #     labels:
-  #       - "traefik.enable=true"
-  #       - "traefik.docker.network=luzianet"
-  #       - "traefik.http.routers.bingo.rule=Host(`bingo.seudominio.com`)"
-  #       - "traefik.http.routers.bingo.entrypoints=websecure"
-  #       - "traefik.http.routers.bingo.tls=true"
-  #       - "traefik.http.routers.bingo.tls.certresolver=letsencryptresolver"
-  #       - "traefik.http.middlewares.bingo-redirect.redirectscheme.scheme=https"
-  #       - "traefik.http.routers.bingo.middlewares=bingo-redirect"
-  #       - "traefik.http.routers.bingo.service=bingo-service"
-  #       - "traefik.http.services.bingo-service.loadbalancer.server.port=80"
-  #     update_config:
-  #       parallelism: 1
-  #       delay: 10s
-  #       failure_action: rollback
-  #     restart_policy:
-  #       condition: on-failure
-  #       delay: 5s
-  #       max_attempts: 3
-  #     resources:
-  #       limits:
-  #         memory: 128M
-  #       reservations:
-  #         memory: 64M
-  #   healthcheck:
-  #     test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
-  #     interval: 30s
-  #     timeout: 10s
-  #     retries: 3
-  #     start_period: 10s
-  #   networks:
-  #     - luzianet
-
-  # =====================================================
-  # OPÇÃO 2: Frontend e Backend Separados (Recomendado)
-  # =====================================================
-  # Use esta configuração para conectar a um PostgreSQL externo
-  
   ## --------------------------- BINGO APP (Frontend) --------------------------- ##
   bingo_app:
     image: josemaeldon/bingo-system:app-main # ou app-latest
@@ -79,22 +30,11 @@ services:
         limits:
           cpus: "0.5"
           memory: 256M
-        reservations:
-          memory: 128M
-      update_config:
-        parallelism: 1
-        delay: 10s
-        failure_action: rollback
-      restart_policy:
-        condition: on-failure
-        delay: 5s
-        max_attempts: 3
       labels:
         - "traefik.enable=true"
         - "traefik.docker.network=luzianet"
         - "traefik.http.routers.bingo_app.rule=Host(`bingo.santaluzia.org`)"
         - "traefik.http.routers.bingo_app.entrypoints=websecure"
-        - "traefik.http.routers.bingo_app.tls=true"
         - "traefik.http.routers.bingo_app.tls.certresolver=letsencryptresolver"
         - "traefik.http.routers.bingo_app.priority=1"
         - "traefik.http.services.bingo_app.loadbalancer.server.port=80"
@@ -159,31 +99,14 @@ services:
         limits:
           cpus: "0.5"
           memory: 256M
-        reservations:
-          memory: 128M
-      update_config:
-        parallelism: 1
-        delay: 10s
-        failure_action: rollback
-      restart_policy:
-        condition: on-failure
-        delay: 5s
-        max_attempts: 3
       labels:
         - "traefik.enable=true"
         - "traefik.docker.network=luzianet"
         - "traefik.http.routers.bingo_backend.rule=Host(`api.bingo.santaluzia.org`)"
         - "traefik.http.routers.bingo_backend.entrypoints=websecure"
-        - "traefik.http.routers.bingo_backend.tls=true"
         - "traefik.http.routers.bingo_backend.tls.certresolver=letsencryptresolver"
         - "traefik.http.routers.bingo_backend.priority=1"
         - "traefik.http.services.bingo_backend.loadbalancer.server.port=3001"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
     networks:
       - luzianet
 
