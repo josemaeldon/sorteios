@@ -70,7 +70,8 @@ services:
       
       # Senha do PostgreSQL
       # ATENÇÃO: Substitua pela senha real do seu banco!
-      - DB_PASSWORD=sua_senha_aqui
+      # NÃO USE ESTA SENHA EM PRODUÇÃO!
+      - DB_PASSWORD=CHANGE_THIS_PASSWORD
       
       # ============================================
       # CONFIGURAÇÕES OPCIONAIS

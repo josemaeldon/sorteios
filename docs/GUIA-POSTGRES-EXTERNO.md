@@ -93,7 +93,7 @@ services:
       - DB_PORT=5432
       - DB_NAME=bingo                 # ALTERE para o nome do seu banco
       - DB_USER=postgres              # ALTERE para o usuário do seu banco
-      - DB_PASSWORD=sua_senha_aqui    # ALTERE para a senha do seu banco
+      - DB_PASSWORD=CHANGE_THIS_PASSWORD  # ⚠️ ALTERE para a senha do seu banco!
       - PORT=3001
       - JWT_SECRET=bingo_jwt_secret_2024_secure_change_me
       - BASIC_AUTH_USER=
@@ -131,11 +131,11 @@ Certifique-se de que o PostgreSQL e o backend estão na mesma rede:
 # Liste as redes Docker
 docker network ls
 
-# Inspecione a rede luzianet
+# Inspecione a rede luzianet para ver os containers conectados
 docker network inspect luzianet
 
-# Verifique se o PostgreSQL está na rede
-docker ps --filter "network=luzianet"
+# Alternativamente, veja todos os containers com suas redes
+docker ps --format "table {{.Names}}\t{{.Networks}}"
 ```
 
 ### 5. Deploy da Stack
@@ -267,4 +267,5 @@ docker service logs bingo_bingo_backend -f
 Para mais informações:
 - [README principal](../README.md)
 - [Guia de Instalação](../INSTALL.md)
+- [Deploy README](../deploy/README.md)
 - [Issues no GitHub](https://github.com/josemaeldon/bingopgm/issues)

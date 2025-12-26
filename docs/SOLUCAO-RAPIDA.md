@@ -15,7 +15,7 @@ No seu PostgreSQL, veja qual é o nome do serviço. Exemplos comuns:
 
 ```bash
 # Veja os containers na rede luzianet
-docker ps --filter "network=luzianet"
+docker network inspect luzianet | grep Name
 ```
 
 ### Passo 2: Adicione as Variáveis no Backend
@@ -32,7 +32,7 @@ bingo_backend:
     - DB_PORT=5432
     - DB_NAME=bingo                 # ← Nome do seu banco
     - DB_USER=postgres              # ← Seu usuário
-    - DB_PASSWORD=SUA_SENHA_AQUI    # ← Sua senha real!
+    - DB_PASSWORD=CHANGE_THIS_PASSWORD  # ← ⚠️ Sua senha real! Não deixe este valor!
     - JWT_SECRET=mude_este_token_por_favor
     - PORT=3001
   deploy:
