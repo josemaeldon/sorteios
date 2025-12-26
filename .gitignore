@@ -14,6 +14,7 @@ dist-ssr
 
 # Database configuration
 backend/db-config.json
+laravel-api/config/database.php
 
 # Editor directories and files
 .vscode/*
