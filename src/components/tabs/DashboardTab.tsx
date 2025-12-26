@@ -1,7 +1,7 @@
 import React from 'react';
 import { useBingo } from '@/contexts/BingoContext';
 import { formatarMoeda } from '@/lib/utils/formatters';
-import { BarChart3, DollarSign, Ticket, ShoppingCart, Users, TrendingUp, Trophy } from 'lucide-react';
+import { BarChart3, DollarSign, Ticket, ShoppingCart, Users, TrendingUp, Trophy, Banknote, Smartphone, CreditCard, ArrowRightLeft } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 const DashboardTab: React.FC = () => {
@@ -26,6 +26,29 @@ const DashboardTab: React.FC = () => {
   const percentualVendido = sorteioAtivo.quantidade_cartelas > 0 
     ? ((cartelasVendidas / sorteioAtivo.quantidade_cartelas) * 100) 
     : 0;
+
+  // Calcular vendas por forma de pagamento
+  const vendasPorPagamento = {
+    dinheiro: { total: 0, count: 0 },
+    pix: { total: 0, count: 0 },
+    cartao: { total: 0, count: 0 },
+    transferencia: { total: 0, count: 0 }
+  };
+
+  const isValidPaymentType = (type: string): type is 'dinheiro' | 'pix' | 'cartao' | 'transferencia' => {
+    return ['dinheiro', 'pix', 'cartao', 'transferencia'].includes(type);
+  };
+
+  vendas.forEach(venda => {
+    if (venda.pagamentos && venda.pagamentos.length > 0) {
+      venda.pagamentos.forEach(pag => {
+        if (isValidPaymentType(pag.forma_pagamento)) {
+          vendasPorPagamento[pag.forma_pagamento].total += Number(pag.valor || 0);
+          vendasPorPagamento[pag.forma_pagamento].count += 1;
+        }
+      });
+    }
+  });
 
   // Ranking de vendedores
   const rankingVendedores = vendedores
@@ -166,6 +189,80 @@ const DashboardTab: React.FC = () => {
             </div>
           </CardContent>
         </Card>
+      </div>
+
+      {/* Resumo de Vendas por Forma de Pagamento */}
+      <div>
+        <h3 className="text-lg font-semibold text-foreground mb-4">Vendas por Forma de Pagamento</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <Card className="bg-gradient-to-br from-green-50 to-green-100 dark:from-green-950/20 dark:to-green-900/20 border-green-200 dark:border-green-800">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-green-500/20 rounded-lg">
+                  <Banknote className="w-6 h-6 text-green-600 dark:text-green-400" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-muted-foreground">Dinheiro</p>
+                  <p className="text-xl font-bold text-foreground">{formatarMoeda(vendasPorPagamento.dinheiro.total)}</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {vendasPorPagamento.dinheiro.count} pagamento(s)
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-950/20 dark:to-blue-900/20 border-blue-200 dark:border-blue-800">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-blue-500/20 rounded-lg">
+                  <Smartphone className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-muted-foreground">PIX</p>
+                  <p className="text-xl font-bold text-foreground">{formatarMoeda(vendasPorPagamento.pix.total)}</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {vendasPorPagamento.pix.count} pagamento(s)
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-950/20 dark:to-purple-900/20 border-purple-200 dark:border-purple-800">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-purple-500/20 rounded-lg">
+                  <CreditCard className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-muted-foreground">Cartão</p>
+                  <p className="text-xl font-bold text-foreground">{formatarMoeda(vendasPorPagamento.cartao.total)}</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {vendasPorPagamento.cartao.count} pagamento(s)
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-gradient-to-br from-orange-50 to-orange-100 dark:from-orange-950/20 dark:to-orange-900/20 border-orange-200 dark:border-orange-800">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-orange-500/20 rounded-lg">
+                  <ArrowRightLeft className="w-6 h-6 text-orange-600 dark:text-orange-400" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-muted-foreground">Transferência</p>
+                  <p className="text-xl font-bold text-foreground">{formatarMoeda(vendasPorPagamento.transferencia.total)}</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {vendasPorPagamento.transferencia.count} pagamento(s)
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

@@ -46,12 +46,16 @@ export const exportVendasPDF = (vendas: Venda[], sorteio: Sorteio, vendedores: V
   // Table
   const tableData = vendas.map(venda => {
     const vendedor = vendedores.find(v => v.id === venda.vendedor_id);
+    const pagamentosStr = venda.pagamentos && venda.pagamentos.length > 0
+      ? venda.pagamentos.map(p => `${p.forma_pagamento}: ${formatarMoeda(p.valor)}`).join(', ')
+      : 'N/A';
     return [
       venda.cliente_nome,
       vendedor?.nome || 'N/A',
       venda.numeros_cartelas || '-',
       formatarMoeda(venda.valor_total),
       formatarMoeda(venda.valor_pago),
+      pagamentosStr,
       getStatusLabel(venda.status),
       formatarDataHora(venda.created_at)
     ];
@@ -59,9 +63,9 @@ export const exportVendasPDF = (vendas: Venda[], sorteio: Sorteio, vendedores: V
   
   autoTable(doc, {
     startY: 65,
-    head: [['Cliente', 'Vendedor', 'Cartelas', 'Valor Total', 'Valor Pago', 'Status', 'Data']],
+    head: [['Cliente', 'Vendedor', 'Cartelas', 'Valor Total', 'Valor Pago', 'Forma Pagamento', 'Status', 'Data']],
     body: tableData,
-    styles: { fontSize: 8, cellPadding: 2 },
+    styles: { fontSize: 8, cellPadding: 1.5 },
     headStyles: { fillColor: [59, 130, 246], textColor: 255 },
     alternateRowStyles: { fillColor: [245, 247, 250] },
   });
@@ -212,6 +216,9 @@ export const exportVendasExcel = (vendas: Venda[], sorteio: Sorteio, vendedores:
   const data = vendas.map(venda => {
     const vendedor = vendedores.find(v => v.id === venda.vendedor_id);
     const cartelas = parseCartelas(venda.numeros_cartelas);
+    const pagamentosStr = venda.pagamentos && venda.pagamentos.length > 0
+      ? venda.pagamentos.map(p => `${p.forma_pagamento}: ${formatarMoeda(p.valor)}`).join(', ')
+      : 'N/A';
     return {
       'Cliente': venda.cliente_nome,
       'Telefone Cliente': venda.cliente_telefone || '',
@@ -221,6 +228,7 @@ export const exportVendasExcel = (vendas: Venda[], sorteio: Sorteio, vendedores:
       'Valor Total': venda.valor_total,
       'Valor Pago': venda.valor_pago,
       'Valor Pendente': venda.valor_total - venda.valor_pago,
+      'Forma Pagamento': pagamentosStr,
       'Status': getStatusLabel(venda.status),
       'Data': formatarDataHora(venda.created_at)
     };
@@ -332,6 +340,28 @@ export const exportRelatorioCompletoPDF = (
   const totalPago = vendas.reduce((acc, v) => acc + Number(v.valor_pago || 0), 0);
   const cartelasVendidas = cartelas.filter(c => c.status === 'vendida').length;
   
+  // Calcular vendas por forma de pagamento
+  const vendasPorPagamento = {
+    dinheiro: 0,
+    pix: 0,
+    cartao: 0,
+    transferencia: 0
+  };
+  
+  const isValidPaymentType = (type: string): type is 'dinheiro' | 'pix' | 'cartao' | 'transferencia' => {
+    return ['dinheiro', 'pix', 'cartao', 'transferencia'].includes(type);
+  };
+  
+  vendas.forEach(venda => {
+    if (venda.pagamentos && venda.pagamentos.length > 0) {
+      venda.pagamentos.forEach(pag => {
+        if (isValidPaymentType(pag.forma_pagamento)) {
+          vendasPorPagamento[pag.forma_pagamento] += Number(pag.valor || 0);
+        }
+      });
+    }
+  });
+  
   doc.setFontSize(14);
   doc.text('Resumo Geral', 14, 130);
   
@@ -346,6 +376,18 @@ export const exportRelatorioCompletoPDF = (
   doc.text(`Valor recebido: ${formatarMoeda(totalPago)}`, 14, 215);
   doc.text(`Valor pendente: ${formatarMoeda(totalVendas - totalPago)}`, 14, 225);
   
+  // Breakdown por forma de pagamento
+  doc.setFontSize(14);
+  doc.text('Vendas por Forma de Pagamento', 14, 245);
+  
+  doc.setFontSize(11);
+  let yPos = 260;
+  doc.text(`Dinheiro: ${formatarMoeda(vendasPorPagamento.dinheiro)}`, 14, yPos);
+  doc.text(`PIX: ${formatarMoeda(vendasPorPagamento.pix)}`, 100, yPos);
+  yPos += 10;
+  doc.text(`Cartão: ${formatarMoeda(vendasPorPagamento.cartao)}`, 14, yPos);
+  doc.text(`Transferência: ${formatarMoeda(vendasPorPagamento.transferencia)}`, 100, yPos);
+  
   // Page 2 - Vendas
   doc.addPage();
   doc.setFontSize(16);
@@ -355,18 +397,22 @@ export const exportRelatorioCompletoPDF = (
   const vendasData = vendas.map(venda => {
     const vendedor = vendedores.find(v => v.id === venda.vendedor_id);
     const cartelas = parseCartelas(venda.numeros_cartelas);
+    const pagamentosStr = venda.pagamentos && venda.pagamentos.length > 0
+      ? venda.pagamentos.map(p => p.forma_pagamento).join(', ')
+      : 'N/A';
     return [
       venda.cliente_nome,
       vendedor?.nome || 'N/A',
       cartelas.length.toString(),
       formatarMoeda(venda.valor_total),
+      pagamentosStr,
       getStatusLabel(venda.status)
     ];
   });
   
   autoTable(doc, {
     startY: 30,
-    head: [['Cliente', 'Vendedor', 'Cartelas', 'Valor', 'Status']],
+    head: [['Cliente', 'Vendedor', 'Cartelas', 'Valor', 'Pagamento', 'Status']],
     body: vendasData,
     styles: { fontSize: 8 },
     headStyles: { fillColor: [59, 130, 246] },
