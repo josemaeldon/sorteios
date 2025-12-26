@@ -113,6 +113,24 @@ Principais variáveis:
 - `API_URL` - URL da API backend
 - `DATABASE_URL` - String de conexão do banco
 
+### Variáveis para Backend com PostgreSQL Externo
+
+Quando o backend precisa conectar a um PostgreSQL em outra stack:
+
+```yaml
+environment:
+  - DB_TYPE=postgres           # ou mysql
+  - DB_HOST=postgres           # Nome do serviço PostgreSQL
+  - DB_PORT=5432              # Porta do PostgreSQL
+  - DB_NAME=bingo             # Nome do banco de dados
+  - DB_USER=postgres          # Usuário do banco
+  - DB_PASSWORD=senha         # Senha do banco
+  - JWT_SECRET=token_seguro   # Secret para JWT
+  - PORT=3001                 # Porta do backend (opcional)
+```
+
+📚 **Guia completo:** [docs/GUIA-POSTGRES-EXTERNO.md](../docs/GUIA-POSTGRES-EXTERNO.md)
+
 ## Requisitos
 
 - Docker 20.10+

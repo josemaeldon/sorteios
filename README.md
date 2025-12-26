@@ -248,6 +248,39 @@ docker build -f Dockerfile.selfhosted -t josemaeldon/bingo-system:selfhosted .
 docker-compose -f docker-compose.supabase-selfhosted.yml up -d
 ```
 
+### Deploy com PostgreSQL Externo
+
+Se você já tem um PostgreSQL rodando em outra stack na mesma rede Docker:
+
+**Documentação completa:** [`docs/GUIA-POSTGRES-EXTERNO.md`](docs/GUIA-POSTGRES-EXTERNO.md)
+
+**Arquivo de exemplo:** [`deploy/portainer-stack-backend-postgres.yml`](deploy/portainer-stack-backend-postgres.yml)
+
+**Configuração rápida:**
+
+```yaml
+bingo_backend:
+  image: josemaeldon/bingo-system:backend-main
+  environment:
+    - DB_TYPE=postgres
+    - DB_HOST=postgres              # Nome do serviço PostgreSQL
+    - DB_PORT=5432
+    - DB_NAME=bingo
+    - DB_USER=postgres
+    - DB_PASSWORD=sua_senha_aqui
+    - JWT_SECRET=token_seguro
+```
+
+**Variáveis de ambiente necessárias:**
+- `DB_HOST` - Nome do serviço PostgreSQL na rede Docker
+- `DB_PORT` - Porta do PostgreSQL (padrão: 5432)
+- `DB_NAME` - Nome do banco de dados
+- `DB_USER` - Usuário do banco
+- `DB_PASSWORD` - Senha do banco
+
+📚 **Veja o guia completo com troubleshooting:** [docs/GUIA-POSTGRES-EXTERNO.md](docs/GUIA-POSTGRES-EXTERNO.md)
+
+
 ### Serviços Disponíveis (Self-Hosted)
 
 | Serviço | Porta | URL |
