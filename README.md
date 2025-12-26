@@ -33,10 +33,14 @@ Este sistema está disponível em duas versões:
 - **Vantagens**: Menor overhead, sem Node.js, hospedagem PHP tradicional
 - **Ideal para**: Quem prefere PHP ou já tem infraestrutura PHP
 - 📘 **[Ver documentação completa](README-LARAVEL.md)**
+- 🐳 **[Guia Docker completo](DOCKER-LARAVEL.md)** - Instruções detalhadas
 
 ```bash
 # Instalação rápida
 docker-compose -f docker-compose.laravel.yml up -d
+
+# Ou use o script de início rápido
+./start-docker.sh
 ```
 
 ### 🔄 Versão Node.js (Original)

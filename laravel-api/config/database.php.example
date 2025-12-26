@@ -1,0 +1,15 @@
+<?php
+/**
+ * Database configuration
+ * This file is created automatically during Docker initialization
+ */
+
+return [
+    'host' => getenv('DB_HOST') ?: 'mysql',
+    'port' => getenv('DB_PORT') ?: '3306',
+    'database' => getenv('DB_DATABASE') ?: 'bingo',
+    'username' => getenv('DB_USERNAME') ?: 'bingo_user',
+    'password' => getenv('DB_PASSWORD') ?: 'bingo_password',
+    'charset' => 'utf8mb4',
+    'collation' => 'utf8mb4_unicode_ci',
+];

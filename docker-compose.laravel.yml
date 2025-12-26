@@ -31,6 +31,12 @@ services:
     restart: unless-stopped
     ports:
       - "${API_PORT:-3001}:80"
+    environment:
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_DATABASE=${MYSQL_DATABASE:-bingo}
+      - DB_USERNAME=${MYSQL_USER:-bingo_user}
+      - DB_PASSWORD=${MYSQL_PASSWORD:-bingo_password}
     depends_on:
       mysql:
         condition: service_healthy
