@@ -131,7 +131,10 @@ Certifique-se de que o PostgreSQL e o backend estão na mesma rede:
 # Liste as redes Docker
 docker network ls
 
-# Inspecione a rede luzianet para ver os containers conectados
+# Inspecione a rede luzianet para ver os containers e serviços
+docker network inspect luzianet | grep Name
+
+# Ou veja a saída completa para mais detalhes
 docker network inspect luzianet
 
 # Alternativamente, veja todos os containers com suas redes
