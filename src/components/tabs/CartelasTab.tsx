@@ -29,7 +29,8 @@ const CartelasTab: React.FC = () => {
 
   const cartelasFiltradas = cartelas.filter(c => {
     if (filtrosCartelas.busca) {
-      if (!c.numero.toString().includes(filtrosCartelas.busca)) return false;
+      const numeroFormatado = formatarNumeroCartela(c.numero);
+      if (numeroFormatado !== filtrosCartelas.busca) return false;
     }
     if (filtrosCartelas.status !== 'todos') {
       // Cartelas devolvidas também aparecem no filtro de disponíveis
