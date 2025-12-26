@@ -355,7 +355,7 @@
 }
 
 @keyframes bingoGlobeShine {
-  0%, 100% {
+  0% {
     box-shadow: 
       0 0 20px hsl(217, 91%, 60%, 0.4),
       0 0 40px hsl(217, 91%, 60%, 0.2),
@@ -366,6 +366,12 @@
       0 0 30px hsl(217, 91%, 60%, 0.6),
       0 0 60px hsl(217, 91%, 60%, 0.4),
       0 0 90px hsl(217, 91%, 60%, 0.2);
+  }
+  100% {
+    box-shadow: 
+      0 0 20px hsl(217, 91%, 60%, 0.4),
+      0 0 40px hsl(217, 91%, 60%, 0.2),
+      0 0 60px hsl(217, 91%, 60%, 0.1);
   }
 }
 
@@ -401,7 +407,7 @@
 }
 
 .animate-bingo-globe-shine {
-  animation: bingoGlobeShine 2s ease-in-out infinite;
+  animation: bingoGlobeShine 1s ease-in-out;
 }
 
 .animate-bingo-globe-bounce {
