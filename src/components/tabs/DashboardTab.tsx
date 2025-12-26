@@ -35,13 +35,16 @@ const DashboardTab: React.FC = () => {
     transferencia: { total: 0, count: 0 }
   };
 
+  const isValidPaymentType = (type: string): type is 'dinheiro' | 'pix' | 'cartao' | 'transferencia' => {
+    return ['dinheiro', 'pix', 'cartao', 'transferencia'].includes(type);
+  };
+
   vendas.forEach(venda => {
     if (venda.pagamentos && venda.pagamentos.length > 0) {
       venda.pagamentos.forEach(pag => {
-        const tipo = pag.forma_pagamento as 'dinheiro' | 'pix' | 'cartao' | 'transferencia';
-        if (vendasPorPagamento[tipo]) {
-          vendasPorPagamento[tipo].total += Number(pag.valor || 0);
-          vendasPorPagamento[tipo].count += 1;
+        if (isValidPaymentType(pag.forma_pagamento)) {
+          vendasPorPagamento[pag.forma_pagamento].total += Number(pag.valor || 0);
+          vendasPorPagamento[pag.forma_pagamento].count += 1;
         }
       });
     }

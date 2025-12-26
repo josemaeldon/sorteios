@@ -65,7 +65,7 @@ export const exportVendasPDF = (vendas: Venda[], sorteio: Sorteio, vendedores: V
     startY: 65,
     head: [['Cliente', 'Vendedor', 'Cartelas', 'Valor Total', 'Valor Pago', 'Forma Pagamento', 'Status', 'Data']],
     body: tableData,
-    styles: { fontSize: 7, cellPadding: 2 },
+    styles: { fontSize: 8, cellPadding: 1.5 },
     headStyles: { fillColor: [59, 130, 246], textColor: 255 },
     alternateRowStyles: { fillColor: [245, 247, 250] },
   });
@@ -348,12 +348,15 @@ export const exportRelatorioCompletoPDF = (
     transferencia: 0
   };
   
+  const isValidPaymentType = (type: string): type is 'dinheiro' | 'pix' | 'cartao' | 'transferencia' => {
+    return ['dinheiro', 'pix', 'cartao', 'transferencia'].includes(type);
+  };
+  
   vendas.forEach(venda => {
     if (venda.pagamentos && venda.pagamentos.length > 0) {
       venda.pagamentos.forEach(pag => {
-        const tipo = pag.forma_pagamento as 'dinheiro' | 'pix' | 'cartao' | 'transferencia';
-        if (vendasPorPagamento[tipo] !== undefined) {
-          vendasPorPagamento[tipo] += Number(pag.valor || 0);
+        if (isValidPaymentType(pag.forma_pagamento)) {
+          vendasPorPagamento[pag.forma_pagamento] += Number(pag.valor || 0);
         }
       });
     }
