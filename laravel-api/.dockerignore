@@ -1,8 +1,0 @@
-.git
-.gitignore
-README.md
-SECURITY.md
-*.md
-.env
-.env.*
-config/database.php
