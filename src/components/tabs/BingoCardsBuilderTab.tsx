@@ -211,7 +211,7 @@ const BingoCardsBuilderTab: React.FC = () => {
   const [previewIndex, setPreviewIndex] = useState(0);
   const [isExporting, setIsExporting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [numeroPremios, setNumeroPremios] = useState(1);
+  const numeroPremios = Math.max(1, sorteioAtivo?.premios?.length ?? 1);
 
   // Drag / resize (use refs to avoid stale closure in global listeners)
   const draggingRef = useRef<DragState | null>(null);
@@ -416,13 +416,7 @@ const BingoCardsBuilderTab: React.FC = () => {
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-2">
             <Label className="text-xs text-muted-foreground whitespace-nowrap">Prêmios:</Label>
-            <Input
-              type="number"
-              min={1} max={6} step={1}
-              value={numeroPremios}
-              onChange={(e) => setNumeroPremios(Math.max(1, Math.min(6, parseInt(e.target.value) || 1)))}
-              className="h-8 w-16 text-xs"
-            />
+            <span className="text-xs font-semibold text-foreground">{numeroPremios}</span>
           </div>
           <Button onClick={handleGenerate} variant="outline" className="gap-2" disabled={isSaving}>
             {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
