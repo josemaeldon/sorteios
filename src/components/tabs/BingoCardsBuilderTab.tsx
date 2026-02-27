@@ -227,6 +227,22 @@ const BingoCardsBuilderTab: React.FC = () => {
   const previewCard = cards[previewIndex] ?? null;
   const totalCards = sorteioAtivo?.quantidade_cartelas ?? cartelas.length ?? 10;
 
+  // ─── Restore saved cards from DB on mount ─────────────────────────────────
+  useEffect(() => {
+    if (cards.length > 0) return;
+    const saved = cartelas
+      .filter(c => c.numeros_grade && c.numeros_grade.length === 25)
+      .sort((a, b) => a.numero - b.numero);
+    if (saved.length === 0) return;
+    setCards(
+      saved.map(c => {
+        const flat = c.numeros_grade!;
+        const grid = Array.from({ length: 5 }, (_, row) => flat.slice(row * 5, row * 5 + 5));
+        return { cartelaNumero: c.numero, grids: Array.from({ length: numeroPremios }, () => grid) };
+      }),
+    );
+  }, [cartelas, numeroPremios, cards.length]);
+
   // ─── Layout helpers ────────────────────────────────────────────────────────
   const updateElement = useCallback((id: string, patch: Partial<CanvasElement>) => {
     setLayout((prev) => ({
