@@ -45,6 +45,14 @@ async function initSchema() {
             UNIQUE KEY uq_sorteio_user (sorteio_id, user_id)
           )
         `);
+        // Add numeros_grade column if missing (MySQL)
+        try {
+          await client.query(`ALTER TABLE cartelas ADD COLUMN numeros_grade JSON`);
+        } catch (e) {
+          if (!e.message || !e.message.includes('Duplicate column')) {
+            console.warn('numeros_grade column may already exist or could not be added:', e.message);
+          }
+        }
       } else {
         await client.query(`
           CREATE TABLE IF NOT EXISTS public.sorteio_compartilhado (
@@ -54,6 +62,10 @@ async function initSchema() {
             created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
             UNIQUE(sorteio_id, user_id)
           )
+        `);
+        // Add numeros_grade column if missing (PostgreSQL)
+        await client.query(`
+          ALTER TABLE cartelas ADD COLUMN IF NOT EXISTS numeros_grade JSONB
         `);
       }
       console.log('Schema initialized: sorteio_compartilhado table ready');
@@ -601,7 +613,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
       // ================== CARTELAS ==================
       case 'getCartelas':
         result = await client.query(
-          'SELECT * FROM cartelas WHERE sorteio_id = $1 ORDER BY numero',
+          'SELECT numero, status, vendedor_id, numeros_grade FROM cartelas WHERE sorteio_id = $1 ORDER BY numero',
           [data.sorteio_id]
         );
         return res.json({ data: result.rows });
@@ -654,6 +666,41 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         }
         
         return res.json({ data: [{ success: true, quantidade: totalCartelas }] });
+      }
+
+      case 'salvarNumerosCartelas': {
+        // data.sorteio_id, data.cartelas: [{numero, numeros_grade: number[]}]
+        const cartelasGrade = data.cartelas || [];
+        for (const c of cartelasGrade) {
+          await client.query(
+            `UPDATE cartelas SET numeros_grade = $1, updated_at = NOW() WHERE sorteio_id = $2 AND numero = $3`,
+            [JSON.stringify(c.numeros_grade), data.sorteio_id, c.numero]
+          );
+        }
+        return res.json({ data: [{ success: true, saved: cartelasGrade.length }] });
+      }
+
+      case 'verificarVencedor': {
+        // data.sorteio_id, data.numeros_sorteados: number[]
+        const numerosSet = new Set((data.numeros_sorteados || []).map(Number));
+        const cartelasResult = await client.query(
+          `SELECT numero, numeros_grade FROM cartelas WHERE sorteio_id = $1 AND numeros_grade IS NOT NULL ORDER BY numero`,
+          [data.sorteio_id]
+        );
+        const vencedoras = [];
+        for (const row of cartelasResult.rows) {
+          let grade;
+          try {
+            grade = Array.isArray(row.numeros_grade) ? row.numeros_grade : JSON.parse(row.numeros_grade);
+          } catch {
+            continue;
+          }
+          const required = grade.filter((n) => n !== 0);
+          if (required.length > 0 && required.every((n) => numerosSet.has(Number(n)))) {
+            vencedoras.push(row.numero);
+          }
+        }
+        return res.json({ data: vencedoras });
       }
 
       // ================== ATRIBUIÇÕES ==================

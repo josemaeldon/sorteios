@@ -58,6 +58,7 @@ interface BingoContextType {
   loadCartelas: () => Promise<void>;
   gerarCartelas: (quantidade: number) => Promise<void>;
   atualizarStatusCartela: (numero: number, status: Cartela['status'], vendedorId?: string) => Promise<void>;
+  salvarNumerosCartelas: (cartelas: { numero: number; numeros_grade: number[] }[]) => Promise<void>;
   
   // CRUD Operations - Atribuicoes
   loadAtribuicoes: () => Promise<void>;
@@ -320,6 +321,21 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       console.error('Error updating cartela:', error);
     }
   }, [sorteioAtivo, callApi, loadCartelas]);
+
+  const salvarNumerosCartelas = useCallback(async (cartelas: { numero: number; numeros_grade: number[] }[]) => {
+    if (!sorteioAtivo) return;
+    try {
+      await callApi('salvarNumerosCartelas', { sorteio_id: sorteioAtivo.id, cartelas });
+      await loadCartelas();
+    } catch (error: any) {
+      console.error('Error saving cartela numbers:', error);
+      toast({
+        title: "Erro ao salvar números das cartelas",
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  }, [sorteioAtivo, callApi, toast, loadCartelas]);
 
   // ================== ATRIBUIÇÕES ==================
   const loadAtribuicoes = useCallback(async () => {
@@ -592,6 +608,7 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     loadCartelas,
     gerarCartelas,
     atualizarStatusCartela,
+    salvarNumerosCartelas,
     loadAtribuicoes,
     addAtribuicao,
     addCartelasToAtribuicao,

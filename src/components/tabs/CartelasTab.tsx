@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useBingo } from '@/contexts/BingoContext';
 import { Grid3X3, Search, Filter, Eraser, User, Loader2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
@@ -6,6 +6,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Button } from '@/components/ui/button';
 import { formatarNumeroCartela, getStatusLabel } from '@/lib/utils/formatters';
 import { cn } from '@/lib/utils';
+import { Cartela } from '@/types/bingo';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 const CartelasTab: React.FC = () => {
   const { 
@@ -16,6 +23,8 @@ const CartelasTab: React.FC = () => {
     setFiltrosCartelas,
     isLoading
   } = useBingo();
+
+  const [selectedCartela, setSelectedCartela] = useState<Cartela | null>(null);
 
   if (!sorteioAtivo) {
     return (
@@ -218,15 +227,23 @@ const CartelasTab: React.FC = () => {
           </div>
         ) : (
         <div className="flex flex-wrap justify-start">
-          {cartelasFiltradas.map((cartela) => (
-            <div
-              key={cartela.numero}
-              className={cn('cartela-item', getCartelaStatusClass(cartela.status))}
-            >
-              {formatarNumeroCartela(cartela.numero)}
-              <div className="cartela-tooltip">{getTooltip(cartela)}</div>
-            </div>
-          ))}
+          {cartelasFiltradas.map((cartela) => {
+            const hasNumbers = !!cartela.numeros_grade;
+            return (
+              <div
+                key={cartela.numero}
+                className={cn(
+                  'cartela-item',
+                  getCartelaStatusClass(cartela.status),
+                  hasNumbers && 'cursor-pointer hover:ring-2 hover:ring-primary',
+                )}
+                onClick={() => hasNumbers && setSelectedCartela(cartela)}
+              >
+                {formatarNumeroCartela(cartela.numero)}
+                <div className="cartela-tooltip">{getTooltip(cartela)}</div>
+              </div>
+            );
+          })}
           {cartelasFiltradas.length === 0 && (
             <div className="w-full text-center py-12">
               <Filter className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-50" />
@@ -237,6 +254,34 @@ const CartelasTab: React.FC = () => {
         </div>
         )}
       </div>
+
+      {/* Modal de números da cartela */}
+      <Dialog open={!!selectedCartela} onOpenChange={(open) => !open && setSelectedCartela(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Cartela {selectedCartela ? formatarNumeroCartela(selectedCartela.numero) : ''}</DialogTitle>
+          </DialogHeader>
+          {selectedCartela?.numeros_grade && (
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(5, 1fr)',
+                gap: 4,
+              }}
+            >
+              {selectedCartela.numeros_grade.map((num, i) => (
+                <div
+                  key={i}
+                  className="flex items-center justify-center rounded border border-border text-sm font-semibold aspect-square"
+                  style={{ background: num === 0 ? 'var(--muted)' : undefined }}
+                >
+                  {num === 0 ? '★' : num}
+                </div>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

@@ -91,6 +91,7 @@ CREATE TABLE IF NOT EXISTS public.cartelas (
     vendedor_id UUID REFERENCES public.vendedores(id) ON DELETE SET NULL,
     numero INTEGER NOT NULL,
     status TEXT DEFAULT 'disponivel',
+    numeros_grade JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE
 );
