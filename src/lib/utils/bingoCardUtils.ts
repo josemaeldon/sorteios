@@ -8,8 +8,8 @@ export const A4_H_MM = 297;
 
 export interface BingoCardGrid {
   cartelaNumero: number;
-  /** grid[row][col], 0 = FREE space */
-  grid: number[][];
+  /** grids[premioIndex][row][col], 0 = FREE/blank space */
+  grids: number[][][];
 }
 
 export interface CanvasElement {
@@ -35,6 +35,8 @@ export interface CanvasElement {
   headerFontSize?: number;    // pt
   cellBgColor?: string;
   freeCellColor?: string;
+  showHeader?: boolean;       // show B I N G O header row (default false)
+  showFreeText?: boolean;     // show FREE text in center cell (default false)
   // text specific
   content?: string;
 }
@@ -66,12 +68,13 @@ export const DEFAULT_LAYOUT: CanvasLayout = {
     {
       id: 'bingo_grid',
       type: 'bingo_grid',
-      x: 10, y: 36, width: 190, height: 136,
+      x: 10, y: 36, width: 190, height: 248,
       fontSize: 14, color: '#111827',
-      backgroundColor: '#ffffff',
+      backgroundColor: 'transparent',
       borderColor: '#1e3a8a', borderWidth: 0.5,
       headerColor: '#1e3a8a', headerTextColor: '#ffffff', headerFontSize: 16,
-      cellBgColor: '#ffffff', freeCellColor: '#fef9c3',
+      cellBgColor: 'transparent', freeCellColor: 'transparent',
+      showHeader: false, showFreeText: false,
     },
   ],
 };
@@ -99,20 +102,24 @@ export function generateBingoGrid(): number[][] {
   return Array.from({ length: 5 }, (_, row) => [b[row], iNums[row], nCol[row], g[row], o[row]]);
 }
 
-export function generateAllBingoCards(quantidade: number): BingoCardGrid[] {
+export function generateAllBingoCards(quantidade: number, numeroPremios: number = 1): BingoCardGrid[] {
   const cards: BingoCardGrid[] = [];
   const seen = new Set<string>();
   for (let i = 1; i <= quantidade; i++) {
-    let grid: number[][] = [];
-    let key = '';
-    let tries = 0;
-    do {
-      grid = generateBingoGrid();
-      key = grid.flat().join(',');
-      tries++;
-    } while (seen.has(key) && tries < 500);
-    seen.add(key);
-    cards.push({ cartelaNumero: i, grid });
+    const grids: number[][][] = [];
+    for (let p = 0; p < numeroPremios; p++) {
+      let grid: number[][] = [];
+      let key = '';
+      let tries = 0;
+      do {
+        grid = generateBingoGrid();
+        key = grid.flat().join(',');
+        tries++;
+      } while (seen.has(key) && tries < 500);
+      seen.add(key);
+      grids.push(grid);
+    }
+    cards.push({ cartelaNumero: i, grids });
   }
   return cards;
 }
@@ -124,49 +131,62 @@ function hexToRgb(hex: string): [number, number, number] {
   return m ? [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)] : [0, 0, 0];
 }
 
-function drawGridPdf(doc: jsPDF, el: CanvasElement, grid: number[][]) {
+function drawGridPdf(doc: jsPDF, el: CanvasElement, grid: number[][], offsetY: number = 0) {
+  const showHeader = el.showHeader !== false ? true : false; // default was true, now defaults to false
+  const showFreeText = el.showFreeText !== false ? true : false;
+  const rows = showHeader ? 6 : 5;
+  const hh = showHeader ? el.height / rows : 0;
+  const ch = (el.height - hh) / 5;
   const cw = el.width / 5;
-  const hh = el.height / 6;           // header row height
-  const ch = (el.height - hh) / 5;   // number cell height
   const bw = el.borderWidth ?? 0.5;
+  const gridY = el.y + offsetY;
 
   const [bR, bG, bB] = hexToRgb(el.borderColor ?? '#1e3a8a');
   const [hR, hG, hB] = hexToRgb(el.headerColor ?? '#1e3a8a');
   const [htR, htG, htB] = hexToRgb(el.headerTextColor ?? '#ffffff');
   const [nR, nG, nB] = hexToRgb(el.color ?? '#111827');
-  const [cR, cG, cB] = hexToRgb(el.cellBgColor ?? '#ffffff');
-  const [fR, fG, fB] = hexToRgb(el.freeCellColor ?? '#fef9c3');
+  const cellBg = el.cellBgColor;
+  const freeBg = el.freeCellColor;
+  const transparent = !cellBg || cellBg === 'transparent';
+  const freeTransparent = !freeBg || freeBg === 'transparent';
 
-  // Header row
-  for (let col = 0; col < 5; col++) {
-    const cx = el.x + col * cw;
-    doc.setFillColor(hR, hG, hB);
-    doc.rect(cx, el.y, cw, hh, 'F');
-    doc.setDrawColor(bR, bG, bB);
-    doc.setLineWidth(bw);
-    doc.rect(cx, el.y, cw, hh, 'S');
-    doc.setTextColor(htR, htG, htB);
-    doc.setFontSize(el.headerFontSize ?? 14);
-    doc.setFont('helvetica', 'bold');
-    doc.text(BINGO_COLS[col], cx + cw / 2, el.y + hh * 0.72, { align: 'center' });
+  // Header row (optional)
+  if (showHeader) {
+    for (let col = 0; col < 5; col++) {
+      const cx = el.x + col * cw;
+      doc.setFillColor(hR, hG, hB);
+      doc.rect(cx, gridY, cw, hh, 'F');
+      doc.setDrawColor(bR, bG, bB);
+      doc.setLineWidth(bw);
+      doc.rect(cx, gridY, cw, hh, 'S');
+      doc.setTextColor(htR, htG, htB);
+      doc.setFontSize(el.headerFontSize ?? 14);
+      doc.setFont('helvetica', 'bold');
+      doc.text(BINGO_COLS[col], cx + cw / 2, gridY + hh * 0.72, { align: 'center' });
+    }
   }
 
   // Number cells
   for (let row = 0; row < 5; row++) {
     for (let col = 0; col < 5; col++) {
       const cx = el.x + col * cw;
-      const cy = el.y + hh + row * ch;
+      const cy = gridY + hh + row * ch;
       const num = grid[row][col];
       const free = num === 0;
-      doc.setFillColor(free ? fR : cR, free ? fG : cG, free ? fB : cB);
-      doc.rect(cx, cy, cw, ch, 'F');
+      if (free ? !freeTransparent : !transparent) {
+        const [r, g, b] = free ? hexToRgb(freeBg!) : hexToRgb(cellBg!);
+        doc.setFillColor(r, g, b);
+        doc.rect(cx, cy, cw, ch, 'F');
+      }
       doc.setDrawColor(bR, bG, bB);
       doc.setLineWidth(bw);
       doc.rect(cx, cy, cw, ch, 'S');
-      doc.setTextColor(nR, nG, nB);
-      doc.setFontSize(el.fontSize ?? 12);
-      doc.setFont('helvetica', free ? 'bold' : 'normal');
-      doc.text(free ? 'FREE' : num.toString(), cx + cw / 2, cy + ch * 0.68, { align: 'center' });
+      if (!free || showFreeText) {
+        doc.setTextColor(nR, nG, nB);
+        doc.setFontSize(el.fontSize ?? 12);
+        doc.setFont('helvetica', free ? 'bold' : 'normal');
+        doc.text(free ? 'FREE' : num.toString(), cx + cw / 2, cy + ch * 0.68, { align: 'center' });
+      }
     }
   }
 }
@@ -181,6 +201,7 @@ export async function exportBingoCardsPDF(
   for (let i = 0; i < cards.length; i++) {
     if (i > 0) doc.addPage();
     const card = cards[i];
+    const numeroPremios = card.grids.length;
 
     // Background colour
     doc.setFillColor(...hexToRgb(layout.background.color));
@@ -207,7 +228,19 @@ export async function exportBingoCardsPDF(
           : align === 'right' ? el.x + el.width : el.x;
         doc.text(text, tx, el.y + el.height * 0.72, { align });
       } else if (el.type === 'bingo_grid') {
-        drawGridPdf(doc, el, card.grid);
+        const gridHeight = el.height / numeroPremios;
+        const gridEl = { ...el, height: gridHeight };
+        for (let p = 0; p < numeroPremios; p++) {
+          const offsetY = p * gridHeight;
+          if (numeroPremios > 1) {
+            // Prize label
+            doc.setTextColor(...hexToRgb(el.color ?? '#111827'));
+            doc.setFontSize(8);
+            doc.setFont('helvetica', 'bold');
+            doc.text(`Prêmio ${p + 1}`, el.x, el.y + offsetY - 1);
+          }
+          drawGridPdf(doc, gridEl, card.grids[p], offsetY);
+        }
       } else if (el.type === 'text') {
         doc.setTextColor(...hexToRgb(el.color ?? '#000000'));
         doc.setFontSize(el.fontSize ?? 12);

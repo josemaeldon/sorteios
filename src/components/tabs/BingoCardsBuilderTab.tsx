@@ -43,24 +43,27 @@ const BingoGridPreview: React.FC<{
   el: CanvasElement;
   card: BingoCardGrid | null;
   scale: number;
-}> = ({ el, card, scale }) => {
-  const grid = card?.grid ?? Array.from({ length: 5 }, () => Array(5).fill(0));
+  numeroPremios: number;
+}> = ({ el, card, scale, numeroPremios }) => {
+  const showHeader = el.showHeader ?? false;
+  const showFreeText = el.showFreeText ?? false;
   const cellFontPx = (el.fontSize ?? 12) * (scale / SCALE);
   const headerFontPx = (el.headerFontSize ?? 14) * (scale / SCALE);
+  const bw = (el.borderWidth ?? 0.5) * scale;
 
-  return (
+  const renderGrid = (grid: number[][], premioIndex: number) => (
     <div
+      key={premioIndex}
       style={{
+        flex: 1,
         display: 'grid',
         gridTemplateColumns: 'repeat(5, 1fr)',
-        gridTemplateRows: `1fr repeat(5, 1fr)`,
-        width: '100%',
-        height: '100%',
+        gridTemplateRows: showHeader ? `1fr repeat(5, 1fr)` : 'repeat(5, 1fr)',
         overflow: 'hidden',
       }}
     >
-      {/* Header */}
-      {BINGO_COLS.map((col) => (
+      {/* Header row (optional) */}
+      {showHeader && BINGO_COLS.map((col) => (
         <div
           key={col}
           style={{
@@ -69,7 +72,7 @@ const BingoGridPreview: React.FC<{
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontSize: headerFontPx,
             fontWeight: 'bold',
-            border: `${(el.borderWidth ?? 0.5) * scale}px solid ${el.borderColor ?? '#1e3a8a'}`,
+            border: `${bw}px solid ${el.borderColor ?? '#1e3a8a'}`,
             boxSizing: 'border-box',
           }}
         >
@@ -80,24 +83,37 @@ const BingoGridPreview: React.FC<{
       {grid.flatMap((row, ri) =>
         row.map((num, ci) => {
           const free = num === 0;
+          const bg = free
+            ? (el.freeCellColor && el.freeCellColor !== 'transparent' ? el.freeCellColor : undefined)
+            : (el.cellBgColor && el.cellBgColor !== 'transparent' ? el.cellBgColor : undefined);
           return (
             <div
               key={`${ri}-${ci}`}
               style={{
-                background: free ? (el.freeCellColor ?? '#fef9c3') : (el.cellBgColor ?? '#ffffff'),
+                background: bg,
                 color: el.color ?? '#111827',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: cellFontPx,
                 fontWeight: free ? 'bold' : 'normal',
-                border: `${(el.borderWidth ?? 0.5) * scale}px solid ${el.borderColor ?? '#1e3a8a'}`,
+                border: `${bw}px solid ${el.borderColor ?? '#1e3a8a'}`,
                 boxSizing: 'border-box',
               }}
             >
-              {free ? 'FREE' : num}
+              {free ? (showFreeText ? 'FREE' : '') : num}
             </div>
           );
         })
       )}
+    </div>
+  );
+
+  const allGrids = card?.grids ?? Array.from({ length: numeroPremios }, () =>
+    Array.from({ length: 5 }, () => Array(5).fill(0))
+  );
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%', overflow: 'hidden' }}>
+      {allGrids.map((grid, p) => renderGrid(grid, p))}
     </div>
   );
 };
@@ -194,6 +210,7 @@ const BingoCardsBuilderTab: React.FC = () => {
   const [cards, setCards] = useState<BingoCardGrid[]>([]);
   const [previewIndex, setPreviewIndex] = useState(0);
   const [isExporting, setIsExporting] = useState(false);
+  const [numeroPremios, setNumeroPremios] = useState(1);
 
   // Drag / resize (use refs to avoid stale closure in global listeners)
   const draggingRef = useRef<DragState | null>(null);
