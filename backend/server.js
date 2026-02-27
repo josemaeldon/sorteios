@@ -650,7 +650,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
             return row;
           }
           // Old format: flat number[] => wrap as [flat] (single prize)
-          if (raw.length > 0 && typeof raw[0] === 'number') {
+          if (Array.isArray(raw) && raw.length > 0 && typeof raw[0] === 'number') {
             return { ...row, numeros_grade: [raw] };
           }
           return { ...row, numeros_grade: raw };
@@ -767,10 +767,11 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           }
           // Normalize to number[][] - use first prize grid for winner check
           let grade;
-          if (raw.length > 0 && typeof raw[0] === 'number') {
+          if (!Array.isArray(raw) || raw.length === 0) continue;
+          if (typeof raw[0] === 'number') {
             grade = raw; // old flat format
           } else {
-            grade = raw[0] || []; // new format: take first prize grid
+            grade = Array.isArray(raw[0]) ? raw[0] : []; // new format: take first prize grid
           }
           const required = grade.filter((n) => n !== 0);
           if (required.length > 0 && required.every((n) => numerosSet.has(Number(n)))) {

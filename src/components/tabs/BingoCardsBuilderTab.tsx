@@ -513,11 +513,12 @@ const BingoCardsBuilderTab: React.FC = () => {
           </h2>
           <p className="text-muted-foreground text-sm mt-0.5">
             {sorteioAtivo.nome} • {totalCards} cartelas
-            {activeLayoutId && cartelaLayouts.find(l => l.id === activeLayoutId) && (
-              <span className="ml-2 text-primary font-medium">
-                — {cartelaLayouts.find(l => l.id === activeLayoutId)!.nome}
-              </span>
-            )}
+            {(() => {
+              const activeLayout = activeLayoutId ? cartelaLayouts.find(l => l.id === activeLayoutId) : null;
+              return activeLayout ? (
+                <span className="ml-2 text-primary font-medium">— {activeLayout.nome}</span>
+              ) : null;
+            })()}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
