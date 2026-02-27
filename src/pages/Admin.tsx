@@ -2,16 +2,22 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { User, CreateUserData, UserRole } from '@/types/auth';
+import { Sorteio } from '@/types/bingo';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, Plus, Pencil, Trash2, Users, Loader2, ShieldCheck, User as UserIcon } from 'lucide-react';
+import { ArrowLeft, Plus, Pencil, Trash2, Users, Loader2, ShieldCheck, User as UserIcon, UserPlus, UserMinus, Ticket } from 'lucide-react';
 import { z } from 'zod';
+
+interface SorteioAdmin extends Sorteio {
+  owner_nome: string;
+  owner_email: string;
+}
 
 const userSchema = z.object({
   nome: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres').max(100),
@@ -23,7 +29,7 @@ const userSchema = z.object({
 
 const Admin: React.FC = () => {
   const navigate = useNavigate();
-  const { user, getAllUsers, createUser, updateUser, deleteUser, isAuthenticated } = useAuth();
+  const { user, getAllUsers, createUser, updateUser, deleteUser, isAuthenticated, getAllSorteiosAdmin, getSorteioUsers, assignSorteioToUser, removeUserFromSorteio } = useAuth();
   
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -33,6 +39,15 @@ const Admin: React.FC = () => {
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  
+  // Sorteio assignment state
+  const [sorteios, setSorteios] = useState<SorteioAdmin[]>([]);
+  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+  const [selectedSorteio, setSelectedSorteio] = useState<SorteioAdmin | null>(null);
+  const [sorteioUsers, setSorteioUsers] = useState<User[]>([]);
+  const [sorteioOwnerId, setSorteioOwnerId] = useState<string>('');
+  const [isLoadingAssign, setIsLoadingAssign] = useState(false);
+  const [assignUserId, setAssignUserId] = useState<string>('');
   
   const [formData, setFormData] = useState<Partial<CreateUserData>>({
     nome: '',
@@ -54,6 +69,7 @@ const Admin: React.FC = () => {
     }
     
     loadUsers();
+    loadSorteios();
   }, [isAuthenticated, user, navigate]);
 
   const loadUsers = async () => {
@@ -61,6 +77,11 @@ const Admin: React.FC = () => {
     const data = await getAllUsers();
     setUsers(data);
     setIsLoading(false);
+  };
+
+  const loadSorteios = async () => {
+    const data = await getAllSorteiosAdmin();
+    setSorteios(data);
   };
 
   const handleOpenModal = (userToEdit?: User) => {
@@ -167,6 +188,40 @@ const Admin: React.FC = () => {
     }
   };
 
+  const handleOpenAssignModal = async (sorteio: any) => {
+    setSelectedSorteio(sorteio);
+    setAssignUserId('');
+    setIsLoadingAssign(true);
+    setIsAssignModalOpen(true);
+    const { data, owner_id } = await getSorteioUsers(sorteio.id);
+    setSorteioUsers(data);
+    setSorteioOwnerId(owner_id);
+    setIsLoadingAssign(false);
+  };
+
+  const handleAssignUser = async () => {
+    if (!selectedSorteio || !assignUserId) return;
+    setIsLoadingAssign(true);
+    await assignSorteioToUser(selectedSorteio.id, assignUserId);
+    const { data, owner_id } = await getSorteioUsers(selectedSorteio.id);
+    setSorteioUsers(data);
+    setSorteioOwnerId(owner_id);
+    setAssignUserId('');
+    setIsLoadingAssign(false);
+  };
+
+  const handleRemoveUser = async (userId: string) => {
+    if (!selectedSorteio) return;
+    setIsLoadingAssign(true);
+    await removeUserFromSorteio(selectedSorteio.id, userId);
+    const { data, owner_id } = await getSorteioUsers(selectedSorteio.id);
+    setSorteioUsers(data);
+    setSorteioOwnerId(owner_id);
+    setIsLoadingAssign(false);
+  };
+
+  const assignableUsers = users.filter(u => !sorteioUsers.some(su => su.id === u.id));
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -201,7 +256,7 @@ const Admin: React.FC = () => {
         </div>
       </header>
 
-      <main className="container mx-auto p-6">
+      <main className="container mx-auto p-6 space-y-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
@@ -277,6 +332,66 @@ const Admin: React.FC = () => {
                 </TableBody>
               </Table>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Sorteio Assignment Section */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Ticket className="h-5 w-5" />
+                Atribuição de Sorteios
+              </CardTitle>
+              <CardDescription>Atribua sorteios existentes a quantos usuários desejar</CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {sorteios.length === 0 ? (
+              <p className="text-muted-foreground text-sm">Nenhum sorteio cadastrado no sistema.</p>
+            ) : (
+              <div className="table-container">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Nome do Sorteio</TableHead>
+                      <TableHead>Proprietário</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Data</TableHead>
+                      <TableHead className="w-[120px]">Ações</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {sorteios.map((s) => (
+                      <TableRow key={s.id}>
+                        <TableCell className="font-medium">{s.nome}</TableCell>
+                        <TableCell>
+                          <span className="text-sm text-muted-foreground">{s.owner_nome}</span>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={s.status === 'em_andamento' ? 'default' : 'secondary'}>
+                            {s.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {s.data_sorteio ? new Date(s.data_sorteio).toLocaleDateString('pt-BR') : '-'}
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleOpenAssignModal(s)}
+                          >
+                            <Users className="h-4 w-4 mr-1" />
+                            Atribuir
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
           </CardContent>
         </Card>
       </main>
@@ -398,6 +513,94 @@ const Admin: React.FC = () => {
             <Button variant="destructive" onClick={handleConfirmDelete} disabled={isSubmitting}>
               {isSubmitting && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
               Excluir
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Sorteio Assignment Modal */}
+      <Dialog open={isAssignModalOpen} onOpenChange={setIsAssignModalOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Ticket className="h-5 w-5" />
+              Atribuir Sorteio: {selectedSorteio?.nome}
+            </DialogTitle>
+            <DialogDescription>
+              Gerencie quais usuários têm acesso a este sorteio.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {/* Add user */}
+            <div className="space-y-2">
+              <Label>Adicionar usuário</Label>
+              <div className="flex gap-2">
+                <Select value={assignUserId} onValueChange={setAssignUserId} disabled={isLoadingAssign}>
+                  <SelectTrigger className="flex-1">
+                    <SelectValue placeholder="Selecione um usuário..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {assignableUsers.map((u) => (
+                      <SelectItem key={u.id} value={u.id}>
+                        {u.nome} ({u.email})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button onClick={handleAssignUser} disabled={!assignUserId || isLoadingAssign} size="icon">
+                  {isLoadingAssign ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
+                </Button>
+              </div>
+            </div>
+
+            {/* Current users */}
+            <div className="space-y-2">
+              <Label>Usuários com acesso</Label>
+              {isLoadingAssign ? (
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : sorteioUsers.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Nenhum usuário atribuído.</p>
+              ) : (
+                <div className="border rounded-lg divide-y">
+                  {sorteioUsers.map((u) => (
+                    <div key={u.id} className="flex items-center justify-between px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        {u.role === 'admin' ? (
+                          <ShieldCheck className="h-4 w-4 text-primary" />
+                        ) : (
+                          <UserIcon className="h-4 w-4 text-muted-foreground" />
+                        )}
+                        <div>
+                          <p className="text-sm font-medium">{u.nome}</p>
+                          <p className="text-xs text-muted-foreground">{u.email}</p>
+                        </div>
+                        {u.id === sorteioOwnerId && (
+                          <Badge variant="outline" className="text-xs ml-1">Proprietário</Badge>
+                        )}
+                      </div>
+                      {u.id !== sorteioOwnerId && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleRemoveUser(u.id)}
+                          disabled={isLoadingAssign}
+                        >
+                          <UserMinus className="h-4 w-4 text-destructive" />
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsAssignModalOpen(false)}>
+              Fechar
             </Button>
           </DialogFooter>
         </DialogContent>
