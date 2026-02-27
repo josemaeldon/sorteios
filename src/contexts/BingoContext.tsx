@@ -59,6 +59,8 @@ interface BingoContextType {
   gerarCartelas: (quantidade: number) => Promise<void>;
   atualizarStatusCartela: (numero: number, status: Cartela['status'], vendedorId?: string) => Promise<void>;
   salvarNumerosCartelas: (cartelas: { numero: number; numeros_grade: number[] }[]) => Promise<void>;
+  deleteCartela: (numero: number) => Promise<void>;
+  createCartela: (numerosGrade: number[]) => Promise<void>;
   
   // CRUD Operations - Atribuicoes
   loadAtribuicoes: () => Promise<void>;
@@ -337,6 +339,30 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   }, [sorteioAtivo, callApi, toast, loadCartelas]);
 
+  const deleteCartela = useCallback(async (numero: number) => {
+    if (!sorteioAtivo) return;
+    try {
+      await callApi('deleteCartela', { sorteio_id: sorteioAtivo.id, numero });
+      toast({ title: "Cartela excluída!" });
+      await loadCartelas();
+    } catch (error: any) {
+      console.error('Error deleting cartela:', error);
+      toast({ title: "Erro ao excluir cartela", description: error.message, variant: "destructive" });
+    }
+  }, [sorteioAtivo, callApi, toast, loadCartelas]);
+
+  const createCartela = useCallback(async (numerosGrade: number[]) => {
+    if (!sorteioAtivo) return;
+    try {
+      await callApi('createCartela', { sorteio_id: sorteioAtivo.id, numeros_grade: numerosGrade });
+      toast({ title: "Cartela criada!" });
+      await loadCartelas();
+    } catch (error: any) {
+      console.error('Error creating cartela:', error);
+      toast({ title: "Erro ao criar cartela", description: error.message, variant: "destructive" });
+    }
+  }, [sorteioAtivo, callApi, toast, loadCartelas]);
+
   // ================== ATRIBUIÇÕES ==================
   const loadAtribuicoes = useCallback(async () => {
     if (!sorteioAtivo) return;
@@ -609,6 +635,8 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     gerarCartelas,
     atualizarStatusCartela,
     salvarNumerosCartelas,
+    deleteCartela,
+    createCartela,
     loadAtribuicoes,
     addAtribuicao,
     addCartelasToAtribuicao,

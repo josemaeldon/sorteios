@@ -219,6 +219,9 @@ const BingoCardsBuilderTab: React.FC = () => {
   const layoutRef = useRef(layout);
   useEffect(() => { layoutRef.current = layout; }, [layout]);
 
+  // Tracks whether the one-time DB restore has already run for the current sorteio
+  const hasRestoredRef = useRef(false);
+
   // Background image input ref
   const bgInputRef = useRef<HTMLInputElement>(null);
 
@@ -229,11 +232,12 @@ const BingoCardsBuilderTab: React.FC = () => {
 
   // ─── Restore saved cards from DB on mount ─────────────────────────────────
   useEffect(() => {
-    if (cards.length > 0) return;
+    if (hasRestoredRef.current) return;
     const saved = cartelas
       .filter(c => c.numeros_grade && c.numeros_grade.length === 25)
       .sort((a, b) => a.numero - b.numero);
     if (saved.length === 0) return;
+    hasRestoredRef.current = true;
     setCards(
       saved.map(c => {
         const flat = c.numeros_grade!;
@@ -241,7 +245,7 @@ const BingoCardsBuilderTab: React.FC = () => {
         return { cartelaNumero: c.numero, grids: Array.from({ length: numeroPremios }, () => grid) };
       }),
     );
-  }, [cartelas, numeroPremios, cards.length]);
+  }, [cartelas, numeroPremios]);
 
   // ─── Layout helpers ────────────────────────────────────────────────────────
   const updateElement = useCallback((id: string, patch: Partial<CanvasElement>) => {

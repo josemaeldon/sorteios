@@ -680,6 +680,35 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         return res.json({ data: [{ success: true, saved: cartelasGrade.length }] });
       }
 
+      case 'deleteCartela': {
+        // Remove from atribuicao_cartelas first to avoid orphaned records
+        await client.query(
+          `DELETE FROM atribuicao_cartelas WHERE atribuicao_id IN (
+             SELECT id FROM atribuicoes WHERE sorteio_id = $1
+           ) AND numero_cartela = $2`,
+          [data.sorteio_id, data.numero]
+        );
+        await client.query(
+          'DELETE FROM cartelas WHERE sorteio_id = $1 AND numero = $2',
+          [data.sorteio_id, data.numero]
+        );
+        return res.json({ data: [{ success: true }] });
+      }
+
+      case 'createCartela': {
+        const maxResult = await client.query(
+          'SELECT COALESCE(MAX(numero), 0) as max_num FROM cartelas WHERE sorteio_id = $1',
+          [data.sorteio_id]
+        );
+        const nextNum = (maxResult.rows[0]?.max_num ?? 0) + 1;
+        const numerosGradeJson = data.numeros_grade ? JSON.stringify(data.numeros_grade) : null;
+        await client.query(
+          'INSERT INTO cartelas (sorteio_id, numero, status, numeros_grade) VALUES ($1, $2, $3, $4)',
+          [data.sorteio_id, nextNum, 'disponivel', numerosGradeJson]
+        );
+        return res.json({ data: [{ success: true, numero: nextNum }] });
+      }
+
       case 'verificarVencedor': {
         // data.sorteio_id, data.numeros_sorteados: number[]
         const numerosSet = new Set((data.numeros_sorteados || []).map(Number));
