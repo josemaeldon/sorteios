@@ -14,6 +14,10 @@ interface AuthContextType extends AuthState {
   setupAdmin: (email: string, senha: string, nome: string, titulo_sistema: string) => Promise<{ success: boolean; error?: string }>;
   updateProfile: (data: { nome: string; email: string; titulo_sistema: string; avatar_url?: string; senha_atual?: string; nova_senha?: string }) => Promise<{ success: boolean; error?: string }>;
   getAuthToken: () => string | null;
+  getAllSorteiosAdmin: () => Promise<any[]>;
+  getSorteioUsers: (sorteioId: string) => Promise<{ data: User[]; owner_id: string }>;
+  assignSorteioToUser: (sorteioId: string, userId: string) => Promise<{ success: boolean; error?: string }>;
+  removeUserFromSorteio: (sorteioId: string, userId: string) => Promise<{ success: boolean; error?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -243,6 +247,47 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [user]);
 
+  const getAllSorteiosAdmin = useCallback(async (): Promise<any[]> => {
+    if (user?.role !== 'admin') return [];
+    try {
+      const result = await callApi('getAllSorteiosAdmin');
+      return result.data || [];
+    } catch (error) {
+      console.error('Get all sorteios error:', error);
+      return [];
+    }
+  }, [user]);
+
+  const getSorteioUsers = useCallback(async (sorteioId: string): Promise<{ data: User[]; owner_id: string }> => {
+    try {
+      const result = await callApi('getSorteioUsers', { sorteio_id: sorteioId });
+      return { data: result.data || [], owner_id: result.owner_id };
+    } catch (error) {
+      console.error('Get sorteio users error:', error);
+      return { data: [], owner_id: '' };
+    }
+  }, []);
+
+  const assignSorteioToUser = useCallback(async (sorteioId: string, userId: string) => {
+    if (user?.role !== 'admin') return { success: false, error: 'Apenas administradores' };
+    try {
+      await callApi('assignSorteioToUser', { sorteio_id: sorteioId, user_id: userId });
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message || 'Erro ao atribuir sorteio' };
+    }
+  }, [user]);
+
+  const removeUserFromSorteio = useCallback(async (sorteioId: string, userId: string) => {
+    if (user?.role !== 'admin') return { success: false, error: 'Apenas administradores' };
+    try {
+      await callApi('removeUserFromSorteio', { sorteio_id: sorteioId, user_id: userId });
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message || 'Erro ao remover atribuição' };
+    }
+  }, [user]);
+
   const value: AuthContextType = {
     user,
     isLoading,
@@ -257,6 +302,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setupAdmin,
     updateProfile,
     getAuthToken,
+    getAllSorteiosAdmin,
+    getSorteioUsers,
+    assignSorteioToUser,
+    removeUserFromSorteio,
   };
 
   return (

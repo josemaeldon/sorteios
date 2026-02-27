@@ -30,6 +30,42 @@ const dbAdapter = new DatabaseAdapter(dbConfig);
 dbAdapter.connect();
 console.log(`Database adapter initialized for ${dbConfig.type}`);
 
+// Auto-create sorteio_compartilhado table for existing deployments
+async function initSchema() {
+  try {
+    const client = await dbAdapter.getConnection();
+    try {
+      if (dbConfig.type === 'mysql') {
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS sorteio_compartilhado (
+            id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+            sorteio_id CHAR(36) NOT NULL,
+            user_id CHAR(36) NOT NULL,
+            created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+            UNIQUE KEY uq_sorteio_user (sorteio_id, user_id)
+          )
+        `);
+      } else {
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS public.sorteio_compartilhado (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            sorteio_id UUID NOT NULL REFERENCES public.sorteios(id) ON DELETE CASCADE,
+            user_id UUID NOT NULL REFERENCES public.usuarios(id) ON DELETE CASCADE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+            UNIQUE(sorteio_id, user_id)
+          )
+        `);
+      }
+      console.log('Schema initialized: sorteio_compartilhado table ready');
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    console.error('Schema init error:', err.message);
+  }
+}
+initSchema();
+
 // Basic Auth credentials from environment
 const BASIC_AUTH_USER = process.env.BASIC_AUTH_USER || '';
 const BASIC_AUTH_PASS = process.env.BASIC_AUTH_PASS || '';
@@ -149,7 +185,7 @@ function checkBasicAuth(req, res, next) {
 // JWT Auth middleware
 async function checkAuth(req, action) {
   const publicActions = ['checkFirstAccess', 'setupAdmin', 'login'];
-  const adminActions = ['getUsers', 'createUser', 'updateUser', 'deleteUser'];
+  const adminActions = ['getUsers', 'createUser', 'updateUser', 'deleteUser', 'getAllSorteiosAdmin', 'assignSorteioToUser', 'removeUserFromSorteio', 'getSorteioUsers'];
   
   if (publicActions.includes(action)) {
     return { authenticated: true, user: null };
@@ -296,6 +332,49 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         await client.query('DELETE FROM usuarios WHERE id = $1', [data.id]);
         return res.json({ success: true });
 
+      case 'getAllSorteiosAdmin':
+        result = await client.query(`
+          SELECT s.*, u.nome as owner_nome, u.email as owner_email
+          FROM sorteios s
+          JOIN usuarios u ON s.user_id = u.id
+          ORDER BY s.created_at DESC
+        `);
+        return res.json({ data: result.rows });
+
+      case 'getSorteioUsers': {
+        const sorteioRow = await client.query(
+          'SELECT user_id FROM sorteios WHERE id = $1', [data.sorteio_id]
+        );
+        const ownerId = sorteioRow.rows[0]?.user_id;
+        const sharedResult = await client.query(
+          'SELECT user_id FROM sorteio_compartilhado WHERE sorteio_id = $1', [data.sorteio_id]
+        );
+        const sharedUserIds = sharedResult.rows.map(r => r.user_id);
+        const allIds = ownerId ? [ownerId, ...sharedUserIds] : sharedUserIds;
+        if (allIds.length === 0) return res.json({ data: [], owner_id: ownerId || '' });
+        const placeholders = allIds.map((_, i) => `$${i + 1}`).join(', ');
+        const usersResult = await client.query(
+          `SELECT id, nome, email, role FROM usuarios WHERE id IN (${placeholders})`, allIds
+        );
+        return res.json({ data: usersResult.rows, owner_id: ownerId });
+      }
+
+      case 'assignSorteioToUser': {
+        await client.query(`
+          INSERT INTO sorteio_compartilhado (sorteio_id, user_id)
+          VALUES ($1, $2)
+          ON CONFLICT (sorteio_id, user_id) DO NOTHING
+        `, [data.sorteio_id, data.user_id]);
+        return res.json({ success: true });
+      }
+
+      case 'removeUserFromSorteio':
+        await client.query(
+          'DELETE FROM sorteio_compartilhado WHERE sorteio_id = $1 AND user_id = $2',
+          [data.sorteio_id, data.user_id]
+        );
+        return res.json({ success: true });
+
       case 'updateProfile': {
         const profileUserId = data.authenticated_user_id;
         
@@ -333,7 +412,10 @@ app.post('/api', checkBasicAuth, async (req, res) => {
       // ================== SORTEIOS ==================
       case 'getSorteios':
         result = await client.query(
-          'SELECT * FROM sorteios WHERE user_id = $1 ORDER BY created_at DESC',
+          `SELECT DISTINCT s.* FROM sorteios s
+           LEFT JOIN sorteio_compartilhado sc ON sc.sorteio_id = s.id
+           WHERE s.user_id = $1 OR sc.user_id = $1
+           ORDER BY s.created_at DESC`,
           [data.authenticated_user_id]
         );
         return res.json({ data: result.rows });

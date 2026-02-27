@@ -156,6 +156,15 @@ CREATE TABLE IF NOT EXISTS public.rodadas_sorteio (
     updated_at TIMESTAMP WITH TIME ZONE
 );
 
+-- Tabela de compartilhamento de sorteios (admin pode atribuir sorteios a usuários)
+CREATE TABLE IF NOT EXISTS public.sorteio_compartilhado (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    sorteio_id UUID NOT NULL REFERENCES public.sorteios(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES public.usuarios(id) ON DELETE CASCADE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+    UNIQUE(sorteio_id, user_id)
+);
+
 -- Tabela de histórico de sorteios (números sorteados)
 CREATE TABLE IF NOT EXISTS public.sorteio_historico (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -190,6 +199,8 @@ CREATE INDEX IF NOT EXISTS idx_rodadas_sorteio_sorteio_id ON public.rodadas_sort
 CREATE INDEX IF NOT EXISTS idx_sorteio_historico_sorteio_id ON public.sorteio_historico(sorteio_id);
 CREATE INDEX IF NOT EXISTS idx_sorteio_historico_rodada_id ON public.sorteio_historico(rodada_id);
 CREATE INDEX IF NOT EXISTS idx_sorteio_historico_ordem ON public.sorteio_historico(sorteio_id, ordem);
+CREATE INDEX IF NOT EXISTS idx_sorteio_compartilhado_sorteio_id ON public.sorteio_compartilhado(sorteio_id);
+CREATE INDEX IF NOT EXISTS idx_sorteio_compartilhado_user_id ON public.sorteio_compartilhado(user_id);
 
 -- =====================================================
 -- FUNÇÕES
