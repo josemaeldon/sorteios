@@ -197,7 +197,7 @@ const NumberInput: React.FC<{
 
 // ─── Main component ───────────────────────────────────────────────────────────
 const BingoCardsBuilderTab: React.FC = () => {
-  const { sorteioAtivo, cartelas } = useBingo();
+  const { sorteioAtivo, cartelas, salvarNumerosCartelas } = useBingo();
   const { toast } = useToast();
 
   // Layout
@@ -210,6 +210,7 @@ const BingoCardsBuilderTab: React.FC = () => {
   const [cards, setCards] = useState<BingoCardGrid[]>([]);
   const [previewIndex, setPreviewIndex] = useState(0);
   const [isExporting, setIsExporting] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [numeroPremios, setNumeroPremios] = useState(1);
 
   // Drag / resize (use refs to avoid stale closure in global listeners)
@@ -347,12 +348,27 @@ const BingoCardsBuilderTab: React.FC = () => {
   };
 
   // ─── Generate cards ────────────────────────────────────────────────────────
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     const count = totalCards;
-    const generated = generateAllBingoCards(count);
+    const generated = generateAllBingoCards(count, numeroPremios);
     setCards(generated);
     setPreviewIndex(0);
-    toast({ title: `${count} cartelas geradas com sucesso!` });
+    // Save numbers to each cartela in the DB
+    setIsSaving(true);
+    try {
+      await salvarNumerosCartelas(
+        generated.map((c) => ({
+          numero: c.cartelaNumero,
+          // All prizes share the same grid; save grids[0] to the database
+          numeros_grade: c.grids[0].flat(),
+        }))
+      );
+      toast({ title: `${count} cartelas geradas e salvas com sucesso!` });
+    } catch {
+      toast({ title: `${count} cartelas geradas. Erro ao salvar no banco.`, variant: 'destructive' });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   // ─── Export PDF ────────────────────────────────────────────────────────────
@@ -397,10 +413,20 @@ const BingoCardsBuilderTab: React.FC = () => {
             {sorteioAtivo.nome} • {totalCards} cartelas
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button onClick={handleGenerate} variant="outline" className="gap-2">
-            <RefreshCw className="w-4 h-4" />
-            Gerar Cartelas
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2">
+            <Label className="text-xs text-muted-foreground whitespace-nowrap">Prêmios:</Label>
+            <Input
+              type="number"
+              min={1} max={6} step={1}
+              value={numeroPremios}
+              onChange={(e) => setNumeroPremios(Math.max(1, Math.min(6, parseInt(e.target.value) || 1)))}
+              className="h-8 w-16 text-xs"
+            />
+          </div>
+          <Button onClick={handleGenerate} variant="outline" className="gap-2" disabled={isSaving}>
+            {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            Gerar e Salvar
           </Button>
           <Button onClick={handleExportPDF} disabled={isExporting || cards.length === 0} className="gap-2">
             {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
@@ -412,7 +438,7 @@ const BingoCardsBuilderTab: React.FC = () => {
       {cards.length === 0 && (
         <div className="flex items-center gap-3 p-4 bg-primary/5 border border-primary/20 rounded-xl text-sm">
           <FileText className="w-5 h-5 text-primary flex-shrink-0" />
-          <span>Clique em <strong>Gerar Cartelas</strong> para criar {totalCards} cartelas únicas com números de 1 a 75. Depois edite o layout e exporte o PDF.</span>
+          <span>Clique em <strong>Gerar e Salvar</strong> para criar {totalCards} cartelas únicas com números de 1 a 75, atribuir os números a cada cartela e exportar o PDF.</span>
         </div>
       )}
 
@@ -590,7 +616,7 @@ const BingoCardsBuilderTab: React.FC = () => {
                   )}
 
                   {el.type === 'bingo_grid' && (
-                    <BingoGridPreview el={el} card={previewCard} scale={SCALE} />
+                    <BingoGridPreview el={el} card={previewCard} scale={SCALE} numeroPremios={numeroPremios} />
                   )}
 
                   {el.type === 'text' && (
@@ -722,6 +748,33 @@ const BingoCardsBuilderTab: React.FC = () => {
               {selectedEl.type === 'bingo_grid' && (
                 <>
                   <div className="border-t border-border pt-2">
+                    <p className="text-xs font-semibold text-muted-foreground mb-2">Opções</p>
+                    <div className="space-y-2">
+                      <PropRow label="">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={selectedEl.showHeader === true}
+                            onChange={(e) => updateElement(selectedEl.id, { showHeader: e.target.checked })}
+                            className="w-3.5 h-3.5"
+                          />
+                          <span className="text-xs">Mostrar cabeçalho (B I N G O)</span>
+                        </label>
+                      </PropRow>
+                      <PropRow label="">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={selectedEl.showFreeText === true}
+                            onChange={(e) => updateElement(selectedEl.id, { showFreeText: e.target.checked })}
+                            className="w-3.5 h-3.5"
+                          />
+                          <span className="text-xs">Mostrar texto FREE na célula central</span>
+                        </label>
+                      </PropRow>
+                    </div>
+                  </div>
+                  <div className="border-t border-border pt-2">
                     <p className="text-xs font-semibold text-muted-foreground mb-2">Cabeçalho (B I N G O)</p>
                     <div className="space-y-2">
                       <NumberInput label="Tamanho fonte (pt)" value={selectedEl.headerFontSize ?? 14}
@@ -739,9 +792,9 @@ const BingoCardsBuilderTab: React.FC = () => {
                         onChange={(v) => updateElement(selectedEl.id, { fontSize: v })} min={6} max={48} />
                       <ColorInput label="Cor dos números" value={selectedEl.color ?? '#111827'}
                         onChange={(v) => updateElement(selectedEl.id, { color: v })} />
-                      <ColorInput label="Fundo da célula" value={selectedEl.cellBgColor ?? '#ffffff'}
+                      <ColorInput label="Fundo da célula" value={selectedEl.cellBgColor ?? 'transparent'}
                         onChange={(v) => updateElement(selectedEl.id, { cellBgColor: v })} />
-                      <ColorInput label="Célula FREE" value={selectedEl.freeCellColor ?? '#fef9c3'}
+                      <ColorInput label="Célula central" value={selectedEl.freeCellColor ?? 'transparent'}
                         onChange={(v) => updateElement(selectedEl.id, { freeCellColor: v })} />
                     </div>
                   </div>

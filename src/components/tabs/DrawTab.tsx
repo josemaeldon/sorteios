@@ -76,6 +76,8 @@ const DrawTab: React.FC = () => {
   const [selectedRodada, setSelectedRodada] = useState<RodadaSorteio | null>(null);
   const [showDrawing, setShowDrawing] = useState(false);
   const [justDrawn, setJustDrawn] = useState(false);
+  const [vencedoras, setVencedoras] = useState<number[]>([]);
+  const [isVerifying, setIsVerifying] = useState(false);
   
   const animationIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const fullscreenRef = useRef<HTMLDivElement>(null);
@@ -397,6 +399,27 @@ const DrawTab: React.FC = () => {
     setDrawnNumbers([]);
     setIsDrawing(false);
     setJustDrawn(false);
+    setVencedoras([]);
+  };
+
+  const handleVerificarVencedor = async () => {
+    if (!sorteioAtivo || drawnNumbers.length === 0) return;
+    setIsVerifying(true);
+    try {
+      const result = await callApi('verificarVencedor', {
+        sorteio_id: sorteioAtivo.id,
+        numeros_sorteados: drawnNumbers,
+      });
+      const winners: number[] = result.data || [];
+      setVencedoras(winners);
+      if (winners.length === 0) {
+        toast({ title: 'Nenhuma cartela completa ainda.' });
+      }
+    } catch (error: any) {
+      toast({ title: 'Erro ao verificar vencedor', description: error.message, variant: 'destructive' });
+    } finally {
+      setIsVerifying(false);
+    }
   };
 
   const goBackToList = () => {
@@ -406,6 +429,7 @@ const DrawTab: React.FC = () => {
     setDrawnNumbers([]);
     setAvailableNumbers([]);
     setJustDrawn(false);
+    setVencedoras([]);
     loadRodadas();
   };
 
@@ -478,6 +502,16 @@ const DrawTab: React.FC = () => {
             >
               <Shuffle className="w-5 h-5" />
               Sortear
+            </Button>
+            <Button
+              onClick={handleVerificarVencedor}
+              disabled={isDrawing || drawnNumbers.length === 0 || isVerifying}
+              size="lg"
+              variant="outline"
+              className="gap-2"
+            >
+              {isVerifying ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />}
+              Verificar Vencedor
             </Button>
             <Button
               onClick={resetDraw}
@@ -667,6 +701,27 @@ const DrawTab: React.FC = () => {
             </CardContent>
           </Card>
         </div>
+
+        {/* Winner results */}
+        {vencedoras.length > 0 && (
+          <Card className="border-2 border-success">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-success flex items-center gap-2">
+                <CheckCircle className="w-5 h-5" />
+                Cartela(s) com todos os números sorteados!
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-3">
+                {vencedoras.map((num) => (
+                  <div key={num} className="px-4 py-2 rounded-lg bg-success/10 border border-success text-success font-bold text-xl">
+                    Cartela {num.toString().padStart(3, '0')}
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
     );
   }

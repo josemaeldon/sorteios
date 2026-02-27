@@ -103,22 +103,21 @@ export function generateBingoGrid(): number[][] {
 }
 
 export function generateAllBingoCards(quantidade: number, numeroPremios: number = 1): BingoCardGrid[] {
+  const premios = Math.max(1, Math.min(6, Math.round(numeroPremios)));
   const cards: BingoCardGrid[] = [];
   const seen = new Set<string>();
   for (let i = 1; i <= quantidade; i++) {
-    const grids: number[][][] = [];
-    for (let p = 0; p < numeroPremios; p++) {
-      let grid: number[][] = [];
-      let key = '';
-      let tries = 0;
-      do {
-        grid = generateBingoGrid();
-        key = grid.flat().join(',');
-        tries++;
-      } while (seen.has(key) && tries < 500);
-      seen.add(key);
-      grids.push(grid);
-    }
+    let grid: number[][] = [];
+    let key = '';
+    let tries = 0;
+    do {
+      grid = generateBingoGrid();
+      key = grid.flat().join(',');
+      tries++;
+    } while (seen.has(key) && tries < 500);
+    seen.add(key);
+    // All prizes show the same 25 numbers — replicate the single grid N times
+    const grids = Array.from({ length: premios }, () => grid);
     cards.push({ cartelaNumero: i, grids });
   }
   return cards;
@@ -132,8 +131,8 @@ function hexToRgb(hex: string): [number, number, number] {
 }
 
 function drawGridPdf(doc: jsPDF, el: CanvasElement, grid: number[][], offsetY: number = 0) {
-  const showHeader = el.showHeader !== false ? true : false; // default was true, now defaults to false
-  const showFreeText = el.showFreeText !== false ? true : false;
+  const showHeader = el.showHeader ?? false;
+  const showFreeText = el.showFreeText ?? false;
   const rows = showHeader ? 6 : 5;
   const hh = showHeader ? el.height / rows : 0;
   const ch = (el.height - hh) / 5;

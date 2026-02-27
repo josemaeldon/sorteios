@@ -50,6 +50,7 @@ export interface Cartela {
   status: 'disponivel' | 'ativa' | 'vendida' | 'devolvida';
   vendedor_id?: string;
   vendedor_nome?: string;
+  numeros_grade?: number[]; // flat 25-number grid (0 = blank center)
 }
 
 export interface CartelaAtribuida {
