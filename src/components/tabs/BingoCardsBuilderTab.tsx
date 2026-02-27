@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   LayoutGrid, Plus, Trash2, Download, RefreshCw, ChevronLeft, ChevronRight,
   Image, Type, AlignLeft, AlignCenter, AlignRight, Bold, Loader2, FileText,
+  Save, List, X, Edit2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,6 +15,14 @@ import {
   DEFAULT_LAYOUT, BINGO_COLS, A4_W_MM, A4_H_MM,
   generateAllBingoCards, exportBingoCardsPDF,
 } from '@/lib/utils/bingoCardUtils';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from '@/components/ui/dialog';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { CartelaLayout } from '@/types/bingo';
 
 // ─── Canvas constants ─────────────────────────────────────────────────────────
 /** px per mm — keeps A4 canvas at ~595×841 px (72 dpi equivalent) */
@@ -197,7 +206,10 @@ const NumberInput: React.FC<{
 
 // ─── Main component ───────────────────────────────────────────────────────────
 const BingoCardsBuilderTab: React.FC = () => {
-  const { sorteioAtivo, cartelas, salvarNumerosCartelas } = useBingo();
+  const {
+    sorteioAtivo, cartelas, salvarNumerosCartelas,
+    cartelaLayouts, loadCartelaLayouts, saveCartelaLayout, updateCartelaLayout, deleteCartelaLayout,
+  } = useBingo();
   const { toast } = useToast();
 
   // Layout
@@ -212,6 +224,14 @@ const BingoCardsBuilderTab: React.FC = () => {
   const [isExporting, setIsExporting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const numeroPremios = Math.max(1, sorteioAtivo?.premios?.length ?? 1);
+
+  // Named layout management
+  const [activeLayoutId, setActiveLayoutId] = useState<string | null>(null);
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [saveLayoutName, setSaveLayoutName] = useState('');
+  const [isSavingLayout, setIsSavingLayout] = useState(false);
+  const [showLayoutsList, setShowLayoutsList] = useState(false);
+  const [deletingLayoutId, setDeletingLayoutId] = useState<string | null>(null);
 
   // Drag / resize (use refs to avoid stale closure in global listeners)
   const draggingRef = useRef<DragState | null>(null);
@@ -234,18 +254,20 @@ const BingoCardsBuilderTab: React.FC = () => {
   useEffect(() => {
     if (hasRestoredRef.current) return;
     const saved = cartelas
-      .filter(c => c.numeros_grade && c.numeros_grade.length === 25)
+      .filter(c => c.numeros_grade && c.numeros_grade.length > 0)
       .sort((a, b) => a.numero - b.numero);
     if (saved.length === 0) return;
     hasRestoredRef.current = true;
     setCards(
       saved.map(c => {
-        const flat = c.numeros_grade!;
-        const grid = Array.from({ length: 5 }, (_, row) => flat.slice(row * 5, row * 5 + 5));
-        return { cartelaNumero: c.numero, grids: Array.from({ length: numeroPremios }, () => grid) };
+        // numeros_grade is number[][] - array of flat 25-number arrays per prize
+        const grids = c.numeros_grade!.map(flat =>
+          Array.from({ length: 5 }, (_, row) => flat.slice(row * 5, row * 5 + 5))
+        );
+        return { cartelaNumero: c.numero, grids };
       }),
     );
-  }, [cartelas, numeroPremios]);
+  }, [cartelas]);
 
   // ─── Layout helpers ────────────────────────────────────────────────────────
   const updateElement = useCallback((id: string, patch: Partial<CanvasElement>) => {
@@ -373,14 +395,14 @@ const BingoCardsBuilderTab: React.FC = () => {
     const generated = generateAllBingoCards(count, numeroPremios);
     setCards(generated);
     setPreviewIndex(0);
-    // Save numbers to each cartela in the DB
+    // Save all prize grids to each cartela in the DB
     setIsSaving(true);
     try {
       await salvarNumerosCartelas(
         generated.map((c) => ({
           numero: c.cartelaNumero,
-          // All prizes share the same grid; save grids[0] to the database
-          numeros_grade: c.grids[0].flat(),
+          // Each prize has its own independent grid; save all as number[][]
+          numeros_grade: c.grids.map(g => g.flat()),
         }))
       );
       toast({ title: `${count} cartelas geradas e salvas com sucesso!` });
@@ -408,6 +430,65 @@ const BingoCardsBuilderTab: React.FC = () => {
     }
   };
 
+  // ─── Save layout handlers ──────────────────────────────────────────────────
+  const handleOpenSaveDialog = () => {
+    const active = cartelaLayouts.find(l => l.id === activeLayoutId);
+    setSaveLayoutName(active?.nome ?? '');
+    setShowSaveDialog(true);
+  };
+
+  const handleSaveLayout = async () => {
+    if (!saveLayoutName.trim()) {
+      toast({ title: 'Informe um nome para a cartela', variant: 'destructive' });
+      return;
+    }
+    if (cards.length === 0) {
+      toast({ title: 'Gere as cartelas primeiro', variant: 'destructive' });
+      return;
+    }
+    setIsSavingLayout(true);
+    try {
+      const layoutJson = JSON.stringify(layout);
+      const cardsJson = JSON.stringify(cards);
+      if (activeLayoutId) {
+        await updateCartelaLayout(activeLayoutId, saveLayoutName.trim(), layoutJson, cardsJson);
+        toast({ title: 'Cartela atualizada!' });
+      } else {
+        const saved = await saveCartelaLayout(saveLayoutName.trim(), layoutJson, cardsJson);
+        setActiveLayoutId(saved.id);
+        toast({ title: 'Cartela salva!' });
+      }
+      setShowSaveDialog(false);
+    } catch {
+      toast({ title: 'Erro ao salvar cartela', variant: 'destructive' });
+    } finally {
+      setIsSavingLayout(false);
+    }
+  };
+
+  const handleLoadLayout = (item: CartelaLayout) => {
+    try {
+      const parsedLayout: CanvasLayout = JSON.parse(item.layout_data);
+      const parsedCards: BingoCardGrid[] = JSON.parse(item.cards_data);
+      setLayout(parsedLayout);
+      setCards(parsedCards);
+      setPreviewIndex(0);
+      setActiveLayoutId(item.id);
+      setShowLayoutsList(false);
+      toast({ title: `Cartela "${item.nome}" carregada!` });
+    } catch {
+      toast({ title: 'Erro ao carregar cartela', variant: 'destructive' });
+    }
+  };
+
+  const handleNewLayout = () => {
+    setLayout(JSON.parse(JSON.stringify(DEFAULT_LAYOUT)));
+    setCards([]);
+    setPreviewIndex(0);
+    setActiveLayoutId(null);
+    setShowLayoutsList(false);
+  };
+
   // ─── Render ────────────────────────────────────────────────────────────────
   if (!sorteioAtivo) {
     return (
@@ -420,6 +501,7 @@ const BingoCardsBuilderTab: React.FC = () => {
   }
 
   return (
+    <>
     <div className="animate-fade-in flex flex-col gap-3 h-full">
 
       {/* ── Top bar ── */}
@@ -431,6 +513,11 @@ const BingoCardsBuilderTab: React.FC = () => {
           </h2>
           <p className="text-muted-foreground text-sm mt-0.5">
             {sorteioAtivo.nome} • {totalCards} cartelas
+            {activeLayoutId && cartelaLayouts.find(l => l.id === activeLayoutId) && (
+              <span className="ml-2 text-primary font-medium">
+                — {cartelaLayouts.find(l => l.id === activeLayoutId)!.nome}
+              </span>
+            )}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -438,9 +525,17 @@ const BingoCardsBuilderTab: React.FC = () => {
             <Label className="text-xs text-muted-foreground whitespace-nowrap">Prêmios:</Label>
             <span className="text-xs font-semibold text-foreground">{numeroPremios}</span>
           </div>
+          <Button variant="outline" size="sm" className="gap-2" onClick={() => { loadCartelaLayouts(); setShowLayoutsList(true); }}>
+            <List className="w-4 h-4" />
+            Minhas Cartelas {cartelaLayouts.length > 0 && `(${cartelaLayouts.length})`}
+          </Button>
           <Button onClick={handleGenerate} variant="outline" className="gap-2" disabled={isSaving}>
             {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-            Gerar e Salvar
+            Gerar
+          </Button>
+          <Button onClick={handleOpenSaveDialog} variant="outline" className="gap-2" disabled={cards.length === 0}>
+            <Save className="w-4 h-4" />
+            {activeLayoutId ? 'Atualizar' : 'Salvar Como...'}
           </Button>
           <Button onClick={handleExportPDF} disabled={isExporting || cards.length === 0} className="gap-2">
             {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
@@ -452,7 +547,7 @@ const BingoCardsBuilderTab: React.FC = () => {
       {cards.length === 0 && (
         <div className="flex items-center gap-3 p-4 bg-primary/5 border border-primary/20 rounded-xl text-sm">
           <FileText className="w-5 h-5 text-primary flex-shrink-0" />
-          <span>Clique em <strong>Gerar e Salvar</strong> para criar {totalCards} cartelas únicas com números de 1 a 75, atribuir os números a cada cartela e exportar o PDF.</span>
+          <span>Clique em <strong>Gerar</strong> para criar {totalCards} cartelas únicas com números de 1 a 75 e grades independentes por prêmio, depois <strong>Salvar Como...</strong> para nomear e salvar.</span>
         </div>
       )}
 
@@ -833,6 +928,125 @@ const BingoCardsBuilderTab: React.FC = () => {
         </div>
       </div>
     </div>
+
+      {/* ── Save Layout Dialog ── */}
+      <Dialog open={showSaveDialog} onOpenChange={setShowSaveDialog}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{activeLayoutId ? 'Atualizar Cartela' : 'Salvar Cartela Como...'}</DialogTitle>
+          </DialogHeader>
+          <div className="py-2">
+            <Label className="text-sm font-medium">Nome da Cartela</Label>
+            <Input
+              className="mt-1"
+              placeholder="Ex: Cartela Natal 2025"
+              value={saveLayoutName}
+              onChange={(e) => setSaveLayoutName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSaveLayout()}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowSaveDialog(false)} disabled={isSavingLayout}>
+              Cancelar
+            </Button>
+            <Button onClick={handleSaveLayout} disabled={isSavingLayout} className="gap-2">
+              {isSavingLayout ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              {activeLayoutId ? 'Atualizar' : 'Salvar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Layouts List Dialog ── */}
+      <Dialog open={showLayoutsList} onOpenChange={setShowLayoutsList}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <List className="w-5 h-5" />
+              Cartelas de Bingo Salvas
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 max-h-96 overflow-y-auto py-1">
+            {cartelaLayouts.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-6">
+                Nenhuma cartela salva ainda. Gere e salve uma cartela primeiro.
+              </p>
+            ) : (
+              cartelaLayouts.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex items-center justify-between p-3 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm truncate">{item.nome}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(item.created_at!).toLocaleDateString('pt-BR')}
+                      {item.id === activeLayoutId && (
+                        <span className="ml-2 text-primary font-medium">• Ativa</span>
+                      )}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1 ml-2">
+                    <Button
+                      size="sm" variant="outline" className="gap-1 h-7 text-xs"
+                      onClick={() => handleLoadLayout(item)}
+                    >
+                      <Edit2 className="w-3 h-3" /> Carregar
+                    </Button>
+                    <Button
+                      size="icon" variant="ghost" className="h-7 w-7 text-destructive"
+                      onClick={() => setDeletingLayoutId(item.id)}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+          <DialogFooter className="flex-row justify-between">
+            <Button variant="outline" size="sm" className="gap-2" onClick={handleNewLayout}>
+              <Plus className="w-4 h-4" /> Nova Cartela
+            </Button>
+            <Button variant="outline" onClick={() => setShowLayoutsList(false)}>
+              Fechar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Delete Layout Confirmation ── */}
+      <AlertDialog open={!!deletingLayoutId} onOpenChange={(open) => { if (!open) setDeletingLayoutId(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir cartela?</AlertDialogTitle>
+            <AlertDialogDescription>
+              A cartela "{cartelaLayouts.find(l => l.id === deletingLayoutId)?.nome}" será removida permanentemente.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={async () => {
+                if (!deletingLayoutId) return;
+                try {
+                  await deleteCartelaLayout(deletingLayoutId);
+                  if (activeLayoutId === deletingLayoutId) setActiveLayoutId(null);
+                  toast({ title: 'Cartela excluída!' });
+                } catch {
+                  toast({ title: 'Erro ao excluir', variant: 'destructive' });
+                } finally {
+                  setDeletingLayoutId(null);
+                }
+              }}
+            >
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 };
 

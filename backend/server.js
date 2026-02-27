@@ -53,6 +53,18 @@ async function initSchema() {
             console.warn('numeros_grade column may already exist or could not be added:', e.message);
           }
         }
+        // Create bingo_card_sets table (MySQL)
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS bingo_card_sets (
+            id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+            sorteio_id CHAR(36) NOT NULL,
+            nome VARCHAR(255) NOT NULL,
+            layout_data LONGTEXT NOT NULL,
+            cards_data LONGTEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+            updated_at TIMESTAMP DEFAULT NOW() ON UPDATE NOW() NOT NULL
+          )
+        `);
       } else {
         await client.query(`
           CREATE TABLE IF NOT EXISTS public.sorteio_compartilhado (
@@ -66,6 +78,18 @@ async function initSchema() {
         // Add numeros_grade column if missing (PostgreSQL)
         await client.query(`
           ALTER TABLE cartelas ADD COLUMN IF NOT EXISTS numeros_grade JSONB
+        `);
+        // Create bingo_card_sets table (PostgreSQL)
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS public.bingo_card_sets (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            sorteio_id UUID NOT NULL REFERENCES public.sorteios(id) ON DELETE CASCADE,
+            nome VARCHAR(255) NOT NULL,
+            layout_data TEXT NOT NULL,
+            cards_data TEXT NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
+          )
         `);
       }
       console.log('Schema initialized: sorteio_compartilhado table ready');
@@ -611,12 +635,28 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         return res.json({ data: [{ success: true }] });
 
       // ================== CARTELAS ==================
-      case 'getCartelas':
+      case 'getCartelas': {
         result = await client.query(
           'SELECT numero, status, vendedor_id, numeros_grade FROM cartelas WHERE sorteio_id = $1 ORDER BY numero',
           [data.sorteio_id]
         );
-        return res.json({ data: result.rows });
+        // Normalize numeros_grade to number[][] format
+        const rows = result.rows.map(row => {
+          if (!row.numeros_grade) return row;
+          let raw;
+          try {
+            raw = Array.isArray(row.numeros_grade) ? row.numeros_grade : JSON.parse(row.numeros_grade);
+          } catch {
+            return row;
+          }
+          // Old format: flat number[] => wrap as [flat] (single prize)
+          if (raw.length > 0 && typeof raw[0] === 'number') {
+            return { ...row, numeros_grade: [raw] };
+          }
+          return { ...row, numeros_grade: raw };
+        });
+        return res.json({ data: rows });
+      }
 
       case 'updateCartela':
         result = await client.query(`
@@ -669,7 +709,8 @@ app.post('/api', checkBasicAuth, async (req, res) => {
       }
 
       case 'salvarNumerosCartelas': {
-        // data.sorteio_id, data.cartelas: [{numero, numeros_grade: number[]}]
+        // data.sorteio_id, data.cartelas: [{numero, numeros_grade: number[][]}]
+        // numeros_grade is an array of flat 25-number arrays (one per prize)
         const cartelasGrade = data.cartelas || [];
         for (const c of cartelasGrade) {
           await client.query(
@@ -718,11 +759,18 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         );
         const vencedoras = [];
         for (const row of cartelasResult.rows) {
-          let grade;
+          let raw;
           try {
-            grade = Array.isArray(row.numeros_grade) ? row.numeros_grade : JSON.parse(row.numeros_grade);
+            raw = Array.isArray(row.numeros_grade) ? row.numeros_grade : JSON.parse(row.numeros_grade);
           } catch {
             continue;
+          }
+          // Normalize to number[][] - use first prize grid for winner check
+          let grade;
+          if (raw.length > 0 && typeof raw[0] === 'number') {
+            grade = raw; // old flat format
+          } else {
+            grade = raw[0] || []; // new format: take first prize grid
           }
           const required = grade.filter((n) => n !== 0);
           if (required.length > 0 && required.every((n) => numerosSet.has(Number(n)))) {
@@ -1052,6 +1100,34 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         
         return res.json({ data: [{ success: true, total_pago: totalPaid, status: newStatus }] });
       }
+
+      // ================== BINGO CARD SETS (LAYOUTS) ==================
+      case 'getCartelaLayouts':
+        result = await client.query(
+          'SELECT id, sorteio_id, nome, layout_data, cards_data, created_at, updated_at FROM bingo_card_sets WHERE sorteio_id = $1 ORDER BY created_at DESC',
+          [data.sorteio_id]
+        );
+        return res.json({ data: result.rows });
+
+      case 'saveCartelaLayout': {
+        result = await client.query(
+          'INSERT INTO bingo_card_sets (sorteio_id, nome, layout_data, cards_data) VALUES ($1, $2, $3, $4) RETURNING *',
+          [data.sorteio_id, data.nome, data.layout_data, data.cards_data]
+        );
+        return res.json({ data: result.rows[0] });
+      }
+
+      case 'updateCartelaLayout': {
+        result = await client.query(
+          'UPDATE bingo_card_sets SET nome = $2, layout_data = $3, cards_data = $4, updated_at = NOW() WHERE id = $1 RETURNING *',
+          [data.id, data.nome, data.layout_data, data.cards_data]
+        );
+        return res.json({ data: result.rows[0] });
+      }
+
+      case 'deleteCartelaLayout':
+        await client.query('DELETE FROM bingo_card_sets WHERE id = $1', [data.id]);
+        return res.json({ data: [{ success: true }] });
 
       default:
         return res.status(400).json({ error: `Unknown action: ${action}` });

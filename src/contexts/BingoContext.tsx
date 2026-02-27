@@ -9,7 +9,8 @@ import {
   FiltrosVendedores,
   FiltrosCartelas,
   FiltrosAtribuicoes,
-  FiltrosVendas
+  FiltrosVendas,
+  CartelaLayout,
 } from '@/types/bingo';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
@@ -23,6 +24,7 @@ interface BingoContextType {
   cartelas: Cartela[];
   atribuicoes: Atribuicao[];
   vendas: Venda[];
+  cartelaLayouts: CartelaLayout[];
   currentTab: TabType;
   isLoading: boolean;
   
@@ -58,9 +60,15 @@ interface BingoContextType {
   loadCartelas: () => Promise<void>;
   gerarCartelas: (quantidade: number) => Promise<void>;
   atualizarStatusCartela: (numero: number, status: Cartela['status'], vendedorId?: string) => Promise<void>;
-  salvarNumerosCartelas: (cartelas: { numero: number; numeros_grade: number[] }[]) => Promise<void>;
+  salvarNumerosCartelas: (cartelas: { numero: number; numeros_grade: number[][] }[]) => Promise<void>;
   deleteCartela: (numero: number) => Promise<void>;
   createCartela: (numerosGrade: number[]) => Promise<void>;
+  
+  // CRUD Operations - Cartela Layouts
+  loadCartelaLayouts: () => Promise<void>;
+  saveCartelaLayout: (nome: string, layoutData: string, cardsData: string) => Promise<CartelaLayout>;
+  updateCartelaLayout: (id: string, nome: string, layoutData: string, cardsData: string) => Promise<void>;
+  deleteCartelaLayout: (id: string) => Promise<void>;
   
   // CRUD Operations - Atribuicoes
   loadAtribuicoes: () => Promise<void>;
@@ -94,6 +102,7 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const [cartelas, setCartelas] = useState<Cartela[]>([]);
   const [atribuicoes, setAtribuicoes] = useState<Atribuicao[]>([]);
   const [vendas, setVendas] = useState<Venda[]>([]);
+  const [cartelaLayouts, setCartelaLayouts] = useState<CartelaLayout[]>([]);
   const [currentTab, setCurrentTab] = useState<TabType>('sorteios');
   const [isLoading, setIsLoading] = useState(false);
   
@@ -324,7 +333,7 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   }, [sorteioAtivo, callApi, loadCartelas]);
 
-  const salvarNumerosCartelas = useCallback(async (cartelas: { numero: number; numeros_grade: number[] }[]) => {
+  const salvarNumerosCartelas = useCallback(async (cartelas: { numero: number; numeros_grade: number[][] }[]) => {
     if (!sorteioAtivo) return;
     try {
       await callApi('salvarNumerosCartelas', { sorteio_id: sorteioAtivo.id, cartelas });
@@ -564,6 +573,36 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   }, [callApi, toast, loadVendas, loadCartelas, loadAtribuicoes]);
 
+  // ================== CARTELA LAYOUTS ==================
+  const loadCartelaLayouts = useCallback(async () => {
+    if (!sorteioAtivo) return;
+    try {
+      const result = await callApi('getCartelaLayouts', { sorteio_id: sorteioAtivo.id });
+      setCartelaLayouts(result.data || []);
+    } catch (error: any) {
+      console.error('Error loading cartela layouts:', error);
+    }
+  }, [sorteioAtivo, callApi]);
+
+  const saveCartelaLayout = useCallback(async (nome: string, layoutData: string, cardsData: string): Promise<CartelaLayout> => {
+    if (!sorteioAtivo) throw new Error('No active sorteio');
+    const result = await callApi('saveCartelaLayout', {
+      sorteio_id: sorteioAtivo.id, nome, layout_data: layoutData, cards_data: cardsData,
+    });
+    await loadCartelaLayouts();
+    return result.data;
+  }, [sorteioAtivo, callApi, loadCartelaLayouts]);
+
+  const updateCartelaLayout = useCallback(async (id: string, nome: string, layoutData: string, cardsData: string) => {
+    await callApi('updateCartelaLayout', { id, nome, layout_data: layoutData, cards_data: cardsData });
+    await loadCartelaLayouts();
+  }, [callApi, loadCartelaLayouts]);
+
+  const deleteCartelaLayout = useCallback(async (id: string) => {
+    await callApi('deleteCartelaLayout', { id });
+    setCartelaLayouts(prev => prev.filter(l => l.id !== id));
+  }, [callApi]);
+
   // ================== REFRESH & SET SORTEIO ATIVO ==================
   const refreshData = useCallback(async () => {
     if (!sorteioAtivo) return;
@@ -574,12 +613,13 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         loadVendedores(),
         loadCartelas(),
         loadAtribuicoes(),
-        loadVendas()
+        loadVendas(),
+        loadCartelaLayouts(),
       ]);
     } finally {
       setIsLoading(false);
     }
-  }, [sorteioAtivo, loadVendedores, loadCartelas, loadAtribuicoes, loadVendas]);
+  }, [sorteioAtivo, loadVendedores, loadCartelas, loadAtribuicoes, loadVendas, loadCartelaLayouts]);
 
   const setSorteioAtivo = useCallback((sorteio: Sorteio | null) => {
     setSorteioAtivoState(sorteio);
@@ -594,6 +634,7 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       setCartelas([]);
       setAtribuicoes([]);
       setVendas([]);
+      setCartelaLayouts([]);
     }
   }, [sorteioAtivo?.id]);
 
@@ -611,6 +652,7 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     cartelas,
     atribuicoes,
     vendas,
+    cartelaLayouts,
     currentTab,
     isLoading,
     filtrosVendedores,
@@ -637,6 +679,10 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     salvarNumerosCartelas,
     deleteCartela,
     createCartela,
+    loadCartelaLayouts,
+    saveCartelaLayout,
+    updateCartelaLayout,
+    deleteCartelaLayout,
     loadAtribuicoes,
     addAtribuicao,
     addCartelasToAtribuicao,
