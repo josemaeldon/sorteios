@@ -9,6 +9,7 @@ import CartelasTab from '@/components/tabs/CartelasTab';
 import AtribuicoesTab from '@/components/tabs/AtribuicoesTab';
 import VendasTab from '@/components/tabs/VendasTab';
 import RelatoriosTab from '@/components/tabs/RelatoriosTab';
+import BingoCardsBuilderTab from '@/components/tabs/BingoCardsBuilderTab';
 
 const MainContent = () => {
   const { currentTab } = useBingo();
@@ -20,6 +21,7 @@ const MainContent = () => {
       case 'sorteio': return <DrawTab />;
       case 'vendedores': return <VendedoresTab />;
       case 'cartelas': return <CartelasTab />;
+      case 'cartelas-bingo': return <BingoCardsBuilderTab />;
       case 'atribuicoes': return <AtribuicoesTab />;
       case 'vendas': return <VendasTab />;
       case 'relatorios': return <RelatoriosTab />;
