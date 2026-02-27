@@ -8,7 +8,7 @@ export const A4_H_MM = 297;
 
 export interface BingoCardGrid {
   cartelaNumero: number;
-  /** grids[premioIndex][row][col], 0 = FREE/blank space */
+  /** grids[premioIndex][row][col] */
   grids: number[][][];
 }
 
@@ -94,12 +94,10 @@ function pickRandom(min: number, max: number, count: number): number[] {
 export function generateBingoGrid(): number[][] {
   const b = pickRandom(1, 15, 5);
   const iNums = pickRandom(16, 30, 5);
-  const n4 = pickRandom(31, 45, 4);
+  const n = pickRandom(31, 45, 5);
   const g = pickRandom(46, 60, 5);
   const o = pickRandom(61, 75, 5);
-  // Insert FREE (0) at centre position of N column
-  const nCol = [...n4.slice(0, 2), 0, ...n4.slice(2)];
-  return Array.from({ length: 5 }, (_, row) => [b[row], iNums[row], nCol[row], g[row], o[row]]);
+  return Array.from({ length: 5 }, (_, row) => [b[row], iNums[row], n[row], g[row], o[row]]);
 }
 
 export function generateAllBingoCards(quantidade: number, numeroPremios: number = 1): BingoCardGrid[] {

@@ -211,13 +211,16 @@ const BingoCardsBuilderTab: React.FC = () => {
   const [previewIndex, setPreviewIndex] = useState(0);
   const [isExporting, setIsExporting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [numeroPremios, setNumeroPremios] = useState(1);
+  const numeroPremios = Math.max(1, sorteioAtivo?.premios?.length ?? 1);
 
   // Drag / resize (use refs to avoid stale closure in global listeners)
   const draggingRef = useRef<DragState | null>(null);
   const resizingRef = useRef<ResizeState | null>(null);
   const layoutRef = useRef(layout);
   useEffect(() => { layoutRef.current = layout; }, [layout]);
+
+  // Tracks whether the one-time DB restore has already run for the current sorteio
+  const hasRestoredRef = useRef(false);
 
   // Background image input ref
   const bgInputRef = useRef<HTMLInputElement>(null);
@@ -226,6 +229,23 @@ const BingoCardsBuilderTab: React.FC = () => {
   const selectedEl = layout.elements.find((e) => e.id === selectedId) ?? null;
   const previewCard = cards[previewIndex] ?? null;
   const totalCards = sorteioAtivo?.quantidade_cartelas ?? cartelas.length ?? 10;
+
+  // ─── Restore saved cards from DB on mount ─────────────────────────────────
+  useEffect(() => {
+    if (hasRestoredRef.current) return;
+    const saved = cartelas
+      .filter(c => c.numeros_grade && c.numeros_grade.length === 25)
+      .sort((a, b) => a.numero - b.numero);
+    if (saved.length === 0) return;
+    hasRestoredRef.current = true;
+    setCards(
+      saved.map(c => {
+        const flat = c.numeros_grade!;
+        const grid = Array.from({ length: 5 }, (_, row) => flat.slice(row * 5, row * 5 + 5));
+        return { cartelaNumero: c.numero, grids: Array.from({ length: numeroPremios }, () => grid) };
+      }),
+    );
+  }, [cartelas, numeroPremios]);
 
   // ─── Layout helpers ────────────────────────────────────────────────────────
   const updateElement = useCallback((id: string, patch: Partial<CanvasElement>) => {
@@ -416,13 +436,7 @@ const BingoCardsBuilderTab: React.FC = () => {
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-2">
             <Label className="text-xs text-muted-foreground whitespace-nowrap">Prêmios:</Label>
-            <Input
-              type="number"
-              min={1} max={6} step={1}
-              value={numeroPremios}
-              onChange={(e) => setNumeroPremios(Math.max(1, Math.min(6, parseInt(e.target.value) || 1)))}
-              className="h-8 w-16 text-xs"
-            />
+            <span className="text-xs font-semibold text-foreground">{numeroPremios}</span>
           </div>
           <Button onClick={handleGenerate} variant="outline" className="gap-2" disabled={isSaving}>
             {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
