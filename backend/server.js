@@ -13,7 +13,7 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Basic-Auth'],
 }));
 
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 // Load database configuration from environment variables
 const dbConfig = {

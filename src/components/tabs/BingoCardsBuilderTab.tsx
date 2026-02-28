@@ -223,7 +223,14 @@ const BingoCardsBuilderTab: React.FC = () => {
   const [previewIndex, setPreviewIndex] = useState(0);
   const [isExporting, setIsExporting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const numeroPremios = Math.max(1, sorteioAtivo?.premios?.length ?? 1);
+  const [numeroPremios, setNumeroPremios] = useState(() => Math.max(1, sorteioAtivo?.premios?.length ?? 1));
+
+  // Sync numeroPremios when the active sorteio changes (intentionally only on id change,
+  // not premios.length, so user customisation within the same sorteio is preserved)
+  useEffect(() => {
+    setNumeroPremios(Math.max(1, sorteioAtivo?.premios?.length ?? 1));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sorteioAtivo?.id]);
 
   // Named layout management
   const [activeLayoutId, setActiveLayoutId] = useState<string | null>(null);
@@ -295,8 +302,27 @@ const BingoCardsBuilderTab: React.FC = () => {
     setSelectedId(id);
   };
 
+  const addBingoGridElement = () => {
+    const id = `bingo_grid_${Date.now()}`;
+    const existing = layout.elements.filter(e => e.type === 'bingo_grid');
+    const defaultGrid = DEFAULT_LAYOUT.elements.find(e => e.type === 'bingo_grid');
+    const ref = existing[existing.length - 1] ?? defaultGrid;
+    if (!ref) return;
+    const el: CanvasElement = {
+      ...ref,
+      id,
+      x: ref.x + 5,
+      y: ref.y + 5,
+    };
+    setLayout((prev) => ({ ...prev, elements: [...prev.elements, el] }));
+    setSelectedId(id);
+  };
+
   const deleteElement = (id: string) => {
-    if (id === 'card_number' || id === 'bingo_grid') return;
+    if (id === 'card_number') return;
+    // Prevent deleting the last bingo_grid element
+    if (layout.elements.find(e => e.id === id)?.type === 'bingo_grid' &&
+        layout.elements.filter(e => e.type === 'bingo_grid').length <= 1) return;
     setLayout((prev) => ({ ...prev, elements: prev.elements.filter((e) => e.id !== id) }));
     setSelectedId(null);
   };
@@ -524,7 +550,14 @@ const BingoCardsBuilderTab: React.FC = () => {
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-2">
             <Label className="text-xs text-muted-foreground whitespace-nowrap">Prêmios:</Label>
-            <span className="text-xs font-semibold text-foreground">{numeroPremios}</span>
+            <Input
+              type="number"
+              min={1}
+              max={20}
+              value={numeroPremios}
+              onChange={(e) => setNumeroPremios(Math.max(1, parseInt(e.target.value) || 1))}
+              className="w-16 h-7 text-xs"
+            />
           </div>
           <Button variant="outline" size="sm" className="gap-2" onClick={() => { loadCartelaLayouts(); setShowLayoutsList(true); }}>
             <List className="w-4 h-4" />
@@ -567,12 +600,20 @@ const BingoCardsBuilderTab: React.FC = () => {
             >
               <Type className="w-3.5 h-3.5" /> Número da Cartela
             </button>
-            <button
-              onClick={() => setSelectedId('bingo_grid')}
-              className={`w-full text-left px-2 py-1.5 rounded text-sm flex items-center gap-2 transition-colors ${selectedId === 'bingo_grid' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
-            >
-              <LayoutGrid className="w-3.5 h-3.5" /> Grade Bingo
-            </button>
+            {layout.elements
+              .filter((e) => e.type === 'bingo_grid')
+              .map((e, i) => (
+                <button
+                  key={e.id}
+                  onClick={() => setSelectedId(e.id)}
+                  className={`w-full text-left px-2 py-1.5 rounded text-sm flex items-center gap-2 transition-colors ${selectedId === e.id ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
+                >
+                  <LayoutGrid className="w-3.5 h-3.5" /> Grade Bingo {i + 1}
+                </button>
+              ))}
+            <Button size="sm" variant="outline" onClick={addBingoGridElement} className="w-full gap-1 h-7 text-xs">
+              <Plus className="w-3 h-3" /> Adicionar Grade Bingo
+            </Button>
             {layout.elements
               .filter((e) => e.type === 'text')
               .map((e) => (
@@ -776,10 +817,13 @@ const BingoCardsBuilderTab: React.FC = () => {
               <div className="flex items-center justify-between">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                   {selectedEl.type === 'card_number' && 'Número da Cartela'}
-                  {selectedEl.type === 'bingo_grid' && 'Grade Bingo'}
+                  {selectedEl.type === 'bingo_grid' && (() => {
+                    const idx = layout.elements.filter(e => e.type === 'bingo_grid').findIndex(e => e.id === selectedEl.id);
+                    return `Grade Bingo ${idx + 1}`;
+                  })()}
                   {selectedEl.type === 'text' && 'Texto'}
                 </p>
-                {selectedEl.type === 'text' && (
+                {(selectedEl.type === 'text' || (selectedEl.type === 'bingo_grid' && layout.elements.filter(e => e.type === 'bingo_grid').length > 1)) && (
                   <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive"
                     onClick={() => deleteElement(selectedEl.id)}>
                     <Trash2 className="w-3.5 h-3.5" />
