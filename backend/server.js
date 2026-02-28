@@ -1484,7 +1484,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
 
         let sessionParams = {
           mode: 'payment',
-          success_url: `${baseUrl}/`,
+          success_url: `${baseUrl}/admin`,
           cancel_url: `${baseUrl}/planos`,
           metadata: { user_id: data.authenticated_user_id, plano_id: plano.id },
           client_reference_id: data.authenticated_user_id,

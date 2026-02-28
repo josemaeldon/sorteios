@@ -33,6 +33,7 @@ services:
       # WARNING: Change this password to match your database password
       DB_PASSWORD: postgres
       PORT: 3001
+      APP_URL: http://localhost
       # WARNING: Change these credentials for production deployments
       BASIC_AUTH_USER: admin
       BASIC_AUTH_PASS: admin
