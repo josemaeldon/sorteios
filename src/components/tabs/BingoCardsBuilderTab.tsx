@@ -251,7 +251,7 @@ const BingoCardsBuilderTab: React.FC = () => {
     sorteioAtivo, cartelas, salvarNumerosCartelas,
     vendedores,
     cartelaLayouts, loadCartelaLayouts, saveCartelaLayout, updateCartelaLayout, deleteCartelaLayout,
-    lojaCartelas, loadMinhaLoja, adicionarCartelaLoja, removerCartelaLoja, atualizarPrecoLojaCartela,
+    lojaCartelas, loadMinhaLoja, adicionarCartelaLoja, removerCartelaLoja, removerMultiplasCartelasLoja, atualizarPrecoLojaCartela,
   } = useBingo();
   const { user } = useAuth();
   const { toast } = useToast();
@@ -277,6 +277,8 @@ const BingoCardsBuilderTab: React.FC = () => {
   const [showMinhaLojaDialog, setShowMinhaLojaDialog] = useState(false);
   const [editingPrecoId, setEditingPrecoId] = useState<string | null>(null);
   const [editingPrecoValor, setEditingPrecoValor] = useState('');
+  const [selectedLojaIds, setSelectedLojaIds] = useState<Set<string>>(new Set());
+  const [isDeletingLoja, setIsDeletingLoja] = useState(false);
 
   // Bulk publish state
   const [showBulkVenderModal, setShowBulkVenderModal] = useState(false);
@@ -747,7 +749,7 @@ const BingoCardsBuilderTab: React.FC = () => {
           Array.from({ length: 5 }, (_, row) => flat.slice(row * 5, row * 5 + 5))
         );
         const cardGrid: BingoCardGrid = { cartelaNumero: c.numero, grids };
-        await adicionarCartelaLoja(activeLayoutId, c.numero, preco, JSON.stringify(cardGrid), JSON.stringify(layout));
+        await adicionarCartelaLoja(activeLayoutId, c.numero, preco, JSON.stringify(cardGrid), JSON.stringify(layout), vendedorLojaId);
         added++;
         setVendedorLojaProgress(Math.round((added / vendorCartelas.length) * 100));
       }
@@ -774,6 +776,21 @@ const BingoCardsBuilderTab: React.FC = () => {
       setEditingPrecoId(null);
     } catch {
       toast({ title: 'Erro ao atualizar preço', variant: 'destructive' });
+    }
+  };
+
+  const handleExcluirSelecionadas = async () => {
+    const ids = Array.from(selectedLojaIds);
+    if (ids.length === 0) return;
+    setIsDeletingLoja(true);
+    try {
+      await removerMultiplasCartelasLoja(ids);
+      setSelectedLojaIds(new Set());
+      toast({ title: `${ids.length} cartela${ids.length !== 1 ? 's' : ''} removida${ids.length !== 1 ? 's' : ''} da loja.` });
+    } catch (err: any) {
+      toast({ title: err.message || 'Erro ao remover cartelas', variant: 'destructive' });
+    } finally {
+      setIsDeletingLoja(false);
     }
   };
 
@@ -1581,7 +1598,7 @@ const BingoCardsBuilderTab: React.FC = () => {
       </Dialog>
 
       {/* ── Minha Loja dialog ── */}
-      <Dialog open={showMinhaLojaDialog} onOpenChange={setShowMinhaLojaDialog}>
+      <Dialog open={showMinhaLojaDialog} onOpenChange={(open) => { setShowMinhaLojaDialog(open); if (!open) setSelectedLojaIds(new Set()); }}>
         <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -1609,52 +1626,92 @@ const BingoCardsBuilderTab: React.FC = () => {
                 Nenhuma cartela na loja. Acesse a Prévia e clique em "Disponibilizar para Venda".
               </div>
             ) : (
-              <div className="space-y-2">
-                {lojaCartelas.map((lc) => (
-                  <div key={lc.id} className="flex items-center gap-3 p-3 border border-border rounded-lg bg-card">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium">Cartela {lc.numero_cartela.toString().padStart(3, '0')}</p>
-                      {lc.card_set_nome && <p className="text-xs text-muted-foreground truncate">{lc.card_set_nome}</p>}
-                      {lc.status === 'vendida' && lc.comprador_nome && (
-                        <p className="text-xs text-green-600 font-medium">Vendida para: {lc.comprador_nome}</p>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {lc.status === 'disponivel' ? (
-                        editingPrecoId === lc.id ? (
-                          <div className="flex items-center gap-1">
-                            <Input
-                              type="number" min="0" step="0.01"
-                              value={editingPrecoValor}
-                              onChange={(e) => setEditingPrecoValor(e.target.value)}
-                              className="h-7 w-24 text-xs"
-                            />
-                            <Button size="sm" className="h-7 text-xs" onClick={() => handleSalvarPrecoEdicao(lc.id)}>OK</Button>
-                            <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => setEditingPrecoId(null)} aria-label="Cancelar edição"><X className="w-3 h-3" /></Button>
-                          </div>
+              <>
+                {/* Bulk actions toolbar */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    className="text-xs text-primary hover:underline"
+                    onClick={() => setSelectedLojaIds(new Set(lojaCartelas.map(c => c.id)))}
+                  >
+                    Selecionar todas
+                  </button>
+                  <span className="text-xs text-muted-foreground">|</span>
+                  <button
+                    className="text-xs text-muted-foreground hover:underline"
+                    onClick={() => setSelectedLojaIds(new Set())}
+                  >
+                    Desmarcar todas
+                  </button>
+                  {selectedLojaIds.size > 0 && (
+                    <Button
+                      size="sm" variant="destructive" className="h-7 text-xs gap-1 ml-auto"
+                      onClick={handleExcluirSelecionadas}
+                      disabled={isDeletingLoja}
+                    >
+                      {isDeletingLoja ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                      Excluir selecionadas ({selectedLojaIds.size})
+                    </Button>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  {lojaCartelas.map((lc) => (
+                    <div key={lc.id} className={`flex items-center gap-3 p-3 border rounded-lg bg-card ${selectedLojaIds.has(lc.id) ? 'border-primary ring-1 ring-primary' : 'border-border'}`}>
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 accent-primary flex-shrink-0"
+                        checked={selectedLojaIds.has(lc.id)}
+                        onChange={(e) => {
+                          setSelectedLojaIds(prev => {
+                            const next = new Set(prev);
+                            if (e.target.checked) next.add(lc.id); else next.delete(lc.id);
+                            return next;
+                          });
+                        }}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium">Cartela {lc.numero_cartela.toString().padStart(3, '0')}</p>
+                        {lc.card_set_nome && <p className="text-xs text-muted-foreground truncate">{lc.card_set_nome}</p>}
+                        {lc.status === 'vendida' && lc.comprador_nome && (
+                          <p className="text-xs text-green-600 font-medium">Vendida para: {lc.comprador_nome}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {lc.status === 'disponivel' ? (
+                          editingPrecoId === lc.id ? (
+                            <div className="flex items-center gap-1">
+                              <Input
+                                type="number" min="0" step="0.01"
+                                value={editingPrecoValor}
+                                onChange={(e) => setEditingPrecoValor(e.target.value)}
+                                className="h-7 w-24 text-xs"
+                              />
+                              <Button size="sm" className="h-7 text-xs" onClick={() => handleSalvarPrecoEdicao(lc.id)}>OK</Button>
+                              <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => setEditingPrecoId(null)} aria-label="Cancelar edição"><X className="w-3 h-3" /></Button>
+                            </div>
+                          ) : (
+                            <button
+                              className="text-sm font-semibold text-primary hover:underline flex items-center gap-1"
+                              onClick={() => { setEditingPrecoId(lc.id); setEditingPrecoValor(String(lc.preco)); }}
+                            >
+                              <DollarSign className="w-3 h-3" />
+                              R$ {Number(lc.preco).toFixed(2).replace('.', ',')}
+                              <Edit2 className="w-3 h-3" />
+                            </button>
+                          )
                         ) : (
-                          <button
-                            className="text-sm font-semibold text-primary hover:underline flex items-center gap-1"
-                            onClick={() => { setEditingPrecoId(lc.id); setEditingPrecoValor(String(lc.preco)); }}
-                          >
-                            <DollarSign className="w-3 h-3" />
-                            R$ {Number(lc.preco).toFixed(2).replace('.', ',')}
-                            <Edit2 className="w-3 h-3" />
-                          </button>
-                        )
-                      ) : (
-                        <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full border border-green-200">Vendida</span>
-                      )}
-                      <Button
-                        size="icon" variant="ghost" className="h-7 w-7 text-destructive"
-                        onClick={() => removerCartelaLoja(lc.id)}
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </Button>
+                          <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full border border-green-200">Vendida</span>
+                        )}
+                        <Button
+                          size="icon" variant="ghost" className="h-7 w-7 text-destructive"
+                          onClick={() => removerCartelaLoja(lc.id)}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              </>
             )}
           </div>
         </DialogContent>
