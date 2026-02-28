@@ -10,6 +10,18 @@ export interface User {
   avatar_url?: string;
   created_at: string;
   updated_at?: string;
+  plano_id?: string | null;
+  gratuidade_vitalicia?: boolean;
+}
+
+export interface Plan {
+  id: string;
+  nome: string;
+  valor: number;
+  descricao?: string;
+  ativo: boolean;
+  created_at: string;
+  updated_at?: string;
 }
 
 export interface AuthState {

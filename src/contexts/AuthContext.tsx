@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
-import { User, AuthState, LoginCredentials, CreateUserData } from '@/types/auth';
+import { User, AuthState, LoginCredentials, CreateUserData, Plan } from '@/types/auth';
 import { callApi, getStoredToken, setStoredToken, clearStoredToken, isSelfhostedMode } from '@/lib/apiClient';
 import { useToast } from '@/hooks/use-toast';
 
@@ -18,6 +18,14 @@ interface AuthContextType extends AuthState {
   getSorteioUsers: (sorteioId: string) => Promise<{ data: User[]; owner_id: string }>;
   assignSorteioToUser: (sorteioId: string, userId: string) => Promise<{ success: boolean; error?: string }>;
   removeUserFromSorteio: (sorteioId: string, userId: string) => Promise<{ success: boolean; error?: string }>;
+  getPlanos: () => Promise<Plan[]>;
+  createPlano: (data: { nome: string; valor: number; descricao?: string }) => Promise<{ success: boolean; error?: string }>;
+  updatePlano: (id: string, data: { nome: string; valor: number; descricao?: string }) => Promise<{ success: boolean; error?: string }>;
+  deletePlano: (id: string) => Promise<{ success: boolean; error?: string }>;
+  assignUserPlan: (userId: string, planoId: string | null) => Promise<{ success: boolean; error?: string }>;
+  grantLifetimeAccess: (userId: string, grant: boolean) => Promise<{ success: boolean; error?: string }>;
+  getConfiguracoes: () => Promise<Record<string, string>>;
+  updateConfiguracoes: (config: Record<string, string>) => Promise<{ success: boolean; error?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -288,6 +296,115 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [user]);
 
+  const getPlanos = useCallback(async (): Promise<Plan[]> => {
+    if (user?.role !== 'admin') return [];
+    try {
+      const result = await callApi('getPlanos');
+      return result.data || [];
+    } catch (error) {
+      console.error('Get planos error:', error);
+      return [];
+    }
+  }, [user]);
+
+  const createPlano = useCallback(async (data: { nome: string; valor: number; descricao?: string }) => {
+    if (user?.role !== 'admin') return { success: false, error: 'Apenas administradores' };
+    try {
+      const result = await callApi('createPlano', data);
+      if (result.data) {
+        toast({ title: 'Plano criado', description: `${result.data.nome} foi criado com sucesso.` });
+        return { success: true };
+      }
+      return { success: false, error: result.error || 'Erro ao criar plano' };
+    } catch (error: any) {
+      return { success: false, error: error.message || 'Erro ao criar plano' };
+    }
+  }, [user, toast]);
+
+  const updatePlano = useCallback(async (id: string, data: { nome: string; valor: number; descricao?: string }) => {
+    if (user?.role !== 'admin') return { success: false, error: 'Apenas administradores' };
+    try {
+      const result = await callApi('updatePlano', { id, ...data });
+      if (result.data) {
+        toast({ title: 'Plano atualizado', description: 'As alterações foram salvas.' });
+        return { success: true };
+      }
+      return { success: false, error: result.error || 'Erro ao atualizar plano' };
+    } catch (error: any) {
+      return { success: false, error: error.message || 'Erro ao atualizar plano' };
+    }
+  }, [user, toast]);
+
+  const deletePlano = useCallback(async (id: string) => {
+    if (user?.role !== 'admin') return { success: false, error: 'Apenas administradores' };
+    try {
+      const result = await callApi('deletePlano', { id });
+      if (result.success) {
+        toast({ title: 'Plano excluído', description: 'O plano foi removido do sistema.' });
+        return { success: true };
+      }
+      return { success: false, error: result.error || 'Erro ao excluir plano' };
+    } catch (error: any) {
+      return { success: false, error: error.message || 'Erro ao excluir plano' };
+    }
+  }, [user, toast]);
+
+  const assignUserPlan = useCallback(async (userId: string, planoId: string | null) => {
+    if (user?.role !== 'admin') return { success: false, error: 'Apenas administradores' };
+    try {
+      const result = await callApi('assignUserPlan', { user_id: userId, plano_id: planoId });
+      if (result.success) {
+        toast({ title: 'Plano atribuído', description: 'O plano foi atribuído ao usuário.' });
+        return { success: true };
+      }
+      return { success: false, error: result.error || 'Erro ao atribuir plano' };
+    } catch (error: any) {
+      return { success: false, error: error.message || 'Erro ao atribuir plano' };
+    }
+  }, [user, toast]);
+
+  const grantLifetimeAccess = useCallback(async (userId: string, grant: boolean) => {
+    if (user?.role !== 'admin') return { success: false, error: 'Apenas administradores' };
+    try {
+      const result = await callApi('grantLifetimeAccess', { user_id: userId, gratuidade_vitalicia: grant });
+      if (result.success) {
+        toast({
+          title: grant ? 'Gratuidade vitalícia concedida' : 'Gratuidade vitalícia removida',
+          description: grant ? 'O usuário agora tem acesso vitalício gratuito.' : 'O acesso vitalício foi removido.',
+        });
+        return { success: true };
+      }
+      return { success: false, error: result.error || 'Erro ao alterar gratuidade' };
+    } catch (error: any) {
+      return { success: false, error: error.message || 'Erro ao alterar gratuidade' };
+    }
+  }, [user, toast]);
+
+  const getConfiguracoes = useCallback(async (): Promise<Record<string, string>> => {
+    if (user?.role !== 'admin') return {};
+    try {
+      const result = await callApi('getConfiguracoes');
+      return result.data || {};
+    } catch (error) {
+      console.error('Get configuracoes error:', error);
+      return {};
+    }
+  }, [user]);
+
+  const updateConfiguracoes = useCallback(async (config: Record<string, string>) => {
+    if (user?.role !== 'admin') return { success: false, error: 'Apenas administradores' };
+    try {
+      const result = await callApi('updateConfiguracoes', { config });
+      if (result.success) {
+        toast({ title: 'Configurações salvas', description: 'As configurações foram atualizadas.' });
+        return { success: true };
+      }
+      return { success: false, error: result.error || 'Erro ao salvar configurações' };
+    } catch (error: any) {
+      return { success: false, error: error.message || 'Erro ao salvar configurações' };
+    }
+  }, [user, toast]);
+
   const value: AuthContextType = {
     user,
     isLoading,
@@ -306,6 +423,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     getSorteioUsers,
     assignSorteioToUser,
     removeUserFromSorteio,
+    getPlanos,
+    createPlano,
+    updatePlano,
+    deletePlano,
+    assignUserPlan,
+    grantLifetimeAccess,
+    getConfiguracoes,
+    updateConfiguracoes,
   };
 
   return (

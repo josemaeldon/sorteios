@@ -76,6 +76,43 @@ async function initSchema() {
             UNIQUE KEY uq_validada_sorteio_numero (sorteio_id, numero)
           )
         `);
+        // Create planos table (MySQL)
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS planos (
+            id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+            nome VARCHAR(255) NOT NULL,
+            valor DECIMAL(10,2) NOT NULL DEFAULT 0,
+            descricao TEXT,
+            ativo TINYINT(1) NOT NULL DEFAULT 1,
+            created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+            updated_at TIMESTAMP DEFAULT NOW() ON UPDATE NOW() NOT NULL
+          )
+        `);
+        // Create configuracoes table (MySQL)
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS configuracoes (
+            chave VARCHAR(100) PRIMARY KEY,
+            valor TEXT,
+            updated_at TIMESTAMP DEFAULT NOW() ON UPDATE NOW() NOT NULL
+          )
+        `);
+        // Add plano_id and gratuidade_vitalicia to usuarios (MySQL)
+        try {
+          await client.query(`ALTER TABLE usuarios ADD COLUMN plano_id CHAR(36)`);
+        } catch (e) {
+          if (!e.message || !e.message.includes('Duplicate column')) {
+            console.warn('Could not add plano_id column (unexpected error):', e.message);
+          }
+          // 'Duplicate column' means it already exists — silently continue
+        }
+        try {
+          await client.query(`ALTER TABLE usuarios ADD COLUMN gratuidade_vitalicia TINYINT(1) NOT NULL DEFAULT 0`);
+        } catch (e) {
+          if (!e.message || !e.message.includes('Duplicate column')) {
+            console.warn('Could not add gratuidade_vitalicia column (unexpected error):', e.message);
+          }
+          // 'Duplicate column' means it already exists — silently continue
+        }
       } else {
         await client.query(`
           CREATE TABLE IF NOT EXISTS public.sorteio_compartilhado (
@@ -113,6 +150,29 @@ async function initSchema() {
             UNIQUE(sorteio_id, numero)
           )
         `);
+        // Create planos table (PostgreSQL)
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS public.planos (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            nome VARCHAR(255) NOT NULL,
+            valor NUMERIC(10,2) NOT NULL DEFAULT 0,
+            descricao TEXT,
+            ativo BOOLEAN NOT NULL DEFAULT true,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
+          )
+        `);
+        // Create configuracoes table (PostgreSQL)
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS public.configuracoes (
+            chave VARCHAR(100) PRIMARY KEY,
+            valor TEXT,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
+          )
+        `);
+        // Add plano_id and gratuidade_vitalicia to usuarios (PostgreSQL)
+        await client.query(`ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS plano_id UUID REFERENCES public.planos(id) ON DELETE SET NULL`);
+        await client.query(`ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS gratuidade_vitalicia BOOLEAN NOT NULL DEFAULT false`);
       }
       console.log('Schema initialized: sorteio_compartilhado table ready');
     } finally {
@@ -243,7 +303,7 @@ function checkBasicAuth(req, res, next) {
 // JWT Auth middleware
 async function checkAuth(req, action) {
   const publicActions = ['checkFirstAccess', 'setupAdmin', 'login'];
-  const adminActions = ['getUsers', 'createUser', 'updateUser', 'deleteUser', 'getAllSorteiosAdmin', 'assignSorteioToUser', 'removeUserFromSorteio', 'getSorteioUsers'];
+  const adminActions = ['getUsers', 'createUser', 'updateUser', 'deleteUser', 'getAllSorteiosAdmin', 'assignSorteioToUser', 'removeUserFromSorteio', 'getSorteioUsers', 'getPlanos', 'createPlano', 'updatePlano', 'deletePlano', 'assignUserPlan', 'grantLifetimeAccess', 'getConfiguracoes', 'updateConfiguracoes'];
   
   if (publicActions.includes(action)) {
     return { authenticated: true, user: null };
@@ -353,7 +413,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
 
       case 'getUsers':
         result = await client.query(`
-          SELECT id, email, nome, role, ativo, titulo_sistema, avatar_url, created_at, updated_at 
+          SELECT id, email, nome, role, ativo, titulo_sistema, avatar_url, created_at, updated_at, plano_id, gratuidade_vitalicia 
           FROM usuarios ORDER BY nome
         `);
         return res.json({ users: result.rows });
@@ -1257,6 +1317,71 @@ app.post('/api', checkBasicAuth, async (req, res) => {
       case 'deleteCartelaLayout':
         await client.query('DELETE FROM bingo_card_sets WHERE id = $1', [data.id]);
         return res.json({ data: [{ success: true }] });
+
+      // ================== PLANOS ==================
+      case 'getPlanos':
+        result = await client.query('SELECT * FROM planos ORDER BY valor ASC');
+        return res.json({ data: result.rows });
+
+      case 'createPlano': {
+        result = await client.query(
+          `INSERT INTO planos (nome, valor, descricao) VALUES ($1, $2, $3) RETURNING *`,
+          [data.nome, data.valor || 0, data.descricao || null]
+        );
+        return res.json({ data: result.rows[0] });
+      }
+
+      case 'updatePlano': {
+        result = await client.query(
+          `UPDATE planos SET nome = $2, valor = $3, descricao = $4, updated_at = NOW() WHERE id = $1 RETURNING *`,
+          [data.id, data.nome, data.valor || 0, data.descricao || null]
+        );
+        return res.json({ data: result.rows[0] });
+      }
+
+      case 'deletePlano':
+        await client.query('DELETE FROM planos WHERE id = $1', [data.id]);
+        return res.json({ success: true });
+
+      case 'assignUserPlan':
+        await client.query(
+          'UPDATE usuarios SET plano_id = $2, updated_at = NOW() WHERE id = $1',
+          [data.user_id, data.plano_id || null]
+        );
+        return res.json({ success: true });
+
+      case 'grantLifetimeAccess':
+        await client.query(
+          'UPDATE usuarios SET gratuidade_vitalicia = $2, updated_at = NOW() WHERE id = $1',
+          [data.user_id, data.gratuidade_vitalicia ? true : false]
+        );
+        return res.json({ success: true });
+
+      // ================== CONFIGURACOES ==================
+      case 'getConfiguracoes': {
+        result = await client.query('SELECT chave, valor FROM configuracoes');
+        const config = {};
+        result.rows.forEach(row => { config[row.chave] = row.valor; });
+        return res.json({ data: config });
+      }
+
+      case 'updateConfiguracoes': {
+        const entries = Object.entries(data.config || {});
+        for (const [chave, valor] of entries) {
+          if (dbConfig.type === 'mysql') {
+            await client.query(
+              `INSERT INTO configuracoes (chave, valor) VALUES (?, ?) ON DUPLICATE KEY UPDATE valor = VALUES(valor), updated_at = NOW()`,
+              [chave, valor]
+            );
+          } else {
+            await client.query(
+              `INSERT INTO configuracoes (chave, valor) VALUES ($1, $2) ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor, updated_at = NOW()`,
+              [chave, valor]
+            );
+          }
+        }
+        return res.json({ success: true });
+      }
 
       default:
         return res.status(400).json({ error: `Unknown action: ${action}` });
