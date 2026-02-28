@@ -495,7 +495,7 @@ const DrawTab: React.FC = () => {
     // Sort descending by score
     scored.sort((a, b) => b.score - a.score);
 
-    // Find top-20 distinct score levels, grouping ties
+    // Find top-10 distinct score levels, grouping ties
     const result: { score: number; cartelas: { numero: number; nome?: string }[] }[] = [];
     for (const { numero, score, nome } of scored) {
       if (score === 0) continue;
@@ -503,7 +503,7 @@ const DrawTab: React.FC = () => {
       if (existing) {
         existing.cartelas.push({ numero, nome });
       } else {
-        if (result.length < 20) {
+        if (result.length < 10) {
           result.push({ score, cartelas: [{ numero, nome }] });
         }
       }
@@ -726,7 +726,7 @@ const DrawTab: React.FC = () => {
                       <div className="w-96 flex-shrink-0 bg-card rounded-lg p-6">
                         <h3 className="text-2xl font-bold flex items-center gap-2 mb-4">
                           <Trophy className="w-6 h-6 text-yellow-500" />
-                          Top 20 Cartelas
+                          Top 10 Cartelas
                         </h3>
                         <div className="space-y-3">
                           {topScoringCartelas.map((entry, idx) => (
@@ -879,7 +879,7 @@ const DrawTab: React.FC = () => {
                 <CardHeader className="pb-3">
                   <CardTitle className="flex items-center gap-2">
                     <Trophy className="w-5 h-5 text-yellow-500" />
-                    Top 20 Cartelas
+                    Top 10 Cartelas
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
