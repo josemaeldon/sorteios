@@ -85,6 +85,7 @@ const DrawTab: React.FC = () => {
   const [isVerifying, setIsVerifying] = useState(false);
   const [selectedCartelaModal, setSelectedCartelaModal] = useState<{ numero: number; nome?: string; grade: number[] } | null>(null);
   const [ganhadoresPop, setGanhadoresPop] = useState<{ numero: number; nome?: string; lote?: number }[]>([]);
+  const [manualNumberInput, setManualNumberInput] = useState('');
   
   const animationIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const fullscreenRef = useRef<HTMLDivElement>(null);
@@ -435,6 +436,39 @@ const DrawTab: React.FC = () => {
     ganhadoresPopShownRef.current.clear();
   };
 
+  const addManualNumber = async () => {
+    const num = parseInt(manualNumberInput, 10);
+    if (isNaN(num)) return;
+    if (!selectedRodada) return;
+    if (num < selectedRodada.range_start || num > selectedRodada.range_end) {
+      toast({ title: 'Número fora da faixa', description: `O número deve estar entre ${selectedRodada.range_start} e ${selectedRodada.range_end}.`, variant: 'destructive' });
+      return;
+    }
+    if (drawnNumbers.includes(num)) {
+      toast({ title: 'Número já sorteado', description: `O número ${num} já foi chamado.`, variant: 'destructive' });
+      return;
+    }
+    const newDrawnNumbers = [...drawnNumbers, num];
+    setDrawnNumbers(newDrawnNumbers);
+    setCurrentNumber(num);
+    setManualNumberInput('');
+    await saveDrawnNumber(num, newDrawnNumbers.length);
+  };
+
+  const removeDrawnNumber = async (num: number) => {
+    if (!selectedRodada) return;
+    try {
+      await callApi('deleteRodadaNumero', { rodada_id: selectedRodada.id, numero_sorteado: num });
+      const newDrawnNumbers = drawnNumbers.filter(n => n !== num);
+      setDrawnNumbers(newDrawnNumbers);
+      if (currentNumber === num) {
+        setCurrentNumber(newDrawnNumbers.length > 0 ? newDrawnNumbers[newDrawnNumbers.length - 1] : null);
+      }
+    } catch (error: any) {
+      toast({ title: 'Erro ao excluir número', description: error.message, variant: 'destructive' });
+    }
+  };
+
   const handleVerificarVencedor = async () => {
     if (!sorteioAtivo || drawnNumbers.length === 0) return;
     setIsVerifying(true);
@@ -615,6 +649,30 @@ const DrawTab: React.FC = () => {
               <RotateCcw className="w-5 h-5" />
               Reiniciar
             </Button>
+            <div className="flex gap-2 items-center">
+              <Input
+                type="number"
+                value={manualNumberInput}
+                onChange={(e) => setManualNumberInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') addManualNumber(); }}
+                placeholder="Nº manual"
+                className="w-28 h-11"
+                min={selectedRodada.range_start}
+                max={selectedRodada.range_end}
+                disabled={isDrawing}
+              />
+              <Button
+                onClick={addManualNumber}
+                disabled={isDrawing || !manualNumberInput}
+                size="lg"
+                variant="outline"
+                className="gap-2"
+                title="Adicionar número manualmente"
+              >
+                <Plus className="w-5 h-5" />
+                Adicionar
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -704,19 +762,23 @@ const DrawTab: React.FC = () => {
                             </span>
                           </div>
                           <div className="flex flex-wrap gap-3 max-h-[200px] overflow-y-auto">
-                            {[...drawnNumbers].sort((a, b) => a - b).map((num) => (
-                              <div
-                                key={num}
-                                className={cn(
-                                  "flex items-center justify-center w-20 h-20 rounded-lg font-bold text-2xl border-2 transition-all duration-300",
-                                  num === currentNumber && !isDrawing
-                                    ? "bg-primary text-primary-foreground border-primary scale-110"
-                                    : "bg-muted text-foreground border-border"
-                                )}
-                              >
-                                {num}
-                              </div>
-                            ))}
+                            {(() => {
+                              const orderMap = new Map(drawnNumbers.map((n, i) => [n, i + 1]));
+                              return [...drawnNumbers].sort((a, b) => a - b).map((num) => (
+                                <div
+                                  key={num}
+                                  className={cn(
+                                    "relative flex items-center justify-center w-20 h-20 rounded-lg font-bold text-2xl border-2 transition-all duration-300",
+                                    num === currentNumber && !isDrawing
+                                      ? "bg-primary text-primary-foreground border-primary scale-110"
+                                      : "bg-muted text-foreground border-border"
+                                  )}
+                                >
+                                  <span className="absolute top-1 left-1.5 text-[10px] font-normal opacity-50 leading-none">{orderMap.get(num)}º</span>
+                                  {num}
+                                </div>
+                              ));
+                            })()}
                           </div>
                         </div>
                       )}
@@ -790,19 +852,31 @@ const DrawTab: React.FC = () => {
               </CardHeader>
               <CardContent>
                 <div className="flex flex-wrap gap-2">
-                  {[...drawnNumbers].sort((a, b) => a - b).map((num) => (
-                    <div
-                      key={num}
-                      className={cn(
-                        "flex items-center justify-center w-16 h-16 rounded-lg font-bold text-xl border-2 transition-all duration-300",
-                        num === currentNumber && !isDrawing
-                          ? "bg-primary text-primary-foreground border-primary scale-110"
-                          : "bg-muted text-foreground border-border"
-                      )}
-                    >
-                      {num}
-                    </div>
-                  ))}
+                  {(() => {
+                    const orderMap = new Map(drawnNumbers.map((n, i) => [n, i + 1]));
+                    return [...drawnNumbers].sort((a, b) => a - b).map((num) => (
+                      <div
+                        key={num}
+                        className={cn(
+                          "relative flex items-center justify-center w-16 h-16 rounded-lg font-bold text-xl border-2 transition-all duration-300 group",
+                          num === currentNumber && !isDrawing
+                            ? "bg-primary text-primary-foreground border-primary scale-110"
+                            : "bg-muted text-foreground border-border"
+                        )}
+                      >
+                        <span className="absolute top-0.5 left-1 text-[9px] font-normal opacity-50 leading-none">{orderMap.get(num)}º</span>
+                        {num}
+                        <button
+                          onClick={() => removeDrawnNumber(num)}
+                          disabled={isDrawing}
+                          className="absolute -top-1.5 -right-1.5 hidden group-hover:flex items-center justify-center w-4 h-4 rounded-full bg-destructive text-destructive-foreground text-[9px] leading-none shadow"
+                          title={`Excluir número ${num}`}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ));
+                  })()}
                 </div>
               </CardContent>
             </Card>

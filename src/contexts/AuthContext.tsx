@@ -435,7 +435,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, []);
 
   const refreshUser = useCallback(async () => {
-    if (!user) return;
+    if (!getStoredToken()) return;
     try {
       const result = await callApi('getMyProfile');
       if (result.user) {
@@ -445,7 +445,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } catch (error) {
       console.error('Refresh user error:', error);
     }
-  }, [user]);
+  }, []);
 
   const value: AuthContextType = {
     user,
