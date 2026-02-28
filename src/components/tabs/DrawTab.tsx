@@ -50,6 +50,7 @@ const ANIMATION_INTERVAL_MS = 100;
 const FULLSCREEN_FONT_SIZE_DEFAULT = 300;
 const WINNING_SCORE = 25;
 const Z_INDEX_WINNER_POPUP = 9999;
+const LOTE_SIZE = 50;
 
 const DrawTab: React.FC = () => {
   const { sorteioAtivo, cartelas, cartelasValidadas, loadCartelasValidadas } = useBingo();
@@ -83,7 +84,7 @@ const DrawTab: React.FC = () => {
   const [vencedoras, setVencedoras] = useState<number[]>([]);
   const [isVerifying, setIsVerifying] = useState(false);
   const [selectedCartelaModal, setSelectedCartelaModal] = useState<{ numero: number; nome?: string; grade: number[] } | null>(null);
-  const [ganhadoresPop, setGanhadoresPop] = useState<{ numero: number; nome?: string }[]>([]);
+  const [ganhadoresPop, setGanhadoresPop] = useState<{ numero: number; nome?: string; lote?: number }[]>([]);
   
   const animationIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const fullscreenRef = useRef<HTMLDivElement>(null);
@@ -516,7 +517,10 @@ const DrawTab: React.FC = () => {
       const newWinners = winnerEntry.cartelas.filter(c => !ganhadoresPopShownRef.current.has(c.numero));
       if (newWinners.length > 0) {
         newWinners.forEach(c => ganhadoresPopShownRef.current.add(c.numero));
-        setGanhadoresPop(winnerEntry.cartelas);
+        setGanhadoresPop(winnerEntry.cartelas.map(c => {
+          const idx = cartelasValidadas.findIndex(cv => cv.numero === c.numero);
+          return { ...c, lote: idx !== -1 ? Math.floor(idx / LOTE_SIZE) + 1 : undefined };
+        }));
       }
     }
   }, [topScoringCartelas]);
@@ -759,9 +763,9 @@ const DrawTab: React.FC = () => {
                   <h2 className="text-4xl font-black mb-2">Temos um Ganhador! 🎉</h2>
                   <p className="text-muted-foreground mb-6">Cartela(s) com todos os números sorteados</p>
                   <div className="space-y-2 mb-8">
-                    {ganhadoresPop.map(({ numero, nome }) => (
+                    {ganhadoresPop.map(({ numero, nome, lote }) => (
                       <div key={numero} className="text-2xl font-bold text-primary">
-                        Cartela {numero.toString().padStart(3, '0')}{nome ? ` - ${nome}` : ''}
+                        Cartela {numero.toString().padStart(3, '0')}{nome ? ` - ${nome}` : ''}{lote !== undefined ? ` · Lote ${lote}` : ''}
                       </div>
                     ))}
                   </div>
@@ -845,31 +849,32 @@ const DrawTab: React.FC = () => {
             </Card>
           </div>
 
-          {/* Winner results */}
-          {vencedoras.length > 0 && (
-            <Card className="border-2 border-success">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-success flex items-center gap-2">
-                  <CheckCircle className="w-5 h-5" />
-                  Cartela(s) com todos os números sorteados!
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-wrap gap-3">
-                  {vencedoras.map((num) => (
-                    <div key={num} className="px-4 py-2 rounded-lg bg-success/10 border border-success text-success font-bold text-xl">
-                      Cartela {num.toString().padStart(3, '0')}
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
           </div>
 
-          {/* Top 10 scoring cartelas - RIGHT SIDEBAR */}
-          {topScoringCartelas.length > 0 && (
+          {/* RIGHT SIDEBAR */}
+          {(topScoringCartelas.length > 0 || vencedoras.length > 0) && (
             <div className="w-80 flex-shrink-0">
+              {/* Winner results */}
+              {vencedoras.length > 0 && (
+                <Card className="border-2 border-success mb-4">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-success flex items-center gap-2">
+                      <CheckCircle className="w-5 h-5" />
+                      Cartela(s) Vencedoras
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex flex-wrap gap-3">
+                      {vencedoras.map((num) => (
+                        <div key={num} className="px-4 py-2 rounded-lg bg-success/10 border border-success text-success font-bold text-xl">
+                          Cartela {num.toString().padStart(3, '0')}
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+              {topScoringCartelas.length > 0 && (
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="flex items-center gap-2">
@@ -900,6 +905,7 @@ const DrawTab: React.FC = () => {
                   </div>
                 </CardContent>
               </Card>
+              )}
             </div>
           )}
         </div>
