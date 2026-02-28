@@ -83,6 +83,31 @@ const GridEditor: React.FC<{
 );
 
 // ─── Main component ───────────────────────────────────────────────────────────
+
+/** Parse a validation input string that can contain ranges (1-50), single numbers (42),
+ *  and comma-separated combinations (1-5,10,15-20). Returns sorted unique numbers. */
+const parseValidacaoInput = (input: string): number[] | null => {
+  const parts = input.split(',').map(p => p.trim()).filter(Boolean);
+  if (parts.length === 0) return null;
+  const nums: number[] = [];
+  for (const part of parts) {
+    const rangeMatch = part.match(/^(\d+)\s*-\s*(\d+)$/);
+    if (rangeMatch) {
+      const from = parseInt(rangeMatch[1]);
+      const to = parseInt(rangeMatch[2]);
+      if (isNaN(from) || isNaN(to) || from > to) return null;
+      for (let n = from; n <= to; n++) nums.push(n);
+    } else {
+      const n = parseInt(part);
+      if (isNaN(n) || n < 1) return null;
+      nums.push(n);
+    }
+  }
+  return [...new Set(nums)].sort((a, b) => a - b);
+};
+
+const LOTE_STORAGE_KEY = 'bingo_tamanho_lote';
+
 const CartelasTab: React.FC = () => {
   const {
     sorteioAtivo,
@@ -97,7 +122,9 @@ const CartelasTab: React.FC = () => {
     cartelasValidadas,
     loadCartelasValidadas,
     validarCartela,
+    validarCartelas,
     removerValidacaoCartela,
+    removerValidacaoLote,
   } = useBingo();
   const { toast } = useToast();
 
@@ -122,7 +149,34 @@ const CartelasTab: React.FC = () => {
   const [validacaoNumero, setValidacaoNumero] = useState('');
   const [validacaoNome, setValidacaoNome] = useState('');
   const [isValidando, setIsValidando] = useState(false);
-  const [tamanhoLote, setTamanhoLote] = useState(50);
+  const [tamanhoLote, setTamanhoLoteState] = useState<number>(() => {
+    const saved = localStorage.getItem(LOTE_STORAGE_KEY);
+    if (saved !== null) {
+      const parsed = parseInt(saved);
+      return isNaN(parsed) ? 50 : Math.max(1, parsed);
+    }
+    return 50;
+  });
+
+  const setTamanhoLote = (value: number) => {
+    const clamped = Math.max(1, value);
+    setTamanhoLoteState(clamped);
+    localStorage.setItem(LOTE_STORAGE_KEY, String(clamped));
+  };
+
+  // ─── Delete lote confirmation ──────────────────────────────────────────────
+  const [loteToDelete, setLoteToDelete] = useState<number[] | null>(null);
+  const [isDeletingLote, setIsDeletingLote] = useState(false);
+
+  // Group validated cartelas into batches for display (must be before early return)
+  const lotes = React.useMemo(() => {
+    const size = Math.max(1, tamanhoLote);
+    const result: typeof cartelasValidadas[] = [];
+    for (let i = 0; i < cartelasValidadas.length; i += size) {
+      result.push(cartelasValidadas.slice(i, i + size));
+    }
+    return result;
+  }, [cartelasValidadas, tamanhoLote]);
 
   if (!sorteioAtivo) {
     return (
@@ -272,15 +326,25 @@ const CartelasTab: React.FC = () => {
 
   // ─── Validation handlers ──────────────────────────────────────────────────
   const handleValidarCartela = async () => {
-    const num = parseInt(validacaoNumero);
-    if (!num || num < 1) {
-      toast({ title: 'Número inválido', description: 'Digite um número de cartela válido.', variant: 'destructive' });
+    const trimmed = validacaoNumero.trim();
+    if (!trimmed) {
+      toast({ title: 'Entrada inválida', description: 'Digite um número, faixa (ex: 1-50) ou lista (ex: 1,2,5).', variant: 'destructive' });
+      return;
+    }
+    const numeros = parseValidacaoInput(trimmed);
+    if (!numeros || numeros.length === 0) {
+      toast({ title: 'Entrada inválida', description: 'Formato inválido. Use número único (42), faixa (1-50) ou lista separada por vírgula (1,2,5).', variant: 'destructive' });
       return;
     }
     setIsValidando(true);
     try {
-      await validarCartela(num, validacaoNome.trim() || undefined);
-      toast({ title: `Cartela ${formatarNumeroCartela(num)} validada!` });
+      if (numeros.length === 1) {
+        await validarCartela(numeros[0], validacaoNome.trim() || undefined);
+        toast({ title: `Cartela ${formatarNumeroCartela(numeros[0])} validada!` });
+      } else {
+        await validarCartelas(numeros, validacaoNome.trim() || undefined);
+        toast({ title: `${numeros.length} cartelas validadas!` });
+      }
       setValidacaoNumero('');
       setValidacaoNome('');
     } catch {
@@ -290,15 +354,17 @@ const CartelasTab: React.FC = () => {
     }
   };
 
-  // Group validated cartelas into batches for display
-  const lotes = React.useMemo(() => {
-    const size = Math.max(1, tamanhoLote);
-    const result: typeof cartelasValidadas[] = [];
-    for (let i = 0; i < cartelasValidadas.length; i += size) {
-      result.push(cartelasValidadas.slice(i, i + size));
+  const handleDeletarLote = async () => {
+    if (!loteToDelete) return;
+    setIsDeletingLote(true);
+    try {
+      await removerValidacaoLote(loteToDelete);
+      toast({ title: `Lote de ${loteToDelete.length} cartela(s) removido!` });
+      setLoteToDelete(null);
+    } finally {
+      setIsDeletingLote(false);
     }
-    return result;
-  }, [cartelasValidadas, tamanhoLote]);
+  };
 
   // ─── Permission helpers ────────────────────────────────────────────────────
   const canEdit   = selectedCartela?.status !== 'vendida';
@@ -520,16 +586,18 @@ const CartelasTab: React.FC = () => {
             </p>
             <div className="flex flex-wrap gap-3 items-end">
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-foreground">Número da Cartela *</label>
+                <label className="text-sm font-medium text-foreground">Número(s) da Cartela *</label>
                 <Input
-                  type="number"
-                  min={1}
-                  placeholder="Ex: 42"
+                  type="text"
+                  placeholder="Ex: 42 | 1-50 | 1,5,10 | 1-10,20"
                   value={validacaoNumero}
                   onChange={(e) => setValidacaoNumero(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleValidarCartela()}
-                  className="w-36"
+                  className="w-56"
                 />
+                <p className="text-xs text-muted-foreground">
+                  Número único, faixa (1-50) ou lista separada por vírgula
+                </p>
               </div>
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-foreground">Nome do Comprador (opcional)</label>
@@ -578,13 +646,21 @@ const CartelasTab: React.FC = () => {
             <div className="space-y-4">
               {lotes.map((lote, loteIdx) => (
                 <div key={loteIdx} className="bg-card rounded-xl border border-border overflow-hidden">
-                  <div className="px-4 py-2.5 bg-muted/40 border-b border-border">
+                  <div className="px-4 py-2.5 bg-muted/40 border-b border-border flex items-center justify-between">
                     <span className="text-sm font-semibold text-foreground">
                       Lote {loteIdx + 1}
                       <span className="ml-2 text-muted-foreground font-normal text-xs">
                         ({lote.length} cartela{lote.length !== 1 ? 's' : ''})
                       </span>
                     </span>
+                    <button
+                      onClick={() => setLoteToDelete(lote.map(cv => cv.numero))}
+                      className="text-xs text-muted-foreground hover:text-destructive transition-colors flex items-center gap-1"
+                      title="Excluir lote inteiro"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Excluir lote
+                    </button>
                   </div>
                   <div className="p-4">
                     <div className="flex flex-wrap gap-2">
@@ -752,6 +828,25 @@ const CartelasTab: React.FC = () => {
             <AlertDialogAction onClick={handleDelete} disabled={isDeleting} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
               {isDeleting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
               Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── Delete lote confirmation ── */}
+      <AlertDialog open={!!loteToDelete} onOpenChange={(open) => { if (!open) setLoteToDelete(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir lote inteiro?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {loteToDelete ? `Este lote contém ${loteToDelete.length} cartela(s) validada(s). Todas serão removidas permanentemente. Esta ação não pode ser desfeita.` : ''}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeletingLote}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeletarLote} disabled={isDeletingLote} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              {isDeletingLote ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              Excluir lote
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

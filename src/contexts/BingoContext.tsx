@@ -75,7 +75,9 @@ interface BingoContextType {
   // CRUD Operations - Cartelas Validadas
   loadCartelasValidadas: () => Promise<void>;
   validarCartela: (numero: number, compradorNome?: string) => Promise<void>;
+  validarCartelas: (numeros: number[], compradorNome?: string) => Promise<void>;
   removerValidacaoCartela: (numero: number) => Promise<void>;
+  removerValidacaoLote: (numeros: number[]) => Promise<void>;
   
   // CRUD Operations - Atribuicoes
   loadAtribuicoes: () => Promise<void>;
@@ -645,6 +647,29 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   }, [sorteioAtivo, callApi, toast, loadCartelasValidadas]);
 
+  const validarCartelas = useCallback(async (numeros: number[], compradorNome?: string) => {
+    if (!sorteioAtivo) return;
+    try {
+      await callApi('validarCartelas', { sorteio_id: sorteioAtivo.id, numeros, comprador_nome: compradorNome || null });
+      await loadCartelasValidadas();
+    } catch (error: any) {
+      console.error('Error validating cartelas:', error);
+      toast({ title: 'Erro ao validar cartelas', description: error.message, variant: 'destructive' });
+      throw error;
+    }
+  }, [sorteioAtivo, callApi, toast, loadCartelasValidadas]);
+
+  const removerValidacaoLote = useCallback(async (numeros: number[]) => {
+    if (!sorteioAtivo) return;
+    try {
+      await callApi('removerValidacaoLote', { sorteio_id: sorteioAtivo.id, numeros });
+      await loadCartelasValidadas();
+    } catch (error: any) {
+      console.error('Error removing lote validation:', error);
+      toast({ title: 'Erro ao remover lote', description: error.message, variant: 'destructive' });
+    }
+  }, [sorteioAtivo, callApi, toast, loadCartelasValidadas]);
+
   // ================== REFRESH & SET SORTEIO ATIVO ==================
   const refreshData = useCallback(async () => {
     if (!sorteioAtivo) return;
@@ -730,7 +755,9 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     deleteCartelaLayout,
     loadCartelasValidadas,
     validarCartela,
+    validarCartelas,
     removerValidacaoCartela,
+    removerValidacaoLote,
     loadAtribuicoes,
     addAtribuicao,
     addCartelasToAtribuicao,
