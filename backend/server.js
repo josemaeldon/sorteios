@@ -1504,9 +1504,13 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         const successPath = isValidPath(data.success_path) ? data.success_path : '/planos';
         const cancelPath = isValidPath(data.cancel_path) ? data.cancel_path : '/planos';
 
+        const successUrl = successPath.includes('?')
+          ? `${baseUrl}${successPath}&session_id={CHECKOUT_SESSION_ID}`
+          : `${baseUrl}${successPath}?session_id={CHECKOUT_SESSION_ID}`;
+
         let sessionParams = {
           mode: 'payment',
-          success_url: `${baseUrl}${successPath}`,
+          success_url: successUrl,
           cancel_url: `${baseUrl}${cancelPath}`,
           metadata: { user_id: data.authenticated_user_id, plano_id: plano.id },
           client_reference_id: data.authenticated_user_id,
@@ -1528,6 +1532,43 @@ app.post('/api', checkBasicAuth, async (req, res) => {
 
         const session = await stripe.checkout.sessions.create(sessionParams);
         return res.json({ url: session.url });
+      }
+
+      case 'confirmStripeCheckout': {
+        if (!data.session_id) {
+          return res.status(400).json({ error: 'Session ID não informado.' });
+        }
+        const confirmCfgResult = await client.query(
+          'SELECT chave, valor FROM configuracoes WHERE chave = $1',
+          ['stripe_secret_key']
+        );
+        const confirmStripeKey = confirmCfgResult.rows.length > 0 ? confirmCfgResult.rows[0].valor || '' : '';
+        if (!confirmStripeKey) {
+          return res.status(400).json({ error: 'Stripe não configurado.' });
+        }
+        const confirmStripe = Stripe(confirmStripeKey);
+        const checkoutSession = await confirmStripe.checkout.sessions.retrieve(data.session_id);
+        if (checkoutSession.client_reference_id !== data.authenticated_user_id) {
+          return res.status(403).json({ error: 'Sessão de pagamento inválida.' });
+        }
+        if (checkoutSession.payment_status !== 'paid' && checkoutSession.payment_status !== 'no_payment_required') {
+          return res.status(402).json({ error: 'Pagamento não confirmado.' });
+        }
+        const sessionPlanoId = checkoutSession.metadata && checkoutSession.metadata.plano_id;
+        if (!sessionPlanoId) {
+          return res.status(400).json({ error: 'Plano não identificado na sessão.' });
+        }
+        const confirmNow = new Date();
+        const confirmVencimento = nextMonthSameDay(confirmNow);
+        await client.query(
+          'UPDATE usuarios SET plano_id = $1, plano_inicio = $2, plano_vencimento = $3, updated_at = NOW() WHERE id = $4',
+          [sessionPlanoId, confirmNow, confirmVencimento, data.authenticated_user_id]
+        );
+        const confirmedUserResult = await client.query(
+          'SELECT id, email, nome, role, ativo, titulo_sistema, avatar_url, created_at, updated_at, plano_id, gratuidade_vitalicia, plano_inicio, plano_vencimento FROM usuarios WHERE id = $1',
+          [data.authenticated_user_id]
+        );
+        return res.json({ user: confirmedUserResult.rows[0] });
       }
 
       case 'grantLifetimeAccess':

@@ -9,24 +9,36 @@ import { Ticket, Loader2, LogOut, CheckCircle } from 'lucide-react';
 const Planos: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { getPublicPlanos, logout, user, createStripeCheckout, refreshUser } = useAuth();
+  const { getPublicPlanos, logout, user, createStripeCheckout, confirmStripeCheckout } = useAuth();
   const [planos, setPlanos] = useState<Plan[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [checkoutLoadingId, setCheckoutLoadingId] = useState<string | null>(null);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const paymentSuccess = searchParams.get('payment') === 'success';
+  const sessionId = searchParams.get('session_id');
 
-  // After a successful Stripe payment, refresh the user profile so the new
-  // plano_id is reflected in the local state, then let the effect below
-  // redirect to the home page.
+  // After a successful Stripe payment, confirm the checkout session directly via
+  // the Stripe API on the backend so the plan is assigned without depending on
+  // the webhook timing. Always stop the spinner when done.
   useEffect(() => {
     if (!paymentSuccess) return;
     setIsLoading(true);
-    refreshUser().catch(() => {
-      // If refresh fails, still stop showing the spinner so the user can retry
+    const confirm = async () => {
+      if (sessionId) {
+        const result = await confirmStripeCheckout(sessionId);
+        if (!result.success) {
+          setCheckoutError(result.error || 'Não foi possível confirmar o pagamento. Contate o suporte.');
+        }
+      } else {
+        setCheckoutError('Sessão de pagamento não encontrada. Contate o suporte.');
+      }
+      setIsLoading(false);
+    };
+    confirm().catch((err) => {
+      console.error('Error confirming checkout:', err);
       setIsLoading(false);
     });
-  }, [paymentSuccess, refreshUser]);
+  }, [paymentSuccess, sessionId, confirmStripeCheckout]);
 
   useEffect(() => {
     // If user already has access, redirect to home
@@ -35,7 +47,7 @@ const Planos: React.FC = () => {
       return;
     }
     if (paymentSuccess) {
-      // Still waiting for refreshUser to finish — keep showing spinner
+      // Still waiting for confirmStripeCheckout to finish — keep showing spinner
       return;
     }
     const load = async () => {

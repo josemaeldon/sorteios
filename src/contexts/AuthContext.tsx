@@ -29,6 +29,7 @@ interface AuthContextType extends AuthState {
   updateConfiguracoes: (config: Record<string, string>) => Promise<{ success: boolean; error?: string }>;
   createStripeCheckout: (planoId: string, successPath?: string, cancelPath?: string) => Promise<{ url?: string; error?: string }>;
   refreshUser: () => Promise<void>;
+  confirmStripeCheckout: (sessionId: string) => Promise<{ success: boolean; error?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -447,6 +448,20 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, []);
 
+  const confirmStripeCheckout = useCallback(async (sessionId: string): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const result = await callApi('confirmStripeCheckout', { session_id: sessionId });
+      if (result.user) {
+        setUser(result.user);
+        localStorage.setItem(AUTH_KEY, JSON.stringify(result.user));
+        return { success: true };
+      }
+      return { success: false, error: result.error || 'Erro ao confirmar pagamento' };
+    } catch (error: any) {
+      return { success: false, error: error.message || 'Erro ao confirmar pagamento' };
+    }
+  }, []);
+
   const value: AuthContextType = {
     user,
     isLoading,
@@ -476,6 +491,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     updateConfiguracoes,
     createStripeCheckout,
     refreshUser,
+    confirmStripeCheckout,
   };
 
   return (
