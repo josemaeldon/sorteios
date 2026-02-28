@@ -104,10 +104,58 @@ app.post('/stripe-webhook', express.raw({ type: 'application/json' }), async (re
               'UPDATE loja_cartelas SET status = $1, comprador_nome = $2, comprador_email = $3, comprador_endereco = $4, comprador_cidade = $5, comprador_telefone = $6, stripe_session_id = $7, updated_at = NOW() WHERE id = $8',
               ['vendida', compradorNome, compradorEmail, compradorEndereco, compradorCidade, compradorTelefone, session.id, lojaCartelaId]
             );
-            await updateClient.query(
-              'UPDATE cartelas SET status = $1, comprador_nome = $2, updated_at = NOW() WHERE sorteio_id = $3 AND numero = $4',
-              ['vendida', compradorNome, lc.sorteio_id, lc.numero_cartela]
+            if (lc.sorteio_id) {
+              await updateClient.query(
+                'UPDATE cartelas SET status = $1, comprador_nome = $2, updated_at = NOW() WHERE sorteio_id = $3 AND numero = $4',
+                ['vendida', compradorNome, lc.sorteio_id, lc.numero_cartela]
+              );
+              await updateClient.query(
+                `UPDATE atribuicao_cartelas SET status = 'vendida' WHERE numero_cartela = $1 AND atribuicao_id IN (SELECT id FROM atribuicoes WHERE sorteio_id = $2)`,
+                [lc.numero_cartela, lc.sorteio_id]
+              );
+            }
+          }
+        } finally {
+          updateClient.release();
+        }
+      }
+
+      if (sessionType === 'cartela_loja_multi') {
+        const updateClient = await dbAdapter.getConnection();
+        try {
+          const compradorNome = (session.metadata && session.metadata.comprador_nome) || '';
+          const compradorEmail = (session.metadata && session.metadata.comprador_email) || session.customer_email || '';
+          const compradorEndereco = (session.metadata && session.metadata.comprador_endereco) || '';
+          const compradorCidade = (session.metadata && session.metadata.comprador_cidade) || '';
+          const compradorTelefone = (session.metadata && session.metadata.comprador_telefone) || '';
+          const allIds = [];
+          for (let i = 0; i < 10; i++) {
+            const key = i === 0 ? 'loja_cartela_ids' : `loja_cartela_ids_${i}`;
+            if (session.metadata && session.metadata[key]) allIds.push(...session.metadata[key].split(',').filter(Boolean));
+            else break;
+          }
+          for (const lcId of allIds) {
+            const lojaMultiResult = await updateClient.query(
+              'SELECT lc.*, bcs.sorteio_id FROM loja_cartelas lc JOIN bingo_card_sets bcs ON lc.card_set_id = bcs.id WHERE lc.id = $1',
+              [lcId]
             );
+            if (lojaMultiResult.rows.length > 0) {
+              const lc = lojaMultiResult.rows[0];
+              await updateClient.query(
+                'UPDATE loja_cartelas SET status = $1, comprador_nome = $2, comprador_email = $3, comprador_endereco = $4, comprador_cidade = $5, comprador_telefone = $6, stripe_session_id = $7, updated_at = NOW() WHERE id = $8',
+                ['vendida', compradorNome, compradorEmail, compradorEndereco, compradorCidade, compradorTelefone, session.id, lc.id]
+              );
+              if (lc.sorteio_id) {
+                await updateClient.query(
+                  'UPDATE cartelas SET status = $1, comprador_nome = $2, updated_at = NOW() WHERE sorteio_id = $3 AND numero = $4',
+                  ['vendida', compradorNome, lc.sorteio_id, lc.numero_cartela]
+                );
+                await updateClient.query(
+                  `UPDATE atribuicao_cartelas SET status = 'vendida' WHERE numero_cartela = $1 AND atribuicao_id IN (SELECT id FROM atribuicoes WHERE sorteio_id = $2)`,
+                  [lc.numero_cartela, lc.sorteio_id]
+                );
+              }
+            }
           }
         } finally {
           updateClient.release();
@@ -565,7 +613,7 @@ function checkBasicAuth(req, res, next) {
 
 // JWT Auth middleware
 async function checkAuth(req, action) {
-  const publicActions = ['checkFirstAccess', 'setupAdmin', 'login', 'publicRegister', 'getPublicPlanos', 'getLojaPublica', 'createStripeCheckoutCartela', 'confirmStripeCheckoutCartela'];
+  const publicActions = ['checkFirstAccess', 'setupAdmin', 'login', 'publicRegister', 'getPublicPlanos', 'getLojaPublica', 'createStripeCheckoutCartela', 'confirmStripeCheckoutCartela', 'createStripeCheckoutMultiCartela', 'confirmStripeCheckoutMultiCartela'];
   const adminActions = [
     // User management
     'getUsers', 'createUser', 'updateUser', 'deleteUser', 'approveUser', 'rejectUser',
@@ -612,7 +660,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
   console.log(`API Call: ${action}`);
 
   // Rate-limit sensitive public actions (10 requests per minute per IP)
-  if (['login', 'publicRegister', 'createStripeCheckoutCartela', 'confirmStripeCheckoutCartela'].includes(action)) {
+  if (['login', 'publicRegister', 'createStripeCheckoutCartela', 'confirmStripeCheckoutCartela', 'createStripeCheckoutMultiCartela', 'confirmStripeCheckoutMultiCartela'].includes(action)) {
     const ip = req.ip || req.socket.remoteAddress || 'unknown';
     if (!rateLimitCheck(ip, action, 10, 60000)) {
       return res.status(429).json({ error: 'Muitas tentativas. Aguarde um momento e tente novamente.' });
@@ -2042,10 +2090,16 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           'UPDATE loja_cartelas SET status = $1, comprador_nome = $2, comprador_email = $3, comprador_endereco = $4, comprador_cidade = $5, comprador_telefone = $6, stripe_session_id = $7, updated_at = NOW() WHERE id = $8',
           ['vendida', compradorNomeConfirm, compradorEmailConfirm, compradorEnderecoConfirm, compradorCidadeConfirm, compradorTelefoneConfirm, data.session_id, lcConfirm.id]
         );
-        await client.query(
-          'UPDATE cartelas SET status = $1, comprador_nome = $2, updated_at = NOW() WHERE sorteio_id = $3 AND numero = $4',
-          ['vendida', compradorNomeConfirm, lcConfirm.sorteio_id, lcConfirm.numero_cartela]
-        );
+        if (lcConfirm.sorteio_id) {
+          await client.query(
+            'UPDATE cartelas SET status = $1, comprador_nome = $2, updated_at = NOW() WHERE sorteio_id = $3 AND numero = $4',
+            ['vendida', compradorNomeConfirm, lcConfirm.sorteio_id, lcConfirm.numero_cartela]
+          );
+          await client.query(
+            `UPDATE atribuicao_cartelas SET status = 'vendida' WHERE numero_cartela = $1 AND atribuicao_id IN (SELECT id FROM atribuicoes WHERE sorteio_id = $2)`,
+            [lcConfirm.numero_cartela, lcConfirm.sorteio_id]
+          );
+        }
         return res.json({
           success: true,
           numero_cartela: lcConfirm.numero_cartela,
@@ -2055,6 +2109,152 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           comprador_telefone: compradorTelefoneConfirm,
           card_data: lcConfirm.card_data,
           layout_data: lcConfirm.layout_data,
+        });
+      }
+
+      case 'createStripeCheckoutMultiCartela': {
+        const multiIds = Array.isArray(data.loja_cartela_ids) ? data.loja_cartela_ids.filter(Boolean) : [];
+        if (multiIds.length === 0) {
+          return res.status(400).json({ error: 'Nenhuma cartela selecionada.' });
+        }
+        if (multiIds.length > 20) {
+          return res.status(400).json({ error: 'Selecione no máximo 20 cartelas por pedido.' });
+        }
+        const cfgMulti = await client.query('SELECT chave, valor FROM configuracoes WHERE chave = $1', ['stripe_secret_key']);
+        const stripeKeyMulti = cfgMulti.rows.length > 0 ? cfgMulti.rows[0].valor || '' : '';
+        if (!stripeKeyMulti) {
+          return res.status(400).json({ error: 'Pagamento online não configurado. Contate o vendedor.' });
+        }
+        // Fetch all cartelas
+        const placeholders = multiIds.map((_, i) => `$${i + 1}`).join(',');
+        const multiCartelasResult = await client.query(
+          `SELECT lc.*, u.nome as owner_nome FROM loja_cartelas lc JOIN usuarios u ON lc.user_id = u.id WHERE lc.id IN (${placeholders}) AND lc.status = 'disponivel'`,
+          multiIds
+        );
+        if (multiCartelasResult.rows.length === 0) {
+          return res.status(404).json({ error: 'Nenhuma cartela disponível para compra.' });
+        }
+        if (multiCartelasResult.rows.length !== multiIds.length) {
+          return res.status(400).json({ error: 'Uma ou mais cartelas não estão disponíveis para compra.' });
+        }
+        const multiCartelas = multiCartelasResult.rows;
+        const stripeMulti = Stripe(stripeKeyMulti);
+        const baseUrlMulti = (process.env.APP_URL || '').replace(/\/$/, '') || `${req.protocol}://${req.get('host')}`;
+        const isValidPathMulti = (p) => typeof p === 'string' && /^\/[a-zA-Z0-9/_?=&-]*$/.test(p) && !p.includes('//') && !p.includes('..');
+        const successPathMulti = isValidPathMulti(data.success_path) ? data.success_path : `/loja/${multiCartelas[0].user_id}`;
+        const cancelPathMulti = isValidPathMulti(data.cancel_path) ? data.cancel_path : `/loja/${multiCartelas[0].user_id}`;
+        const successUrlMulti = successPathMulti.includes('?')
+          ? `${baseUrlMulti}${successPathMulti}&session_id={CHECKOUT_SESSION_ID}`
+          : `${baseUrlMulti}${successPathMulti}?payment=success&checkout_type=multi&session_id={CHECKOUT_SESSION_ID}`;
+        const lineItems = multiCartelas.map(lc => {
+          const valorCentavos = Math.round(Number(lc.preco) * 100);
+          if (valorCentavos < STRIPE_MIN_AMOUNT_CENTAVOS) {
+            throw Object.assign(new Error(`Cartela ${String(lc.numero_cartela).padStart(3, '0')}: valor mínimo para pagamento online é R$ ${(STRIPE_MIN_AMOUNT_CENTAVOS / 100).toFixed(2).replace('.', ',')}.`), { status: 400 });
+          }
+          return {
+            price_data: {
+              currency: 'brl',
+              product_data: { name: `Cartela ${String(lc.numero_cartela).padStart(3, '0')} — ${lc.owner_nome}` },
+              unit_amount: valorCentavos,
+            },
+            quantity: 1,
+          };
+        });
+        // Store IDs in metadata split across keys to stay within Stripe's 500-char limit per value.
+        // UUID = 36 chars + comma separator = 37 chars; 12 × 37 = 444 chars < 500-char limit.
+        const idsChunks = [];
+        for (let i = 0; i < multiIds.length; i += 12) {
+          idsChunks.push(multiIds.slice(i, i + 12).join(','));
+        }
+        const idsMetadata = {};
+        idsChunks.forEach((chunk, i) => { idsMetadata[`loja_cartela_ids${i === 0 ? '' : `_${i}`}`] = chunk; });
+        const multiSession = await stripeMulti.checkout.sessions.create({
+          mode: 'payment',
+          success_url: successUrlMulti,
+          cancel_url: `${baseUrlMulti}${cancelPathMulti}`,
+          customer_email: data.comprador_email || undefined,
+          line_items: lineItems,
+          metadata: {
+            type: 'cartela_loja_multi',
+            comprador_nome: data.comprador_nome || '',
+            comprador_email: data.comprador_email || '',
+            comprador_endereco: data.comprador_endereco || '',
+            comprador_cidade: data.comprador_cidade || '',
+            comprador_telefone: data.comprador_telefone || '',
+            ...idsMetadata,
+          },
+        });
+        return res.json({ url: multiSession.url });
+      }
+
+      case 'confirmStripeCheckoutMultiCartela': {
+        if (!data.session_id) {
+          return res.status(400).json({ error: 'Session ID não informado.' });
+        }
+        const cfgConfirmMulti = await client.query('SELECT valor FROM configuracoes WHERE chave = $1', ['stripe_secret_key']);
+        const stripeKeyConfirmMulti = cfgConfirmMulti.rows.length > 0 ? cfgConfirmMulti.rows[0].valor || '' : '';
+        if (!stripeKeyConfirmMulti) {
+          return res.status(400).json({ error: 'Stripe não configurado.' });
+        }
+        const stripeConfirmMulti = Stripe(stripeKeyConfirmMulti);
+        const multiCheckoutSession = await stripeConfirmMulti.checkout.sessions.retrieve(data.session_id);
+        if (multiCheckoutSession.payment_status !== 'paid' && multiCheckoutSession.payment_status !== 'no_payment_required') {
+          return res.status(402).json({ error: 'Pagamento não confirmado.' });
+        }
+        const multiMeta = multiCheckoutSession.metadata || {};
+        if (multiMeta.type !== 'cartela_loja_multi') {
+          return res.status(400).json({ error: 'Sessão inválida.' });
+        }
+        // Reassemble IDs from metadata chunks
+        const allMultiIds = [];
+        for (let i = 0; i < 10; i++) {
+          const key = i === 0 ? 'loja_cartela_ids' : `loja_cartela_ids_${i}`;
+          if (multiMeta[key]) allMultiIds.push(...multiMeta[key].split(',').filter(Boolean));
+          else break;
+        }
+        if (allMultiIds.length === 0) {
+          return res.status(400).json({ error: 'Sessão inválida: cartelas não encontradas.' });
+        }
+        const compradorNomeMulti = multiMeta.comprador_nome || '';
+        const compradorEmailMulti = multiMeta.comprador_email || multiCheckoutSession.customer_email || '';
+        const compradorEnderecoMulti = multiMeta.comprador_endereco || '';
+        const compradorCidadeMulti = multiMeta.comprador_cidade || '';
+        const compradorTelefoneMulti = multiMeta.comprador_telefone || '';
+        const purchasedCartelas = [];
+        for (const lcId of allMultiIds) {
+          const lcMultiResult = await client.query(
+            'SELECT lc.*, bcs.sorteio_id FROM loja_cartelas lc JOIN bingo_card_sets bcs ON lc.card_set_id = bcs.id WHERE lc.id = $1',
+            [lcId]
+          );
+          if (lcMultiResult.rows.length === 0) continue;
+          const lcMulti = lcMultiResult.rows[0];
+          await client.query(
+            'UPDATE loja_cartelas SET status = $1, comprador_nome = $2, comprador_email = $3, comprador_endereco = $4, comprador_cidade = $5, comprador_telefone = $6, stripe_session_id = $7, updated_at = NOW() WHERE id = $8',
+            ['vendida', compradorNomeMulti, compradorEmailMulti, compradorEnderecoMulti, compradorCidadeMulti, compradorTelefoneMulti, data.session_id, lcMulti.id]
+          );
+          if (lcMulti.sorteio_id) {
+            await client.query(
+              'UPDATE cartelas SET status = $1, comprador_nome = $2, updated_at = NOW() WHERE sorteio_id = $3 AND numero = $4',
+              ['vendida', compradorNomeMulti, lcMulti.sorteio_id, lcMulti.numero_cartela]
+            );
+            await client.query(
+              `UPDATE atribuicao_cartelas SET status = 'vendida' WHERE numero_cartela = $1 AND atribuicao_id IN (SELECT id FROM atribuicoes WHERE sorteio_id = $2)`,
+              [lcMulti.numero_cartela, lcMulti.sorteio_id]
+            );
+          }
+          purchasedCartelas.push({
+            numero_cartela: lcMulti.numero_cartela,
+            card_data: lcMulti.card_data,
+            layout_data: lcMulti.layout_data,
+          });
+        }
+        return res.json({
+          success: true,
+          cartelas: purchasedCartelas,
+          comprador_nome: compradorNomeMulti,
+          comprador_endereco: compradorEnderecoMulti,
+          comprador_cidade: compradorCidadeMulti,
+          comprador_telefone: compradorTelefoneMulti,
         });
       }
 

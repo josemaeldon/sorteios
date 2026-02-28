@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { CartelaLayout, LojaCartela } from '@/types/bingo';
 import { useAuth } from '@/contexts/AuthContext';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 // ─── Canvas constants ─────────────────────────────────────────────────────────
 /** px per mm — keeps A4 canvas at ~595×841 px (72 dpi equivalent) */
@@ -248,6 +249,7 @@ const NumberInput: React.FC<{
 const BingoCardsBuilderTab: React.FC = () => {
   const {
     sorteioAtivo, cartelas, salvarNumerosCartelas,
+    vendedores,
     cartelaLayouts, loadCartelaLayouts, saveCartelaLayout, updateCartelaLayout, deleteCartelaLayout,
     lojaCartelas, loadMinhaLoja, adicionarCartelaLoja, removerCartelaLoja, atualizarPrecoLojaCartela,
   } = useBingo();
@@ -275,6 +277,21 @@ const BingoCardsBuilderTab: React.FC = () => {
   const [showMinhaLojaDialog, setShowMinhaLojaDialog] = useState(false);
   const [editingPrecoId, setEditingPrecoId] = useState<string | null>(null);
   const [editingPrecoValor, setEditingPrecoValor] = useState('');
+
+  // Bulk publish state
+  const [showBulkVenderModal, setShowBulkVenderModal] = useState(false);
+  const [bulkFrom, setBulkFrom] = useState(1);
+  const [bulkTo, setBulkTo] = useState(1);
+  const [bulkPreco, setBulkPreco] = useState('');
+  const [isBulkVendendo, setIsBulkVendendo] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState(0);
+
+  // Vendor publish state
+  const [showVendedorLojaModal, setShowVendedorLojaModal] = useState(false);
+  const [vendedorLojaId, setVendedorLojaId] = useState('');
+  const [vendedorLojaPreco, setVendedorLojaPreco] = useState('');
+  const [isVendedorLojaVendendo, setIsVendedorLojaVendendo] = useState(false);
+  const [vendedorLojaProgress, setVendedorLojaProgress] = useState(0);
 
   // Sync numeroPremios when the active sorteio changes (intentionally only on id change,
   // not premios.length, so user customisation within the same sorteio is preserved)
@@ -319,6 +336,7 @@ const BingoCardsBuilderTab: React.FC = () => {
     setCards(
       saved.map(c => {
         // numeros_grade is number[][] - array of flat 25-number arrays per prize
+        // numeros_grade stores flat 25-number arrays per prize; reshape each to a 5×5 grid (BINGO_COLS.length rows/cols)
         const grids = c.numeros_grade!.map(flat =>
           Array.from({ length: 5 }, (_, row) => flat.slice(row * 5, row * 5 + 5))
         );
@@ -647,6 +665,101 @@ const BingoCardsBuilderTab: React.FC = () => {
     setShowMinhaLojaDialog(true);
   };
 
+  const handleOpenBulkVender = () => {
+    setBulkFrom(1);
+    setBulkTo(cards.length);
+    setBulkPreco(String(sorteioAtivo?.valor_cartela ?? ''));
+    setBulkProgress(0);
+    setShowBulkVenderModal(true);
+  };
+
+  const handleBulkVender = async () => {
+    if (!activeLayoutId) return;
+    const normalised = bulkPreco.trim().includes(',')
+      ? bulkPreco.trim().replace(/\./g, '').replace(',', '.')
+      : bulkPreco.trim();
+    const preco = parseFloat(normalised);
+    if (isNaN(preco) || preco < 0) {
+      toast({ title: 'Preço inválido', variant: 'destructive' });
+      return;
+    }
+    const fromNum = Math.max(1, Math.round(bulkFrom));
+    const toNum = Math.min(cards.length, Math.round(bulkTo));
+    if (fromNum > toNum) {
+      toast({ title: 'Intervalo inválido', variant: 'destructive' });
+      return;
+    }
+    const targetCards = cards.filter(c => c.cartelaNumero >= fromNum && c.cartelaNumero <= toNum);
+    if (targetCards.length === 0) {
+      toast({ title: 'Nenhuma cartela encontrada no intervalo', variant: 'destructive' });
+      return;
+    }
+    setIsBulkVendendo(true);
+    setBulkProgress(0);
+    let added = 0;
+    try {
+      for (const card of targetCards) {
+        await adicionarCartelaLoja(activeLayoutId, card.cartelaNumero, preco, JSON.stringify(card), JSON.stringify(layout));
+        added++;
+        setBulkProgress(Math.round((added / targetCards.length) * 100));
+      }
+      toast({ title: `${added} cartela${added !== 1 ? 's' : ''} disponibilizada${added !== 1 ? 's' : ''} para venda!` });
+      setShowBulkVenderModal(false);
+    } catch (err: any) {
+      toast({ title: err.message || 'Erro ao disponibilizar cartelas', variant: 'destructive' });
+    } finally {
+      setIsBulkVendendo(false);
+    }
+  };
+
+  const handleOpenVendedorLojaModal = () => {
+    setVendedorLojaId('');
+    setVendedorLojaPreco(String(sorteioAtivo?.valor_cartela ?? ''));
+    setVendedorLojaProgress(0);
+    setShowVendedorLojaModal(true);
+  };
+
+  const handleVendedorLoja = async () => {
+    if (!activeLayoutId || !vendedorLojaId) return;
+    const normalised = vendedorLojaPreco.trim().includes(',')
+      ? vendedorLojaPreco.trim().replace(/\./g, '').replace(',', '.')
+      : vendedorLojaPreco.trim();
+    const preco = parseFloat(normalised);
+    if (isNaN(preco) || preco < 0) {
+      toast({ title: 'Preço inválido', variant: 'destructive' });
+      return;
+    }
+    // Get cards assigned to this vendor that have grid data
+    const vendorCartelas = cartelas.filter(
+      c => c.vendedor_id === vendedorLojaId && c.numeros_grade && c.numeros_grade.length > 0
+    );
+    if (vendorCartelas.length === 0) {
+      toast({ title: 'Nenhuma cartela com números gerados para este vendedor. Gere os números antes de disponibilizar.', variant: 'destructive' });
+      return;
+    }
+    setIsVendedorLojaVendendo(true);
+    setVendedorLojaProgress(0);
+    let added = 0;
+    try {
+      for (const c of vendorCartelas) {
+        // Convert numeros_grade (flat arrays per prize) to BingoCardGrid.grids (5x5 per prize)
+        const grids = c.numeros_grade!.map(flat =>
+          Array.from({ length: 5 }, (_, row) => flat.slice(row * 5, row * 5 + 5))
+        );
+        const cardGrid: BingoCardGrid = { cartelaNumero: c.numero, grids };
+        await adicionarCartelaLoja(activeLayoutId, c.numero, preco, JSON.stringify(cardGrid), JSON.stringify(layout));
+        added++;
+        setVendedorLojaProgress(Math.round((added / vendorCartelas.length) * 100));
+      }
+      toast({ title: `${added} cartela${added !== 1 ? 's' : ''} do vendedor disponibilizada${added !== 1 ? 's' : ''} para venda!` });
+      setShowVendedorLojaModal(false);
+    } catch (err: any) {
+      toast({ title: err.message || 'Erro ao disponibilizar cartelas', variant: 'destructive' });
+    } finally {
+      setIsVendedorLojaVendendo(false);
+    }
+  };
+
   const handleSalvarPrecoEdicao = async (id: string) => {
     const normalised = editingPrecoValor.trim().includes(',')
       ? editingPrecoValor.trim().replace(/\./g, '').replace(',', '.')
@@ -901,6 +1014,28 @@ const BingoCardsBuilderTab: React.FC = () => {
                   {lojaCartelas.some(c => c.card_set_id === activeLayoutId && c.numero_cartela === previewCard.cartelaNumero)
                     ? 'Na loja ✓'
                     : 'Disponibilizar para Venda'}
+                </Button>
+              )}
+              {activeLayoutId && cards.length > 1 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full gap-1 h-7 text-xs"
+                  onClick={handleOpenBulkVender}
+                >
+                  <Store className="w-3 h-3" />
+                  Disponibilizar Várias em Prévia
+                </Button>
+              )}
+              {activeLayoutId && vendedores.length > 0 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full gap-1 h-7 text-xs"
+                  onClick={handleOpenVendedorLojaModal}
+                >
+                  <User className="w-3 h-3" />
+                  Disponibilizar por Vendedor
                 </Button>
               )}
             </div>
@@ -1522,6 +1657,148 @@ const BingoCardsBuilderTab: React.FC = () => {
               </div>
             )}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Disponibilizar Várias em Prévia dialog ── */}
+      <Dialog open={showBulkVenderModal} onOpenChange={(open) => { if (!open && !isBulkVendendo) setShowBulkVenderModal(false); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Store className="w-5 h-5" />
+              Disponibilizar Várias em Prévia
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Selecione o intervalo de cartelas para disponibilizar na loja. As cartelas já existentes serão atualizadas com o novo preço.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-sm">Da cartela</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={cards.length}
+                  value={bulkFrom}
+                  onChange={(e) => setBulkFrom(Number(e.target.value))}
+                  className="h-9"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-sm">Até a cartela</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={cards.length}
+                  value={bulkTo}
+                  onChange={(e) => setBulkTo(Number(e.target.value))}
+                  className="h-9"
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-sm">Preço (R$)</Label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={bulkPreco}
+                onChange={(e) => setBulkPreco(e.target.value)}
+                placeholder="0.00"
+                className="h-9"
+              />
+            </div>
+            {isBulkVendendo && (
+              <div className="space-y-1">
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>Publicando cartelas…</span>
+                  <span>{bulkProgress}%</span>
+                </div>
+                <div className="w-full bg-muted rounded-full h-2">
+                  <div
+                    className="bg-primary h-2 rounded-full transition-all"
+                    style={{ width: `${bulkProgress}%` }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowBulkVenderModal(false)} disabled={isBulkVendendo}>Cancelar</Button>
+            <Button onClick={handleBulkVender} disabled={isBulkVendendo} className="gap-2">
+              {isBulkVendendo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Store className="w-4 h-4" />}
+              Disponibilizar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Disponibilizar por Vendedor dialog ── */}
+      <Dialog open={showVendedorLojaModal} onOpenChange={(open) => { if (!open && !isVendedorLojaVendendo) setShowVendedorLojaModal(false); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <User className="w-5 h-5" />
+              Disponibilizar por Vendedor
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Selecione um vendedor para disponibilizar na loja todas as cartelas atribuídas a ele que possuam números gerados.
+            </p>
+            <div className="space-y-1.5">
+              <Label className="text-sm">Vendedor</Label>
+              <Select value={vendedorLojaId} onValueChange={setVendedorLojaId}>
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="Selecione um vendedor…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {vendedores.filter(v => v.ativo).map(v => {
+                    const count = cartelas.filter(c => c.vendedor_id === v.id && c.numeros_grade && c.numeros_grade.length > 0).length;
+                    return (
+                      <SelectItem key={v.id} value={v.id}>
+                        {v.nome} ({count} cartela{count !== 1 ? 's' : ''} com números)
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-sm">Preço (R$)</Label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={vendedorLojaPreco}
+                onChange={(e) => setVendedorLojaPreco(e.target.value)}
+                placeholder="0.00"
+                className="h-9"
+              />
+            </div>
+            {isVendedorLojaVendendo && (
+              <div className="space-y-1">
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>Publicando cartelas…</span>
+                  <span>{vendedorLojaProgress}%</span>
+                </div>
+                <div className="w-full bg-muted rounded-full h-2">
+                  <div
+                    className="bg-primary h-2 rounded-full transition-all"
+                    style={{ width: `${vendedorLojaProgress}%` }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowVendedorLojaModal(false)} disabled={isVendedorLojaVendendo}>Cancelar</Button>
+            <Button onClick={handleVendedorLoja} disabled={isVendedorLojaVendendo || !vendedorLojaId} className="gap-2">
+              {isVendedorLojaVendendo ? <Loader2 className="w-4 h-4 animate-spin" /> : <User className="w-4 h-4" />}
+              Disponibilizar
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>
