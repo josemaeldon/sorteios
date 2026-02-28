@@ -81,6 +81,10 @@ const Admin: React.FC = () => {
   const [stripePublicKey, setStripePublicKey] = useState('');
   const [stripeSecretKey, setStripeSecretKey] = useState('');
   const [stripeWebhookSecret, setStripeWebhookSecret] = useState('');
+  const [stripeSandboxMode, setStripeSandboxMode] = useState(false);
+  const [stripeSandboxPublicKey, setStripeSandboxPublicKey] = useState('');
+  const [stripeSandboxSecretKey, setStripeSandboxSecretKey] = useState('');
+  const [stripeSandboxWebhookSecret, setStripeSandboxWebhookSecret] = useState('');
   const [isLoadingConfig, setIsLoadingConfig] = useState(false);
   const [isSavingConfig, setIsSavingConfig] = useState(false);
 
@@ -159,6 +163,10 @@ const Admin: React.FC = () => {
     setStripePublicKey(config['stripe_public_key'] || '');
     setStripeSecretKey(config['stripe_secret_key'] || '');
     setStripeWebhookSecret(config['stripe_webhook_secret'] || '');
+    setStripeSandboxMode(config['stripe_sandbox_mode'] === 'true');
+    setStripeSandboxPublicKey(config['stripe_sandbox_public_key'] || '');
+    setStripeSandboxSecretKey(config['stripe_sandbox_secret_key'] || '');
+    setStripeSandboxWebhookSecret(config['stripe_sandbox_webhook_secret'] || '');
     // SMTP
     setSmtpHost(config['smtp_host'] || '');
     setSmtpPort(config['smtp_port'] || '587');
@@ -183,6 +191,10 @@ const Admin: React.FC = () => {
       stripe_public_key: stripePublicKey,
       stripe_secret_key: stripeSecretKey,
       stripe_webhook_secret: stripeWebhookSecret,
+      stripe_sandbox_mode: stripeSandboxMode ? 'true' : 'false',
+      stripe_sandbox_public_key: stripeSandboxPublicKey,
+      stripe_sandbox_secret_key: stripeSandboxSecretKey,
+      stripe_sandbox_webhook_secret: stripeSandboxWebhookSecret,
     });
     setIsSavingConfig(false);
   };
@@ -846,16 +858,32 @@ const Admin: React.FC = () => {
                   </div>
                 ) : (
                   <div className="space-y-4 max-w-lg">
+                    {/* Sandbox mode toggle */}
+                    <div className="flex items-center justify-between rounded-lg border border-orange-200 bg-orange-50 px-4 py-3">
+                      <div>
+                        <p className="font-semibold text-orange-800 text-sm">Modo Sandbox (Testes)</p>
+                        <p className="text-xs text-orange-600 mt-0.5">Ativado: usa chaves de teste (pk_test_ / sk_test_). Desativado: usa chaves de produção (pk_live_ / sk_live_).</p>
+                      </div>
+                      <Switch
+                        checked={stripeSandboxMode}
+                        onCheckedChange={setStripeSandboxMode}
+                        disabled={isSavingConfig}
+                      />
+                    </div>
+
+                    {/* Live keys */}
+                    <div className={`space-y-4 rounded-lg border p-4 ${stripeSandboxMode ? 'border-gray-200 opacity-60' : 'border-green-200 bg-green-50/30'}`}>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Chaves de Produção (Live)</p>
                     <div className="space-y-2">
                       <Label htmlFor="stripe_public_key">Chave Pública (Publishable Key)</Label>
                       <Input
                         id="stripe_public_key"
                         value={stripePublicKey}
                         onChange={(e) => setStripePublicKey(e.target.value)}
-                        placeholder="pk_live_... ou pk_test_..."
+                        placeholder="pk_live_..."
                         disabled={isSavingConfig}
                       />
-                      <p className="text-xs text-muted-foreground">Chave pública para uso no frontend (começa com pk_)</p>
+                      <p className="text-xs text-muted-foreground">Chave pública para uso no frontend (começa com pk_live_)</p>
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="stripe_secret_key">Chave Secreta (Secret Key)</Label>
@@ -864,13 +892,13 @@ const Admin: React.FC = () => {
                         type="password"
                         value={stripeSecretKey}
                         onChange={(e) => setStripeSecretKey(e.target.value)}
-                        placeholder="sk_live_... ou sk_test_..."
+                        placeholder="sk_live_..."
                         disabled={isSavingConfig}
                       />
-                      <p className="text-xs text-muted-foreground">Chave secreta para uso no backend (começa com sk_). Mantenha em segredo.</p>
+                      <p className="text-xs text-muted-foreground">Chave secreta para uso no backend (começa com sk_live_). Mantenha em segredo.</p>
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="stripe_webhook_secret">Webhook Secret</Label>
+                      <Label htmlFor="stripe_webhook_secret">Webhook Secret (Produção)</Label>
                       <Input
                         id="stripe_webhook_secret"
                         type="password"
@@ -879,8 +907,50 @@ const Admin: React.FC = () => {
                         placeholder="whsec_..."
                         disabled={isSavingConfig}
                       />
-                      <p className="text-xs text-muted-foreground">Segredo do webhook Stripe para verificação de assinaturas (começa com whsec_). Opcional mas recomendado.</p>
+                      <p className="text-xs text-muted-foreground">Segredo do webhook Stripe para verificação de assinaturas (começa com whsec_).</p>
                     </div>
+                    </div>
+
+                    {/* Sandbox keys */}
+                    <div className={`space-y-4 rounded-lg border p-4 ${stripeSandboxMode ? 'border-orange-200 bg-orange-50/30' : 'border-gray-200 opacity-60'}`}>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-orange-600">Chaves de Sandbox (Testes)</p>
+                    <div className="space-y-2">
+                      <Label htmlFor="stripe_sandbox_public_key">Chave Pública Sandbox</Label>
+                      <Input
+                        id="stripe_sandbox_public_key"
+                        value={stripeSandboxPublicKey}
+                        onChange={(e) => setStripeSandboxPublicKey(e.target.value)}
+                        placeholder="pk_test_..."
+                        disabled={isSavingConfig}
+                      />
+                      <p className="text-xs text-muted-foreground">Chave pública de teste (começa com pk_test_)</p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="stripe_sandbox_secret_key">Chave Secreta Sandbox</Label>
+                      <Input
+                        id="stripe_sandbox_secret_key"
+                        type="password"
+                        value={stripeSandboxSecretKey}
+                        onChange={(e) => setStripeSandboxSecretKey(e.target.value)}
+                        placeholder="sk_test_..."
+                        disabled={isSavingConfig}
+                      />
+                      <p className="text-xs text-muted-foreground">Chave secreta de teste (começa com sk_test_). Mantenha em segredo.</p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="stripe_sandbox_webhook_secret">Webhook Secret (Sandbox)</Label>
+                      <Input
+                        id="stripe_sandbox_webhook_secret"
+                        type="password"
+                        value={stripeSandboxWebhookSecret}
+                        onChange={(e) => setStripeSandboxWebhookSecret(e.target.value)}
+                        placeholder="whsec_..."
+                        disabled={isSavingConfig}
+                      />
+                      <p className="text-xs text-muted-foreground">Segredo do webhook de teste (começa com whsec_).</p>
+                    </div>
+                    </div>
+
                     <Button onClick={handleSaveConfig} disabled={isSavingConfig}>
                       {isSavingConfig && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
                       Salvar Configurações

@@ -232,7 +232,7 @@ export async function exportBingoCardsPDF(
   layout: CanvasLayout,
   sorteioNome: string,
   buyerData?: BuyerData,
-): Promise<void> {
+): Promise<Blob> {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
   for (let i = 0; i < cards.length; i++) {
@@ -315,4 +315,5 @@ export async function exportBingoCardsPDF(
   doc.save(
     `cartelas-bingo-${sorteioNome.replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.pdf`,
   );
+  return doc.output('blob');
 }
