@@ -21,6 +21,7 @@ import {
   ArrowLeft,
   Loader2,
   Trophy,
+  Ticket,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { callApi } from '@/lib/apiClient';
@@ -86,6 +87,13 @@ const DrawTab: React.FC = () => {
   const [selectedCartelaModal, setSelectedCartelaModal] = useState<{ numero: number; nome?: string; grade: number[] } | null>(null);
   const [ganhadoresPop, setGanhadoresPop] = useState<{ numero: number; nome?: string; lote?: number }[]>([]);
   const [manualNumberInput, setManualNumberInput] = useState('');
+
+  // Random cartela raffle state
+  const [isCartelaSorteioModalOpen, setIsCartelaSorteioModalOpen] = useState(false);
+  const [cartelaSorteada, setCartelaSorteada] = useState<{ numero: number; nome?: string } | null>(null);
+  const [isCartelaSorteioAnimating, setIsCartelaSorteioAnimating] = useState(false);
+  const [cartelaSorteioPreview, setCartelaSorteioPreview] = useState<number | null>(null);
+  const cartelaSorteioIntervalRef = useRef<NodeJS.Timeout | null>(null);
   
   const animationIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const fullscreenRef = useRef<HTMLDivElement>(null);
@@ -344,6 +352,9 @@ const DrawTab: React.FC = () => {
       if (animationIntervalRef.current) {
         clearInterval(animationIntervalRef.current);
       }
+      if (cartelaSorteioIntervalRef.current) {
+        clearInterval(cartelaSorteioIntervalRef.current);
+      }
     };
   }, []);
 
@@ -467,6 +478,35 @@ const DrawTab: React.FC = () => {
     } catch (error: any) {
       toast({ title: 'Erro ao excluir número', description: error.message, variant: 'destructive' });
     }
+  };
+
+  const handleSortearCartela = () => {
+    if (cartelasValidadas.length === 0) return;
+    setIsCartelaSorteioAnimating(true);
+    setCartelaSorteioPreview(null);
+
+    let counter = 0;
+    cartelaSorteioIntervalRef.current = setInterval(() => {
+      const randomIndex = Math.floor(Math.random() * cartelasValidadas.length);
+      setCartelaSorteioPreview(cartelasValidadas[randomIndex].numero);
+      counter++;
+
+      if (counter > ANIMATION_CYCLES) {
+        clearInterval(cartelaSorteioIntervalRef.current!);
+        cartelaSorteioIntervalRef.current = null;
+        const finalIndex = Math.floor(Math.random() * cartelasValidadas.length);
+        const finalCartela = cartelasValidadas[finalIndex];
+        setCartelaSorteioPreview(finalCartela.numero);
+        setCartelaSorteada({ numero: finalCartela.numero, nome: finalCartela.comprador_nome });
+        setIsCartelaSorteioAnimating(false);
+      }
+    }, ANIMATION_INTERVAL_MS);
+  };
+
+  const handleOpenCartelaSorteioModal = () => {
+    setCartelaSorteioPreview(null);
+    setIsCartelaSorteioAnimating(false);
+    setIsCartelaSorteioModalOpen(true);
   };
 
   const handleVerificarVencedor = async () => {
@@ -1021,105 +1061,146 @@ const DrawTab: React.FC = () => {
   // Show rodadas list
   return (
     <div className="animate-fade-in">
-      <div className="mb-6 flex justify-between items-center">
+      <div className="mb-6 flex justify-between items-center flex-wrap gap-3">
         <h2 className="text-2xl font-bold text-foreground flex items-center gap-2">
           <Shuffle className="w-6 h-6" />
           Sortear - {sorteioAtivo.nome}
         </h2>
-        <Button onClick={handleNewRodada} className="gap-2">
-          <Plus className="w-4 h-4" />
-          Nova Rodada
-        </Button>
-      </div>
-
-      {isLoadingRodadas ? (
-        <div className="text-center py-12">
-          <p className="text-muted-foreground">Carregando rodadas...</p>
-        </div>
-      ) : rodadas.length === 0 ? (
-        <div className="text-center py-12 bg-card rounded-xl border border-border">
-          <Shuffle className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
-          <h3 className="text-xl font-semibold text-foreground mb-2">
-            Nenhuma rodada encontrada
-          </h3>
-          <p className="text-muted-foreground mb-6">
-            Crie sua primeira rodada para começar a sortear
-          </p>
+        <div className="flex gap-2">
+          <Button onClick={handleOpenCartelaSorteioModal} variant="outline" className="gap-2" disabled={cartelasValidadas.length === 0}>
+            <Ticket className="w-4 h-4" />
+            Sortear Cartela
+          </Button>
           <Button onClick={handleNewRodada} className="gap-2">
             <Plus className="w-4 h-4" />
-            Criar Primeira Rodada
+            Nova Rodada
           </Button>
         </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {rodadas.map((rodada) => (
-            <div
-              key={rodada.id}
-              className="bg-card rounded-xl border border-border p-6 hover:shadow-lg transition-all"
-            >
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex-1">
-                  <h3 className="text-xl font-bold text-foreground mb-1">
-                    {rodada.nome}
-                  </h3>
-                  <div className="flex items-center gap-2">
-                    <span className={cn('px-2 py-1 rounded-full text-xs font-semibold flex items-center gap-1', getStatusColor(rodada.status))}>
-                      {getStatusIcon(rodada.status)}
-                      {rodada.status === 'ativo' ? 'Ativo' : rodada.status === 'concluido' ? 'Concluído' : 'Cancelado'}
-                    </span>
-                  </div>
-                </div>
-              </div>
+      </div>
 
-              <div className="space-y-2 mb-4">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Faixa:</span>
-                  <span className="font-semibold text-foreground">{rodada.range_start} - {rodada.range_end}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Total de números:</span>
-                  <span className="font-semibold text-foreground">{rodada.range_end - rodada.range_start + 1}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Sorteados:</span>
-                  <span className="font-semibold text-primary">{rodada.numeros_sorteados || 0}</span>
-                </div>
-                {rodada.created_at && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Criado em:</span>
-                    <span className="text-foreground">{formatarData(rodada.created_at)}</span>
-                  </div>
-                )}
-              </div>
-
-              <div className="flex gap-2">
-                <Button
-                  onClick={() => handleStartDrawing(rodada)}
-                  className="flex-1 gap-2"
-                  size="sm"
-                >
-                  <Play className="w-4 h-4" />
-                  Sortear
-                </Button>
-                <Button
-                  onClick={() => handleEditRodada(rodada)}
-                  variant="outline"
-                  size="sm"
-                >
-                  <Edit className="w-4 h-4" />
-                </Button>
-                <Button
-                  onClick={() => handleDeleteRodada(rodada.id)}
-                  variant="destructive"
-                  size="sm"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </Button>
-              </div>
+      <div className="flex gap-6 items-start">
+        <div className="flex-1 min-w-0">
+          {isLoadingRodadas ? (
+            <div className="text-center py-12">
+              <p className="text-muted-foreground">Carregando rodadas...</p>
             </div>
-          ))}
+          ) : rodadas.length === 0 ? (
+            <div className="text-center py-12 bg-card rounded-xl border border-border">
+              <Shuffle className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
+              <h3 className="text-xl font-semibold text-foreground mb-2">
+                Nenhuma rodada encontrada
+              </h3>
+              <p className="text-muted-foreground mb-6">
+                Crie sua primeira rodada para começar a sortear
+              </p>
+              <Button onClick={handleNewRodada} className="gap-2">
+                <Plus className="w-4 h-4" />
+                Criar Primeira Rodada
+              </Button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {rodadas.map((rodada) => (
+                <div
+                  key={rodada.id}
+                  className="bg-card rounded-xl border border-border p-6 hover:shadow-lg transition-all"
+                >
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex-1">
+                      <h3 className="text-xl font-bold text-foreground mb-1">
+                        {rodada.nome}
+                      </h3>
+                      <div className="flex items-center gap-2">
+                        <span className={cn('px-2 py-1 rounded-full text-xs font-semibold flex items-center gap-1', getStatusColor(rodada.status))}>
+                          {getStatusIcon(rodada.status)}
+                          {rodada.status === 'ativo' ? 'Ativo' : rodada.status === 'concluido' ? 'Concluído' : 'Cancelado'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 mb-4">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Faixa:</span>
+                      <span className="font-semibold text-foreground">{rodada.range_start} - {rodada.range_end}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Total de números:</span>
+                      <span className="font-semibold text-foreground">{rodada.range_end - rodada.range_start + 1}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Sorteados:</span>
+                      <span className="font-semibold text-primary">{rodada.numeros_sorteados || 0}</span>
+                    </div>
+                    {rodada.created_at && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Criado em:</span>
+                        <span className="text-foreground">{formatarData(rodada.created_at)}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={() => handleStartDrawing(rodada)}
+                      className="flex-1 gap-2"
+                      size="sm"
+                    >
+                      <Play className="w-4 h-4" />
+                      Sortear
+                    </Button>
+                    <Button
+                      onClick={() => handleEditRodada(rodada)}
+                      variant="outline"
+                      size="sm"
+                    >
+                      <Edit className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      onClick={() => handleDeleteRodada(rodada.id)}
+                      variant="destructive"
+                      size="sm"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-      )}
+
+        {/* RIGHT SIDEBAR - Drawn Cartela */}
+        {cartelaSorteada && (
+          <div className="w-72 flex-shrink-0">
+            <Card className="border-2 border-primary">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-primary">
+                  <Ticket className="w-5 h-5" />
+                  Cartela Sorteada
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="text-center space-y-3">
+                <div className="text-5xl font-black text-primary">
+                  {cartelaSorteada.numero.toString().padStart(3, '0')}
+                </div>
+                {cartelaSorteada.nome && (
+                  <p className="text-sm text-muted-foreground font-medium">{cartelaSorteada.nome}</p>
+                )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full gap-2"
+                  onClick={handleOpenCartelaSorteioModal}
+                >
+                  <Shuffle className="w-4 h-4" />
+                  Novo Sorteio
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+      </div>
 
       {/* Create/Edit Modal */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
@@ -1231,6 +1312,70 @@ const DrawTab: React.FC = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Sortear Cartela Modal */}
+      <Dialog open={isCartelaSorteioModalOpen} onOpenChange={(open) => {
+        if (!isCartelaSorteioAnimating) setIsCartelaSorteioModalOpen(open);
+      }}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Ticket className="w-5 h-5" />
+              Sortear Cartela Aleatória
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-6 py-2">
+            <p className="text-sm text-muted-foreground text-center">
+              Serão consideradas apenas as <span className="font-semibold text-foreground">{cartelasValidadas.length}</span> cartela(s) validada(s).
+            </p>
+
+            <div className="flex flex-col items-center justify-center min-h-[140px]">
+              {cartelaSorteioPreview !== null ? (
+                <div className={cn(
+                  "text-7xl font-black text-primary transition-all duration-150",
+                  isCartelaSorteioAnimating && "animate-pulse"
+                )}>
+                  {cartelaSorteioPreview.toString().padStart(3, '0')}
+                </div>
+              ) : (
+                <div className="text-center text-muted-foreground">
+                  <Ticket className="w-20 h-20 mx-auto mb-3 opacity-40" />
+                  <p className="text-base">Clique em "Sortear" para começar</p>
+                </div>
+              )}
+              {!isCartelaSorteioAnimating && cartelaSorteioPreview !== null && (() => {
+                const cv = cartelasValidadas.find(c => c.numero === cartelaSorteioPreview);
+                return cv?.comprador_nome ? (
+                  <p className="mt-2 text-sm text-muted-foreground">{cv.comprador_nome}</p>
+                ) : null;
+              })()}
+            </div>
+
+            <div className="flex gap-3">
+              <Button
+                onClick={handleSortearCartela}
+                disabled={isCartelaSorteioAnimating || cartelasValidadas.length === 0}
+                className="flex-1 gap-2"
+              >
+                {isCartelaSorteioAnimating ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Shuffle className="w-4 h-4" />
+                )}
+                Sortear
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setIsCartelaSorteioModalOpen(false)}
+                disabled={isCartelaSorteioAnimating}
+                className="flex-1"
+              >
+                Fechar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
