@@ -64,6 +64,7 @@ export interface LojaCartela {
   numero_cartela: number;
   preco: number;
   status: 'disponivel' | 'vendida';
+  vendedor_id?: string;
   comprador_nome?: string;
   comprador_email?: string;
   comprador_endereco?: string;

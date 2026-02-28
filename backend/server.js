@@ -125,6 +125,41 @@ app.post('/stripe-webhook', express.raw({ type: 'application/json' }), async (re
                   [lc.sorteio_id, lc.numero_cartela, compradorNome || null]
                 );
               }
+              // Create venda linked to the assigned vendedor
+              const vendaExistWh = await updateClient.query(
+                'SELECT id FROM vendas WHERE stripe_session_id = $1 LIMIT 1',
+                [session.id]
+              );
+              if (vendaExistWh.rows.length === 0) {
+                let vendaIdWh;
+                if (dbConfig.type === 'mysql') {
+                  await updateClient.query(
+                    `INSERT INTO vendas (id, sorteio_id, vendedor_id, cliente_nome, cliente_telefone, numeros_cartelas, valor_total, valor_pago, status, data_venda)
+                     VALUES (UUID(), $1, $2, $3, $4, $5, $6, $7, 'concluida', NOW())`,
+                    [lc.sorteio_id, lc.vendedor_id || null, compradorNome || 'Comprador Online', compradorTelefone || null, String(lc.numero_cartela), lc.preco, lc.preco]
+                  );
+                  const lastVenda = await updateClient.query('SELECT id FROM vendas ORDER BY created_at DESC LIMIT 1');
+                  vendaIdWh = lastVenda.rows[0]?.id;
+                } else {
+                  const vendaWhResult = await updateClient.query(
+                    `INSERT INTO vendas (sorteio_id, vendedor_id, cliente_nome, cliente_telefone, numeros_cartelas, valor_total, valor_pago, status, data_venda)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, 'concluida', NOW()) RETURNING id`,
+                    [lc.sorteio_id, lc.vendedor_id || null, compradorNome || 'Comprador Online', compradorTelefone || null, String(lc.numero_cartela), lc.preco, lc.preco]
+                  );
+                  vendaIdWh = vendaWhResult.rows[0]?.id;
+                }
+                if (vendaIdWh) {
+                  await updateClient.query(
+                    'INSERT INTO pagamentos (venda_id, forma_pagamento, valor, data_pagamento) VALUES ($1, $2, $3, NOW())',
+                    [vendaIdWh, 'cartao', lc.preco]
+                  );
+                  // Store stripe_session_id on the venda to prevent duplicates
+                  await updateClient.query(
+                    'UPDATE vendas SET stripe_session_id = $1 WHERE id = $2',
+                    [session.id, vendaIdWh]
+                  ).catch(() => {}); // ignore if column doesn't exist yet
+                }
+              }
             }
           }
         } finally {
@@ -146,6 +181,7 @@ app.post('/stripe-webhook', express.raw({ type: 'application/json' }), async (re
             if (session.metadata && session.metadata[key]) allIds.push(...session.metadata[key].split(',').filter(Boolean));
             else break;
           }
+          const multiPurchased = [];
           for (const lcId of allIds) {
             const lojaMultiResult = await updateClient.query(
               'SELECT lc.*, bcs.sorteio_id FROM loja_cartelas lc JOIN bingo_card_sets bcs ON lc.card_set_id = bcs.id WHERE lc.id = $1',
@@ -181,6 +217,46 @@ app.post('/stripe-webhook', express.raw({ type: 'application/json' }), async (re
                     [lc.sorteio_id, lc.numero_cartela, compradorNome || null]
                   );
                 }
+                multiPurchased.push(lc);
+              }
+            }
+          }
+          // Create single grouped venda for all cartelas in this multi purchase
+          if (multiPurchased.length > 0) {
+            const firstLc = multiPurchased[0];
+            const vendaExistWhMulti = await updateClient.query(
+              'SELECT id FROM vendas WHERE stripe_session_id = $1 LIMIT 1',
+              [session.id]
+            );
+            if (vendaExistWhMulti.rows.length === 0) {
+              const numerosVendidos = multiPurchased.map(c => c.numero_cartela).join(',');
+              const totalPreco = multiPurchased.reduce((s, c) => s + parseFloat(c.preco || 0), 0);
+              let vendaIdWhMulti;
+              if (dbConfig.type === 'mysql') {
+                await updateClient.query(
+                  `INSERT INTO vendas (id, sorteio_id, vendedor_id, cliente_nome, cliente_telefone, numeros_cartelas, valor_total, valor_pago, status, data_venda)
+                   VALUES (UUID(), $1, $2, $3, $4, $5, $6, $7, 'concluida', NOW())`,
+                  [firstLc.sorteio_id, firstLc.vendedor_id || null, compradorNome || 'Comprador Online', compradorTelefone || null, numerosVendidos, totalPreco, totalPreco]
+                );
+                const lastVendaM = await updateClient.query('SELECT id FROM vendas ORDER BY created_at DESC LIMIT 1');
+                vendaIdWhMulti = lastVendaM.rows[0]?.id;
+              } else {
+                const vendaWhMultiResult = await updateClient.query(
+                  `INSERT INTO vendas (sorteio_id, vendedor_id, cliente_nome, cliente_telefone, numeros_cartelas, valor_total, valor_pago, status, data_venda)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, 'concluida', NOW()) RETURNING id`,
+                  [firstLc.sorteio_id, firstLc.vendedor_id || null, compradorNome || 'Comprador Online', compradorTelefone || null, numerosVendidos, totalPreco, totalPreco]
+                );
+                vendaIdWhMulti = vendaWhMultiResult.rows[0]?.id;
+              }
+              if (vendaIdWhMulti) {
+                await updateClient.query(
+                  'INSERT INTO pagamentos (venda_id, forma_pagamento, valor, data_pagamento) VALUES ($1, $2, $3, NOW())',
+                  [vendaIdWhMulti, 'cartao', totalPreco]
+                );
+                await updateClient.query(
+                  'UPDATE vendas SET stripe_session_id = $1 WHERE id = $2',
+                  [session.id, vendaIdWhMulti]
+                ).catch(() => {});
               }
             }
           }
@@ -269,6 +345,7 @@ async function initSchema() {
             numero_cartela INT NOT NULL,
             preco DECIMAL(10,2) NOT NULL DEFAULT 0,
             status VARCHAR(20) NOT NULL DEFAULT 'disponivel',
+            vendedor_id CHAR(36) DEFAULT NULL,
             comprador_nome VARCHAR(255),
             comprador_email VARCHAR(255),
             comprador_endereco VARCHAR(255),
@@ -288,6 +365,7 @@ async function initSchema() {
           ['comprador_cidade',   'ALTER TABLE loja_cartelas ADD COLUMN comprador_cidade VARCHAR(255)'],
           ['comprador_telefone', 'ALTER TABLE loja_cartelas ADD COLUMN comprador_telefone VARCHAR(50)'],
           ['layout_data',        "ALTER TABLE loja_cartelas ADD COLUMN layout_data LONGTEXT NOT NULL DEFAULT ''"],
+          ['vendedor_id',        'ALTER TABLE loja_cartelas ADD COLUMN vendedor_id CHAR(36) DEFAULT NULL'],
         ];
         for (const [, sql] of lojaExtraCols) {
           try { await client.query(sql); } catch (e) {
@@ -369,10 +447,30 @@ async function initSchema() {
             email VARCHAR(255) NOT NULL UNIQUE,
             senha_hash VARCHAR(255) NOT NULL,
             nome VARCHAR(255) NOT NULL,
+            reset_token VARCHAR(64) DEFAULT NULL,
+            reset_token_expires DATETIME DEFAULT NULL,
             created_at TIMESTAMP DEFAULT NOW() NOT NULL,
             updated_at TIMESTAMP DEFAULT NOW() ON UPDATE NOW() NOT NULL
           )
         `);
+        // Add reset token columns to loja_compradores if upgrading (MySQL)
+        const compradoresExtraCols = [
+          'ALTER TABLE loja_compradores ADD COLUMN reset_token VARCHAR(64) DEFAULT NULL',
+          'ALTER TABLE loja_compradores ADD COLUMN reset_token_expires DATETIME DEFAULT NULL',
+        ];
+        for (const sql of compradoresExtraCols) {
+          try { await client.query(sql); } catch (e) {
+            if (!e.message || !e.message.includes('Duplicate column')) {
+              console.warn('loja_compradores migration warning:', e.message);
+            }
+          }
+        }
+        // Add stripe_session_id to vendas for deduplication (MySQL)
+        try { await client.query('ALTER TABLE vendas ADD COLUMN stripe_session_id VARCHAR(255) DEFAULT NULL'); } catch (e) {
+          if (!e.message || !e.message.includes('Duplicate column')) {
+            console.warn('vendas stripe_session_id migration warning:', e.message);
+          }
+        }
       } else {
         await client.query(`
           CREATE TABLE IF NOT EXISTS public.sorteio_compartilhado (
@@ -419,6 +517,7 @@ async function initSchema() {
             numero_cartela INT NOT NULL,
             preco NUMERIC(10,2) NOT NULL DEFAULT 0,
             status VARCHAR(20) NOT NULL DEFAULT 'disponivel',
+            vendedor_id UUID DEFAULT NULL,
             comprador_nome VARCHAR(255),
             comprador_email VARCHAR(255),
             comprador_endereco VARCHAR(255),
@@ -437,6 +536,7 @@ async function initSchema() {
         await client.query(`ALTER TABLE loja_cartelas ADD COLUMN IF NOT EXISTS comprador_cidade VARCHAR(255)`);
         await client.query(`ALTER TABLE loja_cartelas ADD COLUMN IF NOT EXISTS comprador_telefone VARCHAR(50)`);
         await client.query(`ALTER TABLE loja_cartelas ADD COLUMN IF NOT EXISTS layout_data TEXT NOT NULL DEFAULT ''`);
+        await client.query(`ALTER TABLE loja_cartelas ADD COLUMN IF NOT EXISTS vendedor_id UUID DEFAULT NULL`);
         // Add comprador_nome to cartelas (PostgreSQL)
         await client.query(`ALTER TABLE cartelas ADD COLUMN IF NOT EXISTS comprador_nome VARCHAR(255)`);
         // Create planos table (PostgreSQL)
@@ -472,10 +572,17 @@ async function initSchema() {
             email VARCHAR(255) NOT NULL UNIQUE,
             senha_hash VARCHAR(255) NOT NULL,
             nome VARCHAR(255) NOT NULL,
+            reset_token VARCHAR(64) DEFAULT NULL,
+            reset_token_expires TIMESTAMP WITH TIME ZONE DEFAULT NULL,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
           )
         `);
+        // Add reset token columns to loja_compradores if upgrading (PostgreSQL)
+        await client.query(`ALTER TABLE loja_compradores ADD COLUMN IF NOT EXISTS reset_token VARCHAR(64) DEFAULT NULL`);
+        await client.query(`ALTER TABLE loja_compradores ADD COLUMN IF NOT EXISTS reset_token_expires TIMESTAMP WITH TIME ZONE DEFAULT NULL`);
+        // Add stripe_session_id to vendas for deduplication (PostgreSQL)
+        await client.query(`ALTER TABLE vendas ADD COLUMN IF NOT EXISTS stripe_session_id VARCHAR(255) DEFAULT NULL`);
       }
       console.log('Schema initialized: sorteio_compartilhado table ready');
     } finally {
@@ -692,7 +799,7 @@ function checkBasicAuth(req, res, next) {
 
 // JWT Auth middleware
 async function checkAuth(req, action) {
-  const publicActions = ['checkFirstAccess', 'setupAdmin', 'login', 'publicRegister', 'getPublicPlanos', 'getLojaPublica', 'createStripeCheckoutCartela', 'confirmStripeCheckoutCartela', 'createStripeCheckoutMultiCartela', 'confirmStripeCheckoutMultiCartela', 'cadastrarComprador', 'loginComprador', 'getHistoricoComprador', 'emailCartelasPDF'];
+  const publicActions = ['checkFirstAccess', 'setupAdmin', 'login', 'publicRegister', 'getPublicPlanos', 'getLojaPublica', 'createStripeCheckoutCartela', 'confirmStripeCheckoutCartela', 'createStripeCheckoutMultiCartela', 'confirmStripeCheckoutMultiCartela', 'cadastrarComprador', 'loginComprador', 'getHistoricoComprador', 'emailCartelasPDF', 'solicitarRecuperacaoSenha', 'resetarSenha'];
   const adminActions = [
     // User management
     'getUsers', 'createUser', 'updateUser', 'deleteUser', 'approveUser', 'rejectUser',
@@ -2033,12 +2140,13 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         }
         const preco = Number(data.preco) >= 0 ? Number(data.preco) : 0;
         const layoutData = data.layout_data || '';
+        const vendedorIdLoja = data.vendedor_id || null;
         if (dbConfig.type === 'mysql') {
           result = await client.query(
-            `INSERT INTO loja_cartelas (id, user_id, card_set_id, numero_cartela, preco, card_data, layout_data)
-             VALUES (UUID(), $1, $2, $3, $4, $5, $6)
-             ON DUPLICATE KEY UPDATE preco = VALUES(preco), card_data = VALUES(card_data), layout_data = VALUES(layout_data), updated_at = NOW()`,
-            [data.authenticated_user_id, data.card_set_id, data.numero_cartela, preco, data.card_data, layoutData]
+            `INSERT INTO loja_cartelas (id, user_id, card_set_id, numero_cartela, preco, card_data, layout_data, vendedor_id)
+             VALUES (UUID(), $1, $2, $3, $4, $5, $6, $7)
+             ON DUPLICATE KEY UPDATE preco = VALUES(preco), card_data = VALUES(card_data), layout_data = VALUES(layout_data), vendedor_id = VALUES(vendedor_id), updated_at = NOW()`,
+            [data.authenticated_user_id, data.card_set_id, data.numero_cartela, preco, data.card_data, layoutData, vendedorIdLoja]
           );
           const inserted = await client.query(
             'SELECT * FROM loja_cartelas WHERE user_id = $1 AND card_set_id = $2 AND numero_cartela = $3',
@@ -2047,11 +2155,11 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           return res.json({ data: inserted.rows[0] });
         } else {
           result = await client.query(
-            `INSERT INTO loja_cartelas (user_id, card_set_id, numero_cartela, preco, card_data, layout_data)
-             VALUES ($1, $2, $3, $4, $5, $6)
-             ON CONFLICT (user_id, card_set_id, numero_cartela) DO UPDATE SET preco = EXCLUDED.preco, card_data = EXCLUDED.card_data, layout_data = EXCLUDED.layout_data, updated_at = NOW()
+            `INSERT INTO loja_cartelas (user_id, card_set_id, numero_cartela, preco, card_data, layout_data, vendedor_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             ON CONFLICT (user_id, card_set_id, numero_cartela) DO UPDATE SET preco = EXCLUDED.preco, card_data = EXCLUDED.card_data, layout_data = EXCLUDED.layout_data, vendedor_id = EXCLUDED.vendedor_id, updated_at = NOW()
              RETURNING *`,
-            [data.authenticated_user_id, data.card_set_id, data.numero_cartela, preco, data.card_data, layoutData]
+            [data.authenticated_user_id, data.card_set_id, data.numero_cartela, preco, data.card_data, layoutData, vendedorIdLoja]
           );
           return res.json({ data: result.rows[0] });
         }
@@ -2063,6 +2171,17 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           [data.id, data.authenticated_user_id]
         );
         return res.json({ success: true });
+
+      case 'removerMultiplasCartelasLoja': {
+        const ids = Array.isArray(data.ids) ? data.ids.filter(Boolean) : [];
+        if (ids.length === 0) return res.json({ success: true });
+        const placeholders = ids.map((_, i) => `$${i + 2}`).join(',');
+        await client.query(
+          `DELETE FROM loja_cartelas WHERE user_id = $1 AND id IN (${placeholders})`,
+          [data.authenticated_user_id, ...ids]
+        );
+        return res.json({ success: true });
+      }
 
       case 'atualizarPrecoLojaCartela': {
         const novoPreco = Number(data.preco) >= 0 ? Number(data.preco) : 0;
@@ -2185,34 +2304,33 @@ app.post('/api', checkBasicAuth, async (req, res) => {
               [lcConfirm.sorteio_id, lcConfirm.numero_cartela, compradorNomeConfirm || null]
             );
           }
-          // Insert into vendas (Req 3) — only if not already recorded for this session
+          // Insert into vendas — deduplicate by stripe_session_id
           const vendaExistCheck = await client.query(
-            'SELECT id FROM vendas WHERE sorteio_id = $1 AND numeros_cartelas = $2 AND cliente_nome = $3 AND status = $4',
-            [lcConfirm.sorteio_id, String(lcConfirm.numero_cartela), compradorNomeConfirm, 'concluida']
+            'SELECT id FROM vendas WHERE stripe_session_id = $1 LIMIT 1',
+            [data.session_id]
           );
           if (vendaExistCheck.rows.length === 0) {
-            // Try to find owner vendedor entry
-            const ownerResult = await client.query('SELECT nome FROM usuarios WHERE id = $1', [lcConfirm.user_id]);
-            const ownerNome = ownerResult.rows[0]?.nome || '';
-            let vendedorIdOnline = null;
-            if (ownerNome) {
-              const vendedorMatch = await client.query(
-                "SELECT id FROM vendedores WHERE sorteio_id = $1 AND LOWER(nome) = LOWER($2) LIMIT 1",
-                [lcConfirm.sorteio_id, ownerNome]
-              );
-              if (vendedorMatch.rows.length > 0) vendedorIdOnline = vendedorMatch.rows[0].id;
-            }
+            let vendaIdConfirm;
             if (dbConfig.type === 'mysql') {
               await client.query(
-                `INSERT INTO vendas (id, sorteio_id, vendedor_id, cliente_nome, cliente_telefone, numeros_cartelas, valor_total, valor_pago, status, data_venda)
-                 VALUES (UUID(), $1, $2, $3, $4, $5, $6, $7, 'concluida', NOW())`,
-                [lcConfirm.sorteio_id, vendedorIdOnline, compradorNomeConfirm || 'Comprador Online', compradorTelefoneConfirm || null, String(lcConfirm.numero_cartela), lcConfirm.preco, lcConfirm.preco]
+                `INSERT INTO vendas (id, sorteio_id, vendedor_id, cliente_nome, cliente_telefone, numeros_cartelas, valor_total, valor_pago, status, stripe_session_id, data_venda)
+                 VALUES (UUID(), $1, $2, $3, $4, $5, $6, $7, 'concluida', $8, NOW())`,
+                [lcConfirm.sorteio_id, lcConfirm.vendedor_id || null, compradorNomeConfirm || 'Comprador Online', compradorTelefoneConfirm || null, String(lcConfirm.numero_cartela), lcConfirm.preco, lcConfirm.preco, data.session_id]
               );
+              const lastVendaC = await client.query('SELECT id FROM vendas ORDER BY created_at DESC LIMIT 1');
+              vendaIdConfirm = lastVendaC.rows[0]?.id;
             } else {
+              const vendaConfirmResult = await client.query(
+                `INSERT INTO vendas (sorteio_id, vendedor_id, cliente_nome, cliente_telefone, numeros_cartelas, valor_total, valor_pago, status, stripe_session_id, data_venda)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, 'concluida', $8, NOW()) RETURNING id`,
+                [lcConfirm.sorteio_id, lcConfirm.vendedor_id || null, compradorNomeConfirm || 'Comprador Online', compradorTelefoneConfirm || null, String(lcConfirm.numero_cartela), lcConfirm.preco, lcConfirm.preco, data.session_id]
+              );
+              vendaIdConfirm = vendaConfirmResult.rows[0]?.id;
+            }
+            if (vendaIdConfirm) {
               await client.query(
-                `INSERT INTO vendas (sorteio_id, vendedor_id, cliente_nome, cliente_telefone, numeros_cartelas, valor_total, valor_pago, status, data_venda)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, 'concluida', NOW())`,
-                [lcConfirm.sorteio_id, vendedorIdOnline, compradorNomeConfirm || 'Comprador Online', compradorTelefoneConfirm || null, String(lcConfirm.numero_cartela), lcConfirm.preco, lcConfirm.preco]
+                'INSERT INTO pagamentos (venda_id, forma_pagamento, valor, data_pagamento) VALUES ($1, $2, $3, NOW())',
+                [vendaIdConfirm, 'cartao', lcConfirm.preco]
               );
             }
           }
@@ -2376,50 +2494,43 @@ app.post('/api', checkBasicAuth, async (req, res) => {
             numero_cartela: lcMulti.numero_cartela,
             card_data: lcMulti.card_data,
             layout_data: lcMulti.layout_data,
+            sorteio_id: lcMulti.sorteio_id,
+            vendedor_id: lcMulti.vendedor_id,
+            preco: lcMulti.preco,
           });
         }
-        // Insert single grouped venda for all multi cartelas (Req 3)
-        if (purchasedCartelas.length > 0 && allMultiIds.length > 0) {
-          // Get sorteio_id from first purchased cartela
-          const firstLcResult = await client.query(
-            'SELECT lc.*, bcs.sorteio_id FROM loja_cartelas lc JOIN bingo_card_sets bcs ON lc.card_set_id = bcs.id WHERE lc.id = $1',
-            [allMultiIds[0]]
-          );
-          const firstLc = firstLcResult.rows[0];
-          if (firstLc?.sorteio_id) {
-            const numerosVendidos = purchasedCartelas.map(c => c.numero_cartela).join(',');
+        // Insert single grouped venda for all multi cartelas — deduplicate by stripe_session_id
+        if (purchasedCartelas.length > 0) {
+          const firstPc = purchasedCartelas[0];
+          if (firstPc.sorteio_id) {
             const vendaExistCheckMulti = await client.query(
-              'SELECT id FROM vendas WHERE sorteio_id = $1 AND numeros_cartelas = $2 AND cliente_nome = $3 AND status = $4',
-              [firstLc.sorteio_id, numerosVendidos, compradorNomeMulti, 'concluida']
+              'SELECT id FROM vendas WHERE stripe_session_id = $1 LIMIT 1',
+              [data.session_id]
             );
             if (vendaExistCheckMulti.rows.length === 0) {
-              const ownerResultMulti = await client.query('SELECT nome FROM usuarios WHERE id = $1', [firstLc.user_id]);
-              const ownerNomeMulti = ownerResultMulti.rows[0]?.nome || '';
-              let vendedorIdMulti = null;
-              if (ownerNomeMulti) {
-                const vendedorMatchMulti = await client.query(
-                  "SELECT id FROM vendedores WHERE sorteio_id = $1 AND LOWER(nome) = LOWER($2) LIMIT 1",
-                  [firstLc.sorteio_id, ownerNomeMulti]
-                );
-                if (vendedorMatchMulti.rows.length > 0) vendedorIdMulti = vendedorMatchMulti.rows[0].id;
-              }
-              // Get total price from the loja_cartelas
-              const pricesResult = await client.query(
-                `SELECT COALESCE(SUM(preco), 0) as total FROM loja_cartelas WHERE id IN (${allMultiIds.map((_, i) => `$${i + 1}`).join(',')})`,
-                allMultiIds
-              );
-              const totalPreco = pricesResult.rows[0]?.total || 0;
+              const numerosVendidos = purchasedCartelas.map(c => c.numero_cartela).join(',');
+              const totalPreco = purchasedCartelas.reduce((s, c) => s + parseFloat(c.preco || 0), 0);
+              let vendaIdMultiConfirm;
               if (dbConfig.type === 'mysql') {
                 await client.query(
-                  `INSERT INTO vendas (id, sorteio_id, vendedor_id, cliente_nome, cliente_telefone, numeros_cartelas, valor_total, valor_pago, status, data_venda)
-                   VALUES (UUID(), $1, $2, $3, $4, $5, $6, $7, 'concluida', NOW())`,
-                  [firstLc.sorteio_id, vendedorIdMulti, compradorNomeMulti || 'Comprador Online', compradorTelefoneMulti || null, numerosVendidos, totalPreco, totalPreco]
+                  `INSERT INTO vendas (id, sorteio_id, vendedor_id, cliente_nome, cliente_telefone, numeros_cartelas, valor_total, valor_pago, status, stripe_session_id, data_venda)
+                   VALUES (UUID(), $1, $2, $3, $4, $5, $6, $7, 'concluida', $8, NOW())`,
+                  [firstPc.sorteio_id, firstPc.vendedor_id || null, compradorNomeMulti || 'Comprador Online', compradorTelefoneMulti || null, numerosVendidos, totalPreco, totalPreco, data.session_id]
                 );
+                const lastVendaMC = await client.query('SELECT id FROM vendas ORDER BY created_at DESC LIMIT 1');
+                vendaIdMultiConfirm = lastVendaMC.rows[0]?.id;
               } else {
+                const vendaMultiConfirmResult = await client.query(
+                  `INSERT INTO vendas (sorteio_id, vendedor_id, cliente_nome, cliente_telefone, numeros_cartelas, valor_total, valor_pago, status, stripe_session_id, data_venda)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, 'concluida', $8, NOW()) RETURNING id`,
+                  [firstPc.sorteio_id, firstPc.vendedor_id || null, compradorNomeMulti || 'Comprador Online', compradorTelefoneMulti || null, numerosVendidos, totalPreco, totalPreco, data.session_id]
+                );
+                vendaIdMultiConfirm = vendaMultiConfirmResult.rows[0]?.id;
+              }
+              if (vendaIdMultiConfirm) {
                 await client.query(
-                  `INSERT INTO vendas (sorteio_id, vendedor_id, cliente_nome, cliente_telefone, numeros_cartelas, valor_total, valor_pago, status, data_venda)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, 'concluida', NOW())`,
-                  [firstLc.sorteio_id, vendedorIdMulti, compradorNomeMulti || 'Comprador Online', compradorTelefoneMulti || null, numerosVendidos, totalPreco, totalPreco]
+                  'INSERT INTO pagamentos (venda_id, forma_pagamento, valor, data_pagamento) VALUES ($1, $2, $3, NOW())',
+                  [vendaIdMultiConfirm, 'cartao', totalPreco]
                 );
               }
             }
@@ -2427,7 +2538,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         }
         return res.json({
           success: true,
-          cartelas: purchasedCartelas,
+          cartelas: purchasedCartelas.map(c => ({ numero_cartela: c.numero_cartela, card_data: c.card_data, layout_data: c.layout_data })),
           comprador_nome: compradorNomeMulti,
           comprador_endereco: compradorEnderecoMulti,
           comprador_cidade: compradorCidadeMulti,
@@ -2520,6 +2631,55 @@ ${numerosCartelas ? `<p><strong>Cartelas:</strong> ${numerosCartelas}</p>` : ''}
           html: htmlBody,
           attachments: [{ filename: `cartelas-${(numerosCartelas || 'bingo').replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`, content: pdfBuffer, contentType: 'application/pdf' }],
         });
+        return res.json({ success: true });
+      }
+
+      case 'solicitarRecuperacaoSenha': {
+        if (!data.email) {
+          return res.status(400).json({ error: 'Email é obrigatório.' });
+        }
+        const emailRecup = data.email.toLowerCase().trim();
+        const compRecupResult = await client.query('SELECT id, nome FROM loja_compradores WHERE email = $1', [emailRecup]);
+        // Always return success to avoid user enumeration
+        if (compRecupResult.rows.length === 0) {
+          return res.json({ success: true });
+        }
+        const compRecup = compRecupResult.rows[0];
+        const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+        const resetExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+        await client.query(
+          'UPDATE loja_compradores SET reset_token = $1, reset_token_expires = $2 WHERE id = $3',
+          [resetCode, resetExpires, compRecup.id]
+        );
+        await sendEmail(client, {
+          to: emailRecup,
+          subject: 'Código de recuperação de senha',
+          text: `Olá, ${compRecup.nome}! Seu código de recuperação de senha é: ${resetCode}. Válido por 15 minutos.`,
+          html: `<p>Olá, <strong>${compRecup.nome}</strong>!</p><p>Seu código de recuperação de senha é:</p><h2 style="letter-spacing:4px">${resetCode}</h2><p>Válido por 15 minutos.</p>`,
+        });
+        return res.json({ success: true });
+      }
+
+      case 'resetarSenha': {
+        if (!data.email || !data.codigo || !data.nova_senha) {
+          return res.status(400).json({ error: 'Email, código e nova senha são obrigatórios.' });
+        }
+        if (data.nova_senha.length < 6) {
+          return res.status(400).json({ error: 'A senha deve ter pelo menos 6 caracteres.' });
+        }
+        const emailReset = data.email.toLowerCase().trim();
+        const compResetResult = await client.query(
+          'SELECT id FROM loja_compradores WHERE email = $1 AND reset_token = $2 AND reset_token_expires > NOW()',
+          [emailReset, data.codigo]
+        );
+        if (compResetResult.rows.length === 0) {
+          return res.status(400).json({ error: 'Código inválido ou expirado.' });
+        }
+        const newHash = await hashPassword(data.nova_senha);
+        await client.query(
+          'UPDATE loja_compradores SET senha_hash = $1, reset_token = NULL, reset_token_expires = NULL WHERE id = $2',
+          [newHash, compResetResult.rows[0].id]
+        );
         return res.json({ success: true });
       }
 

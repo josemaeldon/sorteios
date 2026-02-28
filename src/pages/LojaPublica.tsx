@@ -229,6 +229,16 @@ const LojaPublica: React.FC = () => {
   const [authSenhaVis, setAuthSenhaVis] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
+  // Password reset state
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [resetStep, setResetStep] = useState<'email' | 'code'>('email');
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetCode, setResetCode] = useState('');
+  const [resetNovaSenha, setResetNovaSenha] = useState('');
+  const [resetNovaSenhaVis, setResetNovaSenhaVis] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [resetSuccess, setResetSuccess] = useState<string | null>(null);
+  const [isResetSubmitting, setIsResetSubmitting] = useState(false);
   // Purchase history state
   const [showHistoricoModal, setShowHistoricoModal] = useState(false);
   const [historico, setHistorico] = useState<HistoricoItem[]>([]);
@@ -410,8 +420,8 @@ const LojaPublica: React.FC = () => {
 
   const handleBuy = (cartela: LojaCartela) => {
     setCheckoutError(null);
-    setCompradorNome('');
-    setCompradorEmail('');
+    setCompradorNome(compradorInfo?.nome || '');
+    setCompradorEmail(compradorInfo?.email || '');
     setCompradorEndereco('');
     setCompradorCidade('');
     setCompradorTelefone('');
@@ -531,6 +541,45 @@ const LojaPublica: React.FC = () => {
       setAuthError(err.message || 'Erro ao autenticar.');
     } finally {
       setIsAuthSubmitting(false);
+    }
+  };
+
+  const handleSolicitarRecuperacao = async () => {
+    setResetError(null);
+    setResetSuccess(null);
+    if (!resetEmail.trim()) { setResetError('Informe seu e-mail.'); return; }
+    setIsResetSubmitting(true);
+    try {
+      await callApi('solicitarRecuperacaoSenha', { email: resetEmail.trim() });
+      setResetSuccess('Se o e-mail estiver cadastrado, você receberá o código em breve.');
+      setResetStep('code');
+    } catch (err: any) {
+      setResetError(err.message || 'Erro ao solicitar recuperação.');
+    } finally {
+      setIsResetSubmitting(false);
+    }
+  };
+
+  const handleResetarSenha = async () => {
+    setResetError(null);
+    if (!resetCode.trim() || !resetNovaSenha.trim()) { setResetError('Preencha o código e a nova senha.'); return; }
+    setIsResetSubmitting(true);
+    try {
+      const result = await callApi('resetarSenha', { email: resetEmail.trim(), codigo: resetCode.trim(), nova_senha: resetNovaSenha });
+      if (result.error) { setResetError(result.error); return; }
+      setResetSuccess('Senha alterada com sucesso! Faça login com a nova senha.');
+      setTimeout(() => {
+        setShowResetModal(false);
+        setResetStep('email');
+        setResetEmail(''); setResetCode(''); setResetNovaSenha('');
+        setResetError(null); setResetSuccess(null);
+        setAuthTab('login');
+        setShowAuthModal(true);
+      }, 1500);
+    } catch (err: any) {
+      setResetError(err.message || 'Erro ao redefinir senha.');
+    } finally {
+      setIsResetSubmitting(false);
     }
   };
 
@@ -704,8 +753,8 @@ const LojaPublica: React.FC = () => {
               <Button
                 className="bg-white text-blue-900 hover:bg-blue-50 rounded-full h-8 px-4 text-sm font-bold flex-shrink-0"
                 onClick={() => {
-                  setCartCompradorNome('');
-                  setCartCompradorEmail('');
+                  setCartCompradorNome(compradorInfo?.nome || '');
+                  setCartCompradorEmail(compradorInfo?.email || '');
                   setCartCompradorEndereco('');
                   setCartCompradorCidade('');
                   setCartCompradorTelefone('');
@@ -940,6 +989,15 @@ const LojaPublica: React.FC = () => {
                   </button>
                 </div>
               </div>
+              <div className="text-right">
+                <button
+                  type="button"
+                  className="text-xs text-blue-600 hover:underline"
+                  onClick={() => { setShowAuthModal(false); setResetEmail(authEmail); setResetStep('email'); setResetError(null); setResetSuccess(null); setShowResetModal(true); }}
+                >
+                  Esqueceu a senha?
+                </button>
+              </div>
             </TabsContent>
             <TabsContent value="cadastro" className="space-y-3 pt-2">
               <div className="space-y-1.5">
@@ -967,6 +1025,58 @@ const LojaPublica: React.FC = () => {
             <Button onClick={handleAuthSubmit} disabled={isAuthSubmitting} className="gap-2">
               {isAuthSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : (authTab === 'login' ? <LogIn className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />)}
               {authTab === 'login' ? 'Entrar' : 'Cadastrar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Password reset modal */}
+      <Dialog open={showResetModal} onOpenChange={(open) => { if (!open) { setShowResetModal(false); setResetStep('email'); setResetError(null); setResetSuccess(null); } }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <LogIn className="w-5 h-5" />
+              Recuperar Senha
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            {resetStep === 'email' ? (
+              <>
+                <p className="text-sm text-gray-500">Informe o e-mail cadastrado. Você receberá um código de 6 dígitos.</p>
+                <div className="space-y-1.5">
+                  <Label>E-mail</Label>
+                  <Input type="email" value={resetEmail} onChange={(e) => setResetEmail(e.target.value)} placeholder="seu@email.com" />
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-gray-500">Digite o código enviado para <strong>{resetEmail}</strong> e escolha uma nova senha.</p>
+                <div className="space-y-1.5">
+                  <Label>Código de verificação</Label>
+                  <Input value={resetCode} onChange={(e) => setResetCode(e.target.value)} placeholder="000000" maxLength={6} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Nova senha</Label>
+                  <div className="relative">
+                    <Input type={resetNovaSenhaVis ? 'text' : 'password'} value={resetNovaSenha} onChange={(e) => setResetNovaSenha(e.target.value)} placeholder="Mínimo 6 caracteres" className="pr-10" />
+                    <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" onClick={() => setResetNovaSenhaVis(v => !v)}>
+                      {resetNovaSenhaVis ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+                <button type="button" className="text-xs text-blue-600 hover:underline" onClick={() => { setResetStep('email'); setResetError(null); setResetSuccess(null); }}>
+                  ← Voltar
+                </button>
+              </>
+            )}
+            {resetError && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{resetError}</p>}
+            {resetSuccess && <p className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">{resetSuccess}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowResetModal(false)}>Cancelar</Button>
+            <Button onClick={resetStep === 'email' ? handleSolicitarRecuperacao : handleResetarSenha} disabled={isResetSubmitting} className="gap-2">
+              {isResetSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              {resetStep === 'email' ? 'Enviar código' : 'Redefinir senha'}
             </Button>
           </DialogFooter>
         </DialogContent>
