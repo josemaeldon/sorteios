@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { User, CreateUserData, UserRole } from '@/types/auth';
+import { User, CreateUserData, UserRole, Plan } from '@/types/auth';
 import { Sorteio } from '@/types/bingo';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,8 +10,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, Plus, Pencil, Trash2, Users, Loader2, ShieldCheck, User as UserIcon, UserPlus, UserMinus, Ticket } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
+import { ArrowLeft, Plus, Pencil, Trash2, Users, Loader2, ShieldCheck, User as UserIcon, UserPlus, UserMinus, Ticket, CreditCard, Settings, Gift } from 'lucide-react';
 import { z } from 'zod';
 
 interface SorteioAdmin extends Sorteio {
@@ -27,9 +30,15 @@ const userSchema = z.object({
   titulo_sistema: z.string().min(1, 'Título do sistema é obrigatório').max(100),
 });
 
+const planSchema = z.object({
+  nome: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres').max(100),
+  valor: z.coerce.number().min(0, 'Valor deve ser maior ou igual a zero'),
+  descricao: z.string().max(500).optional().or(z.literal('')),
+});
+
 const Admin: React.FC = () => {
   const navigate = useNavigate();
-  const { user, getAllUsers, createUser, updateUser, deleteUser, isAuthenticated, getAllSorteiosAdmin, getSorteioUsers, assignSorteioToUser, removeUserFromSorteio } = useAuth();
+  const { user, getAllUsers, createUser, updateUser, deleteUser, isAuthenticated, getAllSorteiosAdmin, getSorteioUsers, assignSorteioToUser, removeUserFromSorteio, getPlanos, createPlano, updatePlano, deletePlano, assignUserPlan, grantLifetimeAccess, getConfiguracoes, updateConfiguracoes } = useAuth();
   
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -48,6 +57,28 @@ const Admin: React.FC = () => {
   const [sorteioOwnerId, setSorteioOwnerId] = useState<string>('');
   const [isLoadingAssign, setIsLoadingAssign] = useState(false);
   const [assignUserId, setAssignUserId] = useState<string>('');
+  
+  // Plans state
+  const [planos, setPlanos] = useState<Plan[]>([]);
+  const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
+  const [isDeletePlanModalOpen, setIsDeletePlanModalOpen] = useState(false);
+  const [editingPlan, setEditingPlan] = useState<Plan | null>(null);
+  const [planToDelete, setPlanToDelete] = useState<Plan | null>(null);
+  const [planErrors, setPlanErrors] = useState<Record<string, string>>({});
+  const [isSubmittingPlan, setIsSubmittingPlan] = useState(false);
+  const [planFormData, setPlanFormData] = useState({ nome: '', valor: '', descricao: '' });
+
+  // User plan assignment state
+  const [isUserPlanModalOpen, setIsUserPlanModalOpen] = useState(false);
+  const [selectedUserForPlan, setSelectedUserForPlan] = useState<User | null>(null);
+  const [selectedPlanId, setSelectedPlanId] = useState<string>('');
+  const [isSubmittingUserPlan, setIsSubmittingUserPlan] = useState(false);
+
+  // Settings state
+  const [stripePublicKey, setStripePublicKey] = useState('');
+  const [stripeSecretKey, setStripeSecretKey] = useState('');
+  const [isLoadingConfig, setIsLoadingConfig] = useState(false);
+  const [isSavingConfig, setIsSavingConfig] = useState(false);
   
   const [formData, setFormData] = useState<Partial<CreateUserData>>({
     nome: '',
@@ -70,6 +101,8 @@ const Admin: React.FC = () => {
     
     loadUsers();
     loadSorteios();
+    loadPlanos();
+    loadConfig();
   }, [isAuthenticated, user, navigate]);
 
   const loadUsers = async () => {
@@ -82,6 +115,113 @@ const Admin: React.FC = () => {
   const loadSorteios = async () => {
     const data = await getAllSorteiosAdmin();
     setSorteios(data);
+  };
+
+  const loadPlanos = async () => {
+    const data = await getPlanos();
+    setPlanos(data);
+  };
+
+  const loadConfig = async () => {
+    setIsLoadingConfig(true);
+    const config = await getConfiguracoes();
+    setStripePublicKey(config['stripe_public_key'] || '');
+    setStripeSecretKey(config['stripe_secret_key'] || '');
+    setIsLoadingConfig(false);
+  };
+
+  const handleSaveConfig = async () => {
+    setIsSavingConfig(true);
+    await updateConfiguracoes({
+      stripe_public_key: stripePublicKey,
+      stripe_secret_key: stripeSecretKey,
+    });
+    setIsSavingConfig(false);
+  };
+
+  const handleOpenPlanModal = (plan?: Plan) => {
+    if (plan) {
+      setEditingPlan(plan);
+      setPlanFormData({ nome: plan.nome, valor: String(plan.valor), descricao: plan.descricao || '' });
+    } else {
+      setEditingPlan(null);
+      setPlanFormData({ nome: '', valor: '', descricao: '' });
+    }
+    setPlanErrors({});
+    setIsPlanModalOpen(true);
+  };
+
+  const handleClosePlanModal = () => {
+    setIsPlanModalOpen(false);
+    setEditingPlan(null);
+    setPlanFormData({ nome: '', valor: '', descricao: '' });
+    setPlanErrors({});
+  };
+
+  const handleSubmitPlan = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPlanErrors({});
+    try {
+      planSchema.parse(planFormData);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        const newErrors: Record<string, string> = {};
+        error.errors.forEach((err) => {
+          if (err.path[0]) newErrors[err.path[0] as string] = err.message;
+        });
+        setPlanErrors(newErrors);
+        return;
+      }
+    }
+    setIsSubmittingPlan(true);
+    const payload = { nome: planFormData.nome, valor: Number(planFormData.valor), descricao: planFormData.descricao };
+    const result = editingPlan
+      ? await updatePlano(editingPlan.id, payload)
+      : await createPlano(payload);
+    setIsSubmittingPlan(false);
+    if (result.success) {
+      handleClosePlanModal();
+      loadPlanos();
+    } else {
+      setPlanErrors({ form: result.error || 'Erro ao salvar plano' });
+    }
+  };
+
+  const handleDeletePlanClick = (plan: Plan) => {
+    setPlanToDelete(plan);
+    setIsDeletePlanModalOpen(true);
+  };
+
+  const handleConfirmDeletePlan = async () => {
+    if (!planToDelete) return;
+    setIsSubmittingPlan(true);
+    const result = await deletePlano(planToDelete.id);
+    setIsSubmittingPlan(false);
+    if (result.success) {
+      setIsDeletePlanModalOpen(false);
+      setPlanToDelete(null);
+      loadPlanos();
+    }
+  };
+
+  const handleOpenUserPlanModal = (u: User) => {
+    setSelectedUserForPlan(u);
+    setSelectedPlanId(u.plano_id || '');
+    setIsUserPlanModalOpen(true);
+  };
+
+  const handleAssignUserPlan = async () => {
+    if (!selectedUserForPlan) return;
+    setIsSubmittingUserPlan(true);
+    await assignUserPlan(selectedUserForPlan.id, selectedPlanId || null);
+    setIsSubmittingUserPlan(false);
+    setIsUserPlanModalOpen(false);
+    loadUsers();
+  };
+
+  const handleToggleLifetime = async (u: User) => {
+    await grantLifetimeAccess(u.id, !u.gratuidade_vitalicia);
+    loadUsers();
   };
 
   const handleOpenModal = (userToEdit?: User) => {
@@ -257,6 +397,24 @@ const Admin: React.FC = () => {
       </header>
 
       <main className="container mx-auto p-6 space-y-6">
+        <Tabs defaultValue="usuarios">
+          <TabsList className="mb-4">
+            <TabsTrigger value="usuarios" className="flex items-center gap-2">
+              <Users className="h-4 w-4" />
+              Usuários
+            </TabsTrigger>
+            <TabsTrigger value="planos" className="flex items-center gap-2">
+              <CreditCard className="h-4 w-4" />
+              Planos
+            </TabsTrigger>
+            <TabsTrigger value="configuracoes" className="flex items-center gap-2">
+              <Settings className="h-4 w-4" />
+              Configurações
+            </TabsTrigger>
+          </TabsList>
+
+          {/* ========== USUÁRIOS TAB ========== */}
+          <TabsContent value="usuarios" className="space-y-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
@@ -277,8 +435,10 @@ const Admin: React.FC = () => {
                     <TableHead>Email</TableHead>
                     <TableHead>Tipo</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>Plano</TableHead>
+                    <TableHead>Gratuidade</TableHead>
                     <TableHead>Criado em</TableHead>
-                    <TableHead className="w-[100px]">Ações</TableHead>
+                    <TableHead className="w-[120px]">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -306,13 +466,32 @@ const Admin: React.FC = () => {
                         </span>
                       </TableCell>
                       <TableCell>
+                        {u.plano_id
+                          ? <Badge variant="outline">{planos.find(p => p.id === u.plano_id)?.nome || 'Plano'}</Badge>
+                          : <span className="text-muted-foreground text-sm">—</span>
+                        }
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            checked={!!u.gratuidade_vitalicia}
+                            onCheckedChange={() => handleToggleLifetime(u)}
+                            disabled={u.id === user?.id}
+                          />
+                          {u.gratuidade_vitalicia && (
+                            <Gift className="h-4 w-4 text-green-600" />
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
                         {new Date(u.created_at).toLocaleDateString('pt-BR')}
                       </TableCell>
                       <TableCell>
-                        <div className="flex gap-2">
+                        <div className="flex gap-1">
                           <Button
                             variant="ghost"
                             size="icon"
+                            title="Editar usuário"
                             onClick={() => handleOpenModal(u)}
                           >
                             <Pencil className="h-4 w-4" />
@@ -320,7 +499,16 @@ const Admin: React.FC = () => {
                           <Button
                             variant="ghost"
                             size="icon"
+                            title="Atribuir plano"
+                            onClick={() => handleOpenUserPlanModal(u)}
+                          >
+                            <CreditCard className="h-4 w-4 text-blue-600" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             disabled={u.id === user?.id}
+                            title="Excluir usuário"
                             onClick={() => handleDeleteClick(u)}
                           >
                             <Trash2 className="h-4 w-4 text-destructive" />
@@ -394,6 +582,121 @@ const Admin: React.FC = () => {
             )}
           </CardContent>
         </Card>
+          </TabsContent>
+
+          {/* ========== PLANOS TAB ========== */}
+          <TabsContent value="planos">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <CreditCard className="h-5 w-5" />
+                    Planos
+                  </CardTitle>
+                  <CardDescription>Gerencie os planos disponíveis no sistema</CardDescription>
+                </div>
+                <Button onClick={() => handleOpenPlanModal()}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Novo Plano
+                </Button>
+              </CardHeader>
+              <CardContent>
+                {planos.length === 0 ? (
+                  <p className="text-muted-foreground text-sm">Nenhum plano cadastrado. Clique em "Novo Plano" para adicionar.</p>
+                ) : (
+                  <div className="table-container">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Nome</TableHead>
+                          <TableHead>Valor</TableHead>
+                          <TableHead>Descrição</TableHead>
+                          <TableHead>Criado em</TableHead>
+                          <TableHead className="w-[100px]">Ações</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {planos.map((p) => (
+                          <TableRow key={p.id}>
+                            <TableCell className="font-medium">{p.nome}</TableCell>
+                            <TableCell>
+                              {Number(p.valor) === 0
+                                ? <Badge variant="secondary">Gratuito</Badge>
+                                : <span>R$ {Number(p.valor).toFixed(2)}</span>
+                              }
+                            </TableCell>
+                            <TableCell className="text-muted-foreground text-sm">{p.descricao || '—'}</TableCell>
+                            <TableCell>{new Date(p.created_at).toLocaleDateString('pt-BR')}</TableCell>
+                            <TableCell>
+                              <div className="flex gap-2">
+                                <Button variant="ghost" size="icon" onClick={() => handleOpenPlanModal(p)}>
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                                <Button variant="ghost" size="icon" onClick={() => handleDeletePlanClick(p)}>
+                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* ========== CONFIGURAÇÕES TAB ========== */}
+          <TabsContent value="configuracoes">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Settings className="h-5 w-5" />
+                  Configurações de Pagamento (Stripe)
+                </CardTitle>
+                <CardDescription>Configure as chaves da API Stripe para habilitar o checkout de pagamento</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {isLoadingConfig ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  </div>
+                ) : (
+                  <div className="space-y-4 max-w-lg">
+                    <div className="space-y-2">
+                      <Label htmlFor="stripe_public_key">Chave Pública (Publishable Key)</Label>
+                      <Input
+                        id="stripe_public_key"
+                        value={stripePublicKey}
+                        onChange={(e) => setStripePublicKey(e.target.value)}
+                        placeholder="pk_live_... ou pk_test_..."
+                        disabled={isSavingConfig}
+                      />
+                      <p className="text-xs text-muted-foreground">Chave pública para uso no frontend (começa com pk_)</p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="stripe_secret_key">Chave Secreta (Secret Key)</Label>
+                      <Input
+                        id="stripe_secret_key"
+                        type="password"
+                        value={stripeSecretKey}
+                        onChange={(e) => setStripeSecretKey(e.target.value)}
+                        placeholder="sk_live_... ou sk_test_..."
+                        disabled={isSavingConfig}
+                      />
+                      <p className="text-xs text-muted-foreground">Chave secreta para uso no backend (começa com sk_). Mantenha em segredo.</p>
+                    </div>
+                    <Button onClick={handleSaveConfig} disabled={isSavingConfig}>
+                      {isSavingConfig && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                      Salvar Configurações
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </main>
 
       {/* Create/Edit User Modal */}
@@ -601,6 +904,134 @@ const Admin: React.FC = () => {
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsAssignModalOpen(false)}>
               Fechar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create/Edit Plan Modal */}
+      <Dialog open={isPlanModalOpen} onOpenChange={setIsPlanModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingPlan ? 'Editar Plano' : 'Novo Plano'}</DialogTitle>
+            <DialogDescription>
+              {editingPlan ? 'Atualize os dados do plano.' : 'Preencha os dados para criar um novo plano.'}
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSubmitPlan} className="space-y-4">
+            {planErrors.form && (
+              <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-lg text-destructive text-sm">
+                {planErrors.form}
+              </div>
+            )}
+            <div className="space-y-2">
+              <Label htmlFor="plan_nome">Nome do Plano</Label>
+              <Input
+                id="plan_nome"
+                value={planFormData.nome}
+                onChange={(e) => setPlanFormData({ ...planFormData, nome: e.target.value })}
+                disabled={isSubmittingPlan}
+                placeholder="Ex: Básico, Premium..."
+              />
+              {planErrors.nome && <p className="text-destructive text-sm">{planErrors.nome}</p>}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="plan_valor">Valor (R$)</Label>
+              <Input
+                id="plan_valor"
+                type="number"
+                min="0"
+                step="0.01"
+                value={planFormData.valor}
+                onChange={(e) => setPlanFormData({ ...planFormData, valor: e.target.value })}
+                disabled={isSubmittingPlan}
+                placeholder="0.00 para gratuito"
+              />
+              {planErrors.valor && <p className="text-destructive text-sm">{planErrors.valor}</p>}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="plan_descricao">Descrição (opcional)</Label>
+              <Textarea
+                id="plan_descricao"
+                value={planFormData.descricao}
+                onChange={(e) => setPlanFormData({ ...planFormData, descricao: e.target.value })}
+                disabled={isSubmittingPlan}
+                placeholder="Descreva os benefícios do plano..."
+                rows={3}
+              />
+              {planErrors.descricao && <p className="text-destructive text-sm">{planErrors.descricao}</p>}
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={handleClosePlanModal} disabled={isSubmittingPlan}>
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={isSubmittingPlan}>
+                {isSubmittingPlan && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                {editingPlan ? 'Salvar' : 'Criar'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Plan Confirmation Modal */}
+      <Dialog open={isDeletePlanModalOpen} onOpenChange={setIsDeletePlanModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirmar Exclusão</DialogTitle>
+            <DialogDescription>
+              Tem certeza que deseja excluir o plano "{planToDelete?.nome}"? Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDeletePlanModalOpen(false)} disabled={isSubmittingPlan}>
+              Cancelar
+            </Button>
+            <Button variant="destructive" onClick={handleConfirmDeletePlan} disabled={isSubmittingPlan}>
+              {isSubmittingPlan && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+              Excluir
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Assign User Plan Modal */}
+      <Dialog open={isUserPlanModalOpen} onOpenChange={setIsUserPlanModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CreditCard className="h-5 w-5" />
+              Atribuir Plano: {selectedUserForPlan?.nome}
+            </DialogTitle>
+            <DialogDescription>
+              Selecione um plano para o usuário ou remova o plano atual.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Plano</Label>
+              <Select value={selectedPlanId} onValueChange={setSelectedPlanId} disabled={isSubmittingUserPlan}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Sem plano atribuído" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Sem plano</SelectItem>
+                  {planos.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.nome} {Number(p.valor) > 0 ? `— R$ ${Number(p.valor).toFixed(2)}` : '(Gratuito)'}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsUserPlanModalOpen(false)} disabled={isSubmittingUserPlan}>
+              Cancelar
+            </Button>
+            <Button onClick={handleAssignUserPlan} disabled={isSubmittingUserPlan}>
+              {isSubmittingUserPlan && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+              Confirmar
             </Button>
           </DialogFooter>
         </DialogContent>
