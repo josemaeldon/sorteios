@@ -90,7 +90,7 @@ const DrawTab: React.FC = () => {
 
   // Random cartela raffle state
   const [isCartelaSorteioModalOpen, setIsCartelaSorteioModalOpen] = useState(false);
-  const [cartelaSorteada, setCartelaSorteada] = useState<{ numero: number; nome?: string } | null>(null);
+  const [cartelasSorteadasHistory, setCartelasSorteadasHistory] = useState<{ numero: number; nome?: string }[]>([]);
   const [isCartelaSorteioAnimating, setIsCartelaSorteioAnimating] = useState(false);
   const [cartelaSorteioPreview, setCartelaSorteioPreview] = useState<number | null>(null);
   const cartelaSorteioIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -104,6 +104,7 @@ const DrawTab: React.FC = () => {
       loadRodadas();
       loadCartelasValidadas();
     }
+    setCartelasSorteadasHistory([]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sorteioAtivo?.id]);
 
@@ -445,7 +446,7 @@ const DrawTab: React.FC = () => {
     setVencedoras([]);
     setGanhadoresPop([]);
     ganhadoresPopShownRef.current.clear();
-    setCartelaSorteada(null);
+    setCartelasSorteadasHistory([]);
   };
 
   const addManualNumber = async () => {
@@ -498,7 +499,7 @@ const DrawTab: React.FC = () => {
         const finalIndex = Math.floor(Math.random() * cartelasValidadas.length);
         const finalCartela = cartelasValidadas[finalIndex];
         setCartelaSorteioPreview(finalCartela.numero);
-        setCartelaSorteada({ numero: finalCartela.numero, nome: finalCartela.comprador_nome });
+        setCartelasSorteadasHistory(prev => [{ numero: finalCartela.numero, nome: finalCartela.comprador_nome }, ...prev]);
         setIsCartelaSorteioAnimating(false);
       }
     }, ANIMATION_INTERVAL_MS);
@@ -977,7 +978,7 @@ const DrawTab: React.FC = () => {
           </div>
 
           {/* RIGHT SIDEBAR */}
-          {(topScoringCartelas.length > 0 || vencedoras.length > 0 || cartelaSorteada) && (
+          {(topScoringCartelas.length > 0 || vencedoras.length > 0 || cartelasSorteadasHistory.length > 0) && (
             <div className="w-80 flex-shrink-0">
               {/* Winner results */}
               {vencedoras.length > 0 && (
@@ -1031,30 +1032,28 @@ const DrawTab: React.FC = () => {
                 </CardContent>
               </Card>
               )}
-              {cartelaSorteada && (
+              {cartelasSorteadasHistory.length > 0 && (
                 <Card className="border-2 border-primary">
                   <CardHeader className="pb-3">
                     <CardTitle className="flex items-center gap-2 text-primary">
                       <Ticket className="w-5 h-5" />
-                      Cartela Sorteada
+                      Cartelas Sorteadas
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="text-center space-y-3">
-                    <div className="text-5xl font-black text-primary">
-                      {cartelaSorteada.numero.toString().padStart(3, '0')}
+                  <CardContent className="space-y-2">
+                    <div className="space-y-1 max-h-[300px] overflow-y-auto">
+                      {cartelasSorteadasHistory.map((cartela, idx) => (
+                        <div key={idx} className={cn("flex items-center gap-2 py-1.5 px-2 rounded", idx === 0 && "bg-primary/10")}>
+                          <span className="text-xs text-muted-foreground w-5">{idx + 1}º</span>
+                          <span className={cn("font-black text-primary", idx === 0 ? "text-2xl" : "text-base")}>
+                            {cartela.numero.toString().padStart(3, '0')}
+                          </span>
+                          {cartela.nome && (
+                            <span className="text-xs text-muted-foreground truncate">{cartela.nome}</span>
+                          )}
+                        </div>
+                      ))}
                     </div>
-                    {cartelaSorteada.nome && (
-                      <p className="text-sm text-muted-foreground font-medium">{cartelaSorteada.nome}</p>
-                    )}
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="w-full gap-2"
-                      onClick={handleOpenCartelaSorteioModal}
-                    >
-                      <Shuffle className="w-4 h-4" />
-                      Novo Sorteio
-                    </Button>
                   </CardContent>
                 </Card>
               )}
@@ -1169,10 +1168,6 @@ const DrawTab: React.FC = () => {
           Sortear - {sorteioAtivo.nome}
         </h2>
         <div className="flex gap-2">
-          <Button onClick={handleOpenCartelaSorteioModal} variant="outline" className="gap-2" disabled={cartelasValidadas.length === 0}>
-            <Ticket className="w-4 h-4" />
-            Sortear Cartela
-          </Button>
           <Button onClick={handleNewRodada} className="gap-2">
             <Plus className="w-4 h-4" />
             Nova Rodada
