@@ -400,7 +400,7 @@ async function sendEmail(dbClient, { to, subject, text }) {
   }
   try {
     const cfgResult = await dbClient.query(
-      "SELECT chave, valor FROM configuracoes WHERE chave IN ('smtp_host','smtp_port','smtp_user','smtp_pass','smtp_from_name','smtp_from_email','smtp_secure')"
+      "SELECT chave, valor FROM configuracoes WHERE chave IN ('smtp_host','smtp_port','smtp_user','smtp_pass','smtp_from_name','smtp_from_email','smtp_encryption','smtp_secure')"
     );
     const cfg = {};
     cfgResult.rows.forEach(r => { cfg[r.chave] = r.valor; });
@@ -408,10 +408,11 @@ async function sendEmail(dbClient, { to, subject, text }) {
       console.warn('SMTP not configured — email not sent');
       return;
     }
+    const encryption = cfg.smtp_encryption || (cfg.smtp_secure === 'true' ? 'ssl' : 'none');
     const transporter = nodemailer.createTransport({
       host: cfg.smtp_host,
       port: parseInt(cfg.smtp_port || '587'),
-      secure: cfg.smtp_secure === 'true',
+      secure: encryption === 'ssl',
       auth: { user: cfg.smtp_user, pass: cfg.smtp_pass || '' },
     });
     await transporter.sendMail({

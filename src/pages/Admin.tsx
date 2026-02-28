@@ -91,7 +91,7 @@ const Admin: React.FC = () => {
   const [smtpPass, setSmtpPass] = useState('');
   const [smtpFromName, setSmtpFromName] = useState('');
   const [smtpFromEmail, setSmtpFromEmail] = useState('');
-  const [smtpSecure, setSmtpSecure] = useState(false);
+  const [smtpEncryption, setSmtpEncryption] = useState('tls');
   const [isSavingSmtp, setIsSavingSmtp] = useState(false);
 
   // Email template state
@@ -166,7 +166,7 @@ const Admin: React.FC = () => {
     setSmtpPass(config['smtp_pass'] || '');
     setSmtpFromName(config['smtp_from_name'] || '');
     setSmtpFromEmail(config['smtp_from_email'] || '');
-    setSmtpSecure(config['smtp_secure'] === 'true');
+    setSmtpEncryption(config['smtp_encryption'] || (config['smtp_secure'] === 'true' ? 'ssl' : 'none'));
     // Email templates
     if (config['email_admin_novo_cadastro_assunto']) setTplAdminSubject(config['email_admin_novo_cadastro_assunto']);
     if (config['email_admin_novo_cadastro_corpo'])   setTplAdminBody(config['email_admin_novo_cadastro_corpo']);
@@ -196,7 +196,7 @@ const Admin: React.FC = () => {
       smtp_pass: smtpPass,
       smtp_from_name: smtpFromName,
       smtp_from_email: smtpFromEmail,
-      smtp_secure: smtpSecure ? 'true' : 'false',
+      smtp_encryption: smtpEncryption,
     });
     setIsSavingSmtp(false);
   };
@@ -934,9 +934,18 @@ const Admin: React.FC = () => {
                         <Label htmlFor="smtp_from_email">Email do Remetente</Label>
                         <Input id="smtp_from_email" type="email" value={smtpFromEmail} onChange={(e) => setSmtpFromEmail(e.target.value)} placeholder="noreply@exemplo.com" disabled={isSavingSmtp} />
                       </div>
-                      <div className="flex items-center gap-3 col-span-full">
-                        <Switch id="smtp_secure" checked={smtpSecure} onCheckedChange={setSmtpSecure} disabled={isSavingSmtp} />
-                        <Label htmlFor="smtp_secure">Usar SSL/TLS (porta 465)</Label>
+                      <div className="space-y-2">
+                        <Label htmlFor="smtp_encryption">Criptografia</Label>
+                        <Select value={smtpEncryption} onValueChange={setSmtpEncryption} disabled={isSavingSmtp}>
+                          <SelectTrigger id="smtp_encryption">
+                            <SelectValue placeholder="Selecione a criptografia" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="ssl">SSL (porta 465)</SelectItem>
+                            <SelectItem value="tls">TLS / STARTTLS (porta 587)</SelectItem>
+                            <SelectItem value="none">Nenhuma (porta 25)</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
                     </div>
                     <Button className="mt-4" onClick={handleSaveSmtp} disabled={isSavingSmtp}>
