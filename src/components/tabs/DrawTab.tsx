@@ -458,7 +458,7 @@ const DrawTab: React.FC = () => {
     loadRodadas();
   };
 
-  // Compute top-5 scoring cartelas: validated cartelas sorted by how many drawn numbers they contain
+  // Compute top-10 scoring cartelas: validated cartelas sorted by how many drawn numbers they contain
   const topScoringCartelas = useMemo(() => {
     if (drawnNumbers.length === 0) return [];
     const drawnSet = new Set(drawnNumbers);
@@ -479,7 +479,7 @@ const DrawTab: React.FC = () => {
     // Sort descending by score
     scored.sort((a, b) => b.score - a.score);
 
-    // Find top-5 distinct score levels, grouping ties
+    // Find top-10 distinct score levels, grouping ties
     const result: { score: number; cartelas: { numero: number; nome?: string }[] }[] = [];
     for (const { numero, score, nome } of scored) {
       if (score === 0) continue;
@@ -487,7 +487,7 @@ const DrawTab: React.FC = () => {
       if (existing) {
         existing.cartelas.push({ numero, nome });
       } else {
-        if (result.length < 5) {
+        if (result.length < 10) {
           result.push({ score, cartelas: [{ numero, nome }] });
         }
       }
@@ -692,7 +692,7 @@ const DrawTab: React.FC = () => {
                       <div className="bg-card rounded-lg p-6">
                         <h3 className="text-2xl font-bold flex items-center gap-2 mb-4">
                           <Trophy className="w-6 h-6 text-yellow-500" />
-                          Top 5 Cartelas
+                          Top 10 Cartelas
                         </h3>
                         <div className="space-y-3">
                           {topScoringCartelas.map((entry, idx) => (
@@ -788,13 +788,13 @@ const DrawTab: React.FC = () => {
           </Card>
         </div>
 
-        {/* Top 5 scoring cartelas */}
+        {/* Top 10 scoring cartelas */}
         {topScoringCartelas.length > 0 && (
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2">
                 <Trophy className="w-5 h-5 text-yellow-500" />
-                Top 5 Cartelas
+                Top 10 Cartelas
               </CardTitle>
             </CardHeader>
             <CardContent>
