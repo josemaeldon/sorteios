@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { Loader2, ShoppingCart, Ticket, CheckCircle, XCircle, Download, ChevronDown, ChevronUp, X } from 'lucide-react';
+import { Loader2, ShoppingCart, Ticket, CheckCircle, XCircle, Download, ChevronDown, ChevronUp, X, LogIn, LogOut, UserPlus, History, Eye, EyeOff } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,6 +11,9 @@ import { BingoCardGrid, CanvasLayout, BINGO_COLS, exportBingoCardsPDF, BuyerData
 import { LojaCartela } from '@/types/bingo';
 
 const CART_MAX_ITEMS = 20;
+
+const COMPRADOR_TOKEN_KEY = 'loja_comprador_token';
+const COMPRADOR_INFO_KEY = 'loja_comprador_info';
 
 /** Returns the set of buyer element types present in the layout */
 function detectBuyerFields(layoutData: string): Set<string> {
@@ -21,7 +25,6 @@ function detectBuyerFields(layoutData: string): Set<string> {
   }
 }
 
-// ─── Bingo card renderer for the public page ─────────────────────────────────
 const BingoGridPublic: React.FC<{ grid: number[][] }> = ({ grid }) => (
   <div className="grid gap-0.5" style={{ gridTemplateColumns: 'repeat(5, 1fr)' }}>
     {BINGO_COLS.map((col) => (
@@ -123,6 +126,51 @@ const CartelaCard: React.FC<{
 };
 
 // ─── Main page ────────────────────────────────────────────────────────────────
+
+interface CompradorInfo {
+  id: string;
+  email: string;
+  nome: string;
+}
+
+interface HistoricoItem {
+  id: string;
+  numero_cartela: number;
+  preco: number;
+  status: string;
+  card_data: string;
+  layout_data: string;
+  comprador_nome?: string;
+  store_nome: string;
+  store_titulo?: string;
+  updated_at: string;
+}
+
+const HistoricoDownloadButton: React.FC<{
+  item: HistoricoItem;
+  buyerData: BuyerData;
+}> = ({ item, buyerData }) => {
+  const [isDownloading, setIsDownloading] = useState(false);
+  const handleDownload = async () => {
+    setIsDownloading(true);
+    try {
+      const card: BingoCardGrid = JSON.parse(item.card_data);
+      const layout: CanvasLayout = JSON.parse(item.layout_data);
+      await exportBingoCardsPDF([card], layout, `cartela-${item.numero_cartela}`, buyerData);
+    } catch (err) {
+      console.error('Download error:', err);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+  return (
+    <Button size="sm" variant="outline" onClick={handleDownload} disabled={isDownloading} className="gap-1.5">
+      {isDownloading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+      Baixar PDF
+    </Button>
+  );
+};
+
 const LojaPublica: React.FC = () => {
   const { userId } = useParams<{ userId: string }>();
   const [searchParams] = useSearchParams();
@@ -170,6 +218,23 @@ const LojaPublica: React.FC = () => {
   const [isCartCheckingOut, setIsCartCheckingOut] = useState(false);
   const [cartCheckoutError, setCartCheckoutError] = useState<string | null>(null);
 
+  // Buyer auth state
+  const [compradorInfo, setCompradorInfo] = useState<CompradorInfo | null>(null);
+  const [compradorToken, setCompradorToken] = useState<string | null>(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authTab, setAuthTab] = useState<'login' | 'cadastro'>('login');
+  const [authNome, setAuthNome] = useState('');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authSenha, setAuthSenha] = useState('');
+  const [authSenhaVis, setAuthSenhaVis] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
+  // Purchase history state
+  const [showHistoricoModal, setShowHistoricoModal] = useState(false);
+  const [historico, setHistorico] = useState<HistoricoItem[]>([]);
+  const [isLoadingHistorico, setIsLoadingHistorico] = useState(false);
+  const [isEmailingPDF, setIsEmailingPDF] = useState(false);
+
   // Derived cart data
   const cartItems = React.useMemo(
     () => cartelas.filter(c => cartIds.has(c.id)),
@@ -212,6 +277,20 @@ const LojaPublica: React.FC = () => {
   useEffect(() => {
     loadLoja();
   }, [loadLoja]);
+
+  // Load buyer auth from localStorage
+  useEffect(() => {
+    const storedToken = localStorage.getItem(COMPRADOR_TOKEN_KEY);
+    const storedInfo = localStorage.getItem(COMPRADOR_INFO_KEY);
+    if (storedToken && storedInfo) {
+      try {
+        setCompradorToken(storedToken);
+        setCompradorInfo(JSON.parse(storedInfo));
+      } catch (e) {
+        console.warn('Failed to parse stored buyer info:', e);
+      }
+    }
+  }, []);
 
   // Confirm payment after Stripe redirect
   useEffect(() => {
@@ -279,7 +358,17 @@ const LojaPublica: React.FC = () => {
     try {
       const card: BingoCardGrid = JSON.parse(purchasedCardData.cardData);
       const layout: CanvasLayout = JSON.parse(purchasedCardData.layoutData);
-      await exportBingoCardsPDF([card], layout, `cartela-${purchasedCardData.numeroCartela}`, purchasedCardData.buyerData);
+      const pdfBlob = await exportBingoCardsPDF([card], layout, `cartela-${purchasedCardData.numeroCartela}`, purchasedCardData.buyerData);
+      // Email PDF if buyer email is available
+      const emailDest = compradorInfo?.email || compradorEmail.trim();
+      if (emailDest && pdfBlob) {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const base64 = (reader.result as string).split(',')[1];
+          handleEmailPDF(base64, emailDest, purchasedCardData.buyerData.nome || '', String(purchasedCardData.numeroCartela));
+        };
+        reader.readAsDataURL(pdfBlob);
+      }
     } catch (err) {
       console.error('Download error:', err);
     } finally {
@@ -295,7 +384,17 @@ const LojaPublica: React.FC = () => {
       const layout: CanvasLayout = JSON.parse(purchasedMultiData.cartelas[0].layout_data);
       const cards: BingoCardGrid[] = purchasedMultiData.cartelas.map(c => JSON.parse(c.card_data));
       const nums = purchasedMultiData.cartelas.map(c => c.numero_cartela).join('-');
-      await exportBingoCardsPDF(cards, layout, `cartelas-${nums}`, purchasedMultiData.buyerData);
+      const pdfBlob = await exportBingoCardsPDF(cards, layout, `cartelas-${nums}`, purchasedMultiData.buyerData);
+      // Email PDF if buyer email is available
+      const emailDest = compradorInfo?.email || cartCompradorEmail.trim();
+      if (emailDest && pdfBlob) {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const base64 = (reader.result as string).split(',')[1];
+          handleEmailPDF(base64, emailDest, purchasedMultiData.buyerData.nome || '', nums.replace(/-/g, ', '));
+        };
+        reader.readAsDataURL(pdfBlob);
+      }
     } catch (err) {
       console.error('Download error:', err);
     } finally {
@@ -391,6 +490,75 @@ const LojaPublica: React.FC = () => {
     }
   };
 
+  const handleLogoutComprador = () => {
+    setCompradorInfo(null);
+    setCompradorToken(null);
+    localStorage.removeItem(COMPRADOR_TOKEN_KEY);
+    localStorage.removeItem(COMPRADOR_INFO_KEY);
+  };
+
+  const handleAuthSubmit = async () => {
+    setAuthError(null);
+    if (!authEmail.trim() || !authSenha.trim()) {
+      setAuthError('Preencha email e senha.');
+      return;
+    }
+    if (authTab === 'cadastro' && !authNome.trim()) {
+      setAuthError('Informe seu nome.');
+      return;
+    }
+    setIsAuthSubmitting(true);
+    try {
+      const action = authTab === 'login' ? 'loginComprador' : 'cadastrarComprador';
+      const payload: Record<string, string> = { email: authEmail.trim(), senha: authSenha };
+      if (authTab === 'cadastro') payload.nome = authNome.trim();
+      const result = await callApi(action, payload);
+      if (result.error) { setAuthError(result.error); return; }
+      const info: CompradorInfo = result.comprador;
+      setCompradorInfo(info);
+      setCompradorToken(result.token);
+      localStorage.setItem(COMPRADOR_TOKEN_KEY, result.token);
+      localStorage.setItem(COMPRADOR_INFO_KEY, JSON.stringify(info));
+      setShowAuthModal(false);
+      setAuthNome(''); setAuthEmail(''); setAuthSenha('');
+    } catch (err: any) {
+      setAuthError(err.message || 'Erro ao autenticar.');
+    } finally {
+      setIsAuthSubmitting(false);
+    }
+  };
+
+  const handleLoadHistorico = async () => {
+    if (!compradorToken) return;
+    setIsLoadingHistorico(true);
+    try {
+      const result = await callApi('getHistoricoComprador', { token: compradorToken });
+      setHistorico(result.data || []);
+    } catch (err: any) {
+      setHistorico([]);
+    } finally {
+      setIsLoadingHistorico(false);
+    }
+  };
+
+  const handleEmailPDF = async (pdfBase64: string, email: string, nome: string, numerosCartelas: string) => {
+    if (!email) return;
+    setIsEmailingPDF(true);
+    try {
+      await callApi('emailCartelasPDF', {
+        email,
+        nome,
+        pdf_base64: pdfBase64,
+        titulo_loja: owner?.titulo_sistema || owner?.nome || 'Loja de Cartelas',
+        numeros_cartelas: numerosCartelas,
+      });
+    } catch (err) {
+      console.error('Failed to email PDF:', err);
+    } finally {
+      setIsEmailingPDF(false);
+    }
+  };
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
@@ -405,6 +573,36 @@ const LojaPublica: React.FC = () => {
           <>
             <h1 className="text-3xl font-bold">{owner.titulo_sistema || owner.nome}</h1>
             <p className="text-blue-200 mt-1 text-lg">Compre sua cartela de bingo online</p>
+            {/* Buyer auth buttons */}
+            <div className="flex justify-center gap-2 mt-4">
+              {compradorInfo ? (
+                <>
+                  <button
+                    className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white text-sm font-medium rounded-full px-4 py-1.5 transition-colors"
+                    onClick={() => { handleLoadHistorico(); setShowHistoricoModal(true); }}
+                  >
+                    <History className="w-4 h-4" />
+                    Minhas Cartelas
+                  </button>
+                  <button
+                    className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 text-white/80 hover:text-white text-sm rounded-full px-3 py-1.5 transition-colors"
+                    onClick={handleLogoutComprador}
+                    title={`Sair (${compradorInfo.nome})`}
+                  >
+                    <LogOut className="w-4 h-4" />
+                    Sair
+                  </button>
+                </>
+              ) : (
+                <button
+                  className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white text-sm font-medium rounded-full px-4 py-1.5 transition-colors"
+                  onClick={() => { setAuthTab('login'); setAuthError(null); setShowAuthModal(true); }}
+                >
+                  <LogIn className="w-4 h-4" />
+                  Entrar / Cadastrar
+                </button>
+              )}
+            </div>
           </>
         ) : (
           <h1 className="text-3xl font-bold">Loja de Cartelas</h1>
@@ -700,6 +898,112 @@ const LojaPublica: React.FC = () => {
               {isCartCheckingOut ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShoppingCart className="w-4 h-4" />}
               Pagar com cartão
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Buyer auth modal */}
+      <Dialog open={showAuthModal} onOpenChange={(open) => { if (!open) setShowAuthModal(false); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserPlus className="w-5 h-5" />
+              Acesso do Comprador
+            </DialogTitle>
+          </DialogHeader>
+          <Tabs value={authTab} onValueChange={(v) => { setAuthTab(v as 'login' | 'cadastro'); setAuthError(null); }}>
+            <TabsList className="w-full">
+              <TabsTrigger value="login" className="flex-1">
+                <LogIn className="w-4 h-4 mr-1.5" /> Entrar
+              </TabsTrigger>
+              <TabsTrigger value="cadastro" className="flex-1">
+                <UserPlus className="w-4 h-4 mr-1.5" /> Cadastrar
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="login" className="space-y-3 pt-2">
+              <div className="space-y-1.5">
+                <Label>E-mail</Label>
+                <Input type="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} placeholder="seu@email.com" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Senha</Label>
+                <div className="relative">
+                  <Input type={authSenhaVis ? 'text' : 'password'} value={authSenha} onChange={(e) => setAuthSenha(e.target.value)} placeholder="Sua senha" className="pr-10" />
+                  <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" onClick={() => setAuthSenhaVis(v => !v)}>
+                    {authSenhaVis ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+            </TabsContent>
+            <TabsContent value="cadastro" className="space-y-3 pt-2">
+              <div className="space-y-1.5">
+                <Label>Nome *</Label>
+                <Input value={authNome} onChange={(e) => setAuthNome(e.target.value)} placeholder="Seu nome completo" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>E-mail *</Label>
+                <Input type="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} placeholder="seu@email.com" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Senha *</Label>
+                <div className="relative">
+                  <Input type={authSenhaVis ? 'text' : 'password'} value={authSenha} onChange={(e) => setAuthSenha(e.target.value)} placeholder="Mínimo 6 caracteres" className="pr-10" />
+                  <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" onClick={() => setAuthSenhaVis(v => !v)}>
+                    {authSenhaVis ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+            </TabsContent>
+          </Tabs>
+          {authError && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{authError}</p>}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAuthModal(false)}>Cancelar</Button>
+            <Button onClick={handleAuthSubmit} disabled={isAuthSubmitting} className="gap-2">
+              {isAuthSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : (authTab === 'login' ? <LogIn className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />)}
+              {authTab === 'login' ? 'Entrar' : 'Cadastrar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Purchase history modal */}
+      <Dialog open={showHistoricoModal} onOpenChange={(open) => { if (!open) setShowHistoricoModal(false); }}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <History className="w-5 h-5" />
+              Minhas Cartelas — {compradorInfo?.nome}
+            </DialogTitle>
+          </DialogHeader>
+          {isLoadingHistorico ? (
+            <div className="flex justify-center py-8"><Loader2 className="w-8 h-8 animate-spin text-blue-700" /></div>
+          ) : historico.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              <Ticket className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+              <p>Nenhuma cartela encontrada para o email <strong>{compradorInfo?.email}</strong>.</p>
+              <p className="text-sm mt-1 text-gray-400">As cartelas aparecem aqui após o pagamento ser confirmado.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {historico.map((item) => (
+                <div key={item.id} className="border border-gray-200 rounded-xl p-4 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-bold text-blue-900">Cartela {String(item.numero_cartela).padStart(3, '0')}</p>
+                    <p className="text-sm text-gray-500">{item.store_titulo || item.store_nome}</p>
+                    <p className="text-xs text-gray-400">{new Date(item.updated_at).toLocaleDateString('pt-BR')}</p>
+                  </div>
+                  <div className="text-right flex flex-col items-end gap-2">
+                    <p className="text-green-600 font-bold">
+                      {Number(item.preco) > 0 ? `R$ ${Number(item.preco).toFixed(2).replace('.', ',')}` : 'Grátis'}
+                    </p>
+                    <HistoricoDownloadButton item={item} buyerData={{ nome: compradorInfo?.nome || '', endereco: '', cidade: '', telefone: '' }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowHistoricoModal(false)}>Fechar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
