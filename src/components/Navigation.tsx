@@ -10,7 +10,7 @@ const tabs: { id: TabType; label: string; icon: React.ElementType }[] = [
   { id: 'sorteio', label: 'Sortear', icon: Shuffle },
   { id: 'vendedores', label: 'Vendedores', icon: Users },
   { id: 'cartelas', label: 'Cartelas', icon: Grid3X3 },
-  { id: 'cartelas-bingo', label: 'Construtor', icon: LayoutGrid },
+  { id: 'cartelas-bingo', label: 'Cartelas Bingo', icon: LayoutGrid },
   { id: 'atribuicoes', label: 'Atribuições', icon: ListTodo },
   { id: 'vendas', label: 'Vendas', icon: ShoppingCart },
   { id: 'relatorios', label: 'Relatórios', icon: PieChart },
