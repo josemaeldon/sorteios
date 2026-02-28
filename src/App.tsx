@@ -9,6 +9,7 @@ import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Admin from "./pages/Admin";
 import Profile from "./pages/Profile";
+import Planos from "./pages/Planos";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -22,6 +23,14 @@ const App = () => (
         <AuthProvider>
           <Routes>
             <Route path="/auth" element={<Auth />} />
+            <Route
+              path="/planos"
+              element={
+                <ProtectedRoute skipPlanCheck>
+                  <Planos />
+                </ProtectedRoute>
+              }
+            />
             <Route
               path="/"
               element={

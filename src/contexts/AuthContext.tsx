@@ -18,6 +18,7 @@ interface AuthContextType extends AuthState {
   getSorteioUsers: (sorteioId: string) => Promise<{ data: User[]; owner_id: string }>;
   assignSorteioToUser: (sorteioId: string, userId: string) => Promise<{ success: boolean; error?: string }>;
   removeUserFromSorteio: (sorteioId: string, userId: string) => Promise<{ success: boolean; error?: string }>;
+  getPublicPlanos: () => Promise<Plan[]>;
   getPlanos: () => Promise<Plan[]>;
   createPlano: (data: { nome: string; valor: number; descricao?: string }) => Promise<{ success: boolean; error?: string }>;
   updatePlano: (id: string, data: { nome: string; valor: number; descricao?: string }) => Promise<{ success: boolean; error?: string }>;
@@ -296,6 +297,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [user]);
 
+  const getPublicPlanos = useCallback(async (): Promise<Plan[]> => {
+    try {
+      const result = await callApi('getPublicPlanos');
+      return result.data || [];
+    } catch (error) {
+      console.error('Get public planos error:', error);
+      return [];
+    }
+  }, []);
+
   const getPlanos = useCallback(async (): Promise<Plan[]> => {
     if (user?.role !== 'admin') return [];
     try {
@@ -423,6 +434,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     getSorteioUsers,
     assignSorteioToUser,
     removeUserFromSorteio,
+    getPublicPlanos,
     getPlanos,
     createPlano,
     updatePlano,

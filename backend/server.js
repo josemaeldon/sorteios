@@ -304,7 +304,7 @@ function checkBasicAuth(req, res, next) {
 async function checkAuth(req, action) {
   const publicActions = ['checkFirstAccess', 'setupAdmin', 'login'];
   const adminActions = ['getUsers', 'createUser', 'updateUser', 'deleteUser', 'getAllSorteiosAdmin', 'assignSorteioToUser', 'removeUserFromSorteio', 'getSorteioUsers', 'getPlanos', 'createPlano', 'updatePlano', 'deletePlano', 'assignUserPlan', 'grantLifetimeAccess', 'getConfiguracoes', 'updateConfiguracoes'];
-  
+
   if (publicActions.includes(action)) {
     return { authenticated: true, user: null };
   }
@@ -1319,6 +1319,10 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         return res.json({ data: [{ success: true }] });
 
       // ================== PLANOS ==================
+      case 'getPublicPlanos':
+        result = await client.query('SELECT id, nome, valor, descricao, ativo FROM planos WHERE ativo = true ORDER BY valor ASC');
+        return res.json({ data: result.rows });
+
       case 'getPlanos':
         result = await client.query('SELECT * FROM planos ORDER BY valor ASC');
         return res.json({ data: result.rows });
