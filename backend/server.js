@@ -698,7 +698,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         return res.json({ success: true });
       }
 
-
+      case 'getAllSorteiosAdmin':
         result = await client.query(`
           SELECT s.*, u.nome as owner_nome, u.email as owner_email
           FROM sorteios s
