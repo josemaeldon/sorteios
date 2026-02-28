@@ -8,9 +8,11 @@ import { Ticket, Loader2, LogOut, CheckCircle } from 'lucide-react';
 
 const Planos: React.FC = () => {
   const navigate = useNavigate();
-  const { getPublicPlanos, logout, user } = useAuth();
+  const { getPublicPlanos, logout, user, createStripeCheckout } = useAuth();
   const [planos, setPlanos] = useState<Plan[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [checkoutLoadingId, setCheckoutLoadingId] = useState<string | null>(null);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
 
   useEffect(() => {
     // If user already has access, redirect to home
@@ -26,6 +28,18 @@ const Planos: React.FC = () => {
     load();
   }, [user, navigate, getPublicPlanos]);
 
+  const handleCheckout = async (plano: Plan) => {
+    setCheckoutError(null);
+    setCheckoutLoadingId(plano.id);
+    const result = await createStripeCheckout(plano.id);
+    if (result.url) {
+      window.location.href = result.url;
+    } else {
+      setCheckoutError(result.error || 'Erro ao iniciar checkout. Tente novamente.');
+      setCheckoutLoadingId(null);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-2xl space-y-6">
@@ -38,9 +52,15 @@ const Planos: React.FC = () => {
           <h1 className="text-2xl font-bold">Assinatura de Plano Necessária</h1>
           <p className="text-muted-foreground">
             Olá, <strong>{user?.nome}</strong>! Para utilizar o sistema, você precisa ter um plano ativo.<br />
-            Entre em contato com o administrador para assinar um dos planos disponíveis abaixo.
+            Selecione um dos planos abaixo para continuar.
           </p>
         </div>
+
+        {checkoutError && (
+          <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-lg text-destructive text-sm text-center">
+            {checkoutError}
+          </div>
+        )}
 
         {isLoading ? (
           <div className="flex justify-center py-8">
@@ -55,24 +75,36 @@ const Planos: React.FC = () => {
         ) : (
           <div className="grid gap-4 sm:grid-cols-2">
             {planos.map((plano) => (
-              <Card key={plano.id} className="border-2">
+              <Card key={plano.id} className="border-2 flex flex-col">
                 <CardHeader>
                   <CardTitle className="text-lg">{plano.nome}</CardTitle>
                   {plano.descricao && (
                     <CardDescription>{plano.descricao}</CardDescription>
                   )}
                 </CardHeader>
-                <CardContent className="space-y-3">
-                  <p className="text-2xl font-bold text-primary">
-                    {(() => {
-                      const valor = Number(plano.valor);
-                      return valor > 0 ? `R$ ${valor.toFixed(2).replace('.', ',')}` : 'Gratuito';
-                    })()}
-                  </p>
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <CheckCircle className="h-4 w-4 text-green-500" />
-                    <span>Acesso completo ao sistema</span>
+                <CardContent className="space-y-3 flex flex-col flex-1 justify-between">
+                  <div className="space-y-2">
+                    <p className="text-2xl font-bold text-primary">
+                      {(() => {
+                        const valor = Number(plano.valor);
+                        return valor > 0 ? `R$ ${valor.toFixed(2).replace('.', ',')}` : 'Gratuito';
+                      })()}
+                    </p>
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <CheckCircle className="h-4 w-4 text-green-500" />
+                      <span>Acesso completo ao sistema</span>
+                    </div>
                   </div>
+                  <Button
+                    className="w-full mt-2"
+                    onClick={() => handleCheckout(plano)}
+                    disabled={checkoutLoadingId !== null}
+                  >
+                    {checkoutLoadingId === plano.id ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    ) : null}
+                    {Number(plano.valor) > 0 ? 'Assinar agora' : 'Ativar plano'}
+                  </Button>
                 </CardContent>
               </Card>
             ))}

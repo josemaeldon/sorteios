@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const DatabaseAdapter = require('./db-adapter');
 const crypto = require('crypto');
+const Stripe = require('stripe');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -12,6 +13,81 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Basic-Auth'],
 }));
+
+// Returns a date one month after `from`, clamped to the last day of the target month.
+function nextMonthSameDay(from) {
+  const day = from.getDate();
+  const result = new Date(from);
+  result.setMonth(result.getMonth() + 1);
+  // If month overflowed (e.g. Jan 31 → Mar 2), clamp to last day of intended month.
+  if (result.getDate() !== day) {
+    result.setDate(0);
+  }
+  return result;
+}
+
+// Stripe webhook must receive raw body — register before express.json()
+app.post('/stripe-webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  const sig = req.headers['stripe-signature'];
+  let event;
+
+  try {
+    const configClient = await dbAdapter.getConnection();
+    let webhookSecret = '';
+    let stripeSecretKey = '';
+    try {
+      const cfgResult = await configClient.query('SELECT chave, valor FROM configuracoes WHERE chave IN ($1, $2)', ['stripe_secret_key', 'stripe_webhook_secret']);
+      cfgResult.rows.forEach(r => {
+        if (r.chave === 'stripe_secret_key') stripeSecretKey = r.valor || '';
+        if (r.chave === 'stripe_webhook_secret') webhookSecret = r.valor || '';
+      });
+    } finally {
+      configClient.release();
+    }
+
+    if (!stripeSecretKey) {
+      return res.status(400).send('Stripe not configured');
+    }
+
+    const stripe = Stripe(stripeSecretKey);
+
+    if (webhookSecret) {
+      try {
+        event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
+      } catch (err) {
+        console.error('Webhook signature verification failed:', err.message);
+        return res.status(400).send(`Webhook Error: ${err.message}`);
+      }
+    } else {
+      event = JSON.parse(req.body.toString());
+    }
+
+    if (event.type === 'checkout.session.completed') {
+      const session = event.data.object;
+      const userId = session.metadata && session.metadata.user_id;
+      const planoId = session.metadata && session.metadata.plano_id;
+
+      if (userId && planoId) {
+        const updateClient = await dbAdapter.getConnection();
+        try {
+          const now = new Date();
+          const vencimento = nextMonthSameDay(now);
+          await updateClient.query(
+            'UPDATE usuarios SET plano_id = $1, plano_inicio = $2, plano_vencimento = $3, updated_at = NOW() WHERE id = $4',
+            [planoId, now, vencimento, userId]
+          );
+        } finally {
+          updateClient.release();
+        }
+      }
+    }
+
+    res.json({ received: true });
+  } catch (err) {
+    console.error('Stripe webhook error:', err.message);
+    res.status(500).send('Internal error');
+  }
+});
 
 app.use(express.json({ limit: '10mb' }));
 
@@ -113,6 +189,27 @@ async function initSchema() {
           }
           // 'Duplicate column' means it already exists — silently continue
         }
+        try {
+          await client.query(`ALTER TABLE usuarios ADD COLUMN plano_inicio TIMESTAMP`);
+        } catch (e) {
+          if (!e.message || !e.message.includes('Duplicate column')) {
+            console.warn('Could not add plano_inicio column (unexpected error):', e.message);
+          }
+        }
+        try {
+          await client.query(`ALTER TABLE usuarios ADD COLUMN plano_vencimento TIMESTAMP`);
+        } catch (e) {
+          if (!e.message || !e.message.includes('Duplicate column')) {
+            console.warn('Could not add plano_vencimento column (unexpected error):', e.message);
+          }
+        }
+        try {
+          await client.query(`ALTER TABLE planos ADD COLUMN stripe_price_id VARCHAR(255)`);
+        } catch (e) {
+          if (!e.message || !e.message.includes('Duplicate column')) {
+            console.warn('Could not add stripe_price_id column (unexpected error):', e.message);
+          }
+        }
       } else {
         await client.query(`
           CREATE TABLE IF NOT EXISTS public.sorteio_compartilhado (
@@ -173,6 +270,9 @@ async function initSchema() {
         // Add plano_id and gratuidade_vitalicia to usuarios (PostgreSQL)
         await client.query(`ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS plano_id UUID REFERENCES public.planos(id) ON DELETE SET NULL`);
         await client.query(`ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS gratuidade_vitalicia BOOLEAN NOT NULL DEFAULT false`);
+        await client.query(`ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS plano_inicio TIMESTAMP WITH TIME ZONE`);
+        await client.query(`ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS plano_vencimento TIMESTAMP WITH TIME ZONE`);
+        await client.query(`ALTER TABLE planos ADD COLUMN IF NOT EXISTS stripe_price_id VARCHAR(255)`);
       }
       console.log('Schema initialized: sorteio_compartilhado table ready');
     } finally {
@@ -380,7 +480,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
 
       case 'login': {
         const userResult = await client.query(`
-          SELECT id, email, nome, role, ativo, titulo_sistema, avatar_url, senha_hash, created_at 
+          SELECT id, email, nome, role, ativo, titulo_sistema, avatar_url, senha_hash, created_at, plano_id, gratuidade_vitalicia, plano_inicio, plano_vencimento
           FROM usuarios WHERE email = $1
         `, [data.email]);
         
@@ -413,7 +513,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
 
       case 'getUsers':
         result = await client.query(`
-          SELECT id, email, nome, role, ativo, titulo_sistema, avatar_url, created_at, updated_at, plano_id, gratuidade_vitalicia 
+          SELECT id, email, nome, role, ativo, titulo_sistema, avatar_url, created_at, updated_at, plano_id, gratuidade_vitalicia, plano_inicio, plano_vencimento
           FROM usuarios ORDER BY nome
         `);
         return res.json({ users: result.rows });
@@ -1320,7 +1420,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
 
       // ================== PLANOS ==================
       case 'getPublicPlanos':
-        result = await client.query('SELECT id, nome, valor, descricao, ativo FROM planos WHERE ativo = true ORDER BY valor ASC');
+        result = await client.query('SELECT id, nome, valor, descricao, ativo, stripe_price_id FROM planos WHERE ativo = true ORDER BY valor ASC');
         return res.json({ data: result.rows });
 
       case 'getPlanos':
@@ -1329,16 +1429,16 @@ app.post('/api', checkBasicAuth, async (req, res) => {
 
       case 'createPlano': {
         result = await client.query(
-          `INSERT INTO planos (nome, valor, descricao) VALUES ($1, $2, $3) RETURNING *`,
-          [data.nome, data.valor || 0, data.descricao || null]
+          `INSERT INTO planos (nome, valor, descricao, stripe_price_id) VALUES ($1, $2, $3, $4) RETURNING *`,
+          [data.nome, data.valor || 0, data.descricao || null, data.stripe_price_id || null]
         );
         return res.json({ data: result.rows[0] });
       }
 
       case 'updatePlano': {
         result = await client.query(
-          `UPDATE planos SET nome = $2, valor = $3, descricao = $4, updated_at = NOW() WHERE id = $1 RETURNING *`,
-          [data.id, data.nome, data.valor || 0, data.descricao || null]
+          `UPDATE planos SET nome = $2, valor = $3, descricao = $4, stripe_price_id = $5, updated_at = NOW() WHERE id = $1 RETURNING *`,
+          [data.id, data.nome, data.valor || 0, data.descricao || null, data.stripe_price_id || null]
         );
         return res.json({ data: result.rows[0] });
       }
@@ -1347,12 +1447,66 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         await client.query('DELETE FROM planos WHERE id = $1', [data.id]);
         return res.json({ success: true });
 
-      case 'assignUserPlan':
-        await client.query(
-          'UPDATE usuarios SET plano_id = $2, updated_at = NOW() WHERE id = $1',
-          [data.user_id, data.plano_id || null]
-        );
+      case 'assignUserPlan': {
+        const planoId = data.plano_id || null;
+        if (planoId) {
+          const now = new Date();
+          const vencimento = nextMonthSameDay(now);
+          await client.query(
+            'UPDATE usuarios SET plano_id = $2, plano_inicio = $3, plano_vencimento = $4, updated_at = NOW() WHERE id = $1',
+            [data.user_id, planoId, now, vencimento]
+          );
+        } else {
+          await client.query(
+            'UPDATE usuarios SET plano_id = NULL, plano_inicio = NULL, plano_vencimento = NULL, updated_at = NOW() WHERE id = $1',
+            [data.user_id]
+          );
+        }
         return res.json({ success: true });
+      }
+
+      case 'createStripeCheckout': {
+        const cfgResult = await client.query('SELECT chave, valor FROM configuracoes WHERE chave IN ($1, $2)', ['stripe_secret_key', 'stripe_webhook_secret']);
+        let stripeSecretKey = '';
+        cfgResult.rows.forEach(r => {
+          if (r.chave === 'stripe_secret_key') stripeSecretKey = r.valor || '';
+        });
+        if (!stripeSecretKey) {
+          return res.status(400).json({ error: 'Stripe não configurado. Contate o administrador.' });
+        }
+        const planoResult = await client.query('SELECT id, nome, valor, stripe_price_id FROM planos WHERE id = $1 AND ativo = true', [data.plano_id]);
+        if (planoResult.rows.length === 0) {
+          return res.status(404).json({ error: 'Plano não encontrado.' });
+        }
+        const plano = planoResult.rows[0];
+        const stripe = Stripe(stripeSecretKey);
+        const baseUrl = (process.env.APP_URL || '').replace(/\/$/, '') || 'http://localhost:5173';
+
+        let sessionParams = {
+          mode: 'payment',
+          success_url: `${baseUrl}/`,
+          cancel_url: `${baseUrl}/planos`,
+          metadata: { user_id: data.authenticated_user_id, plano_id: plano.id },
+          client_reference_id: data.authenticated_user_id,
+        };
+
+        if (plano.stripe_price_id) {
+          sessionParams.line_items = [{ price: plano.stripe_price_id, quantity: 1 }];
+        } else {
+          const valorCentavos = Math.round(Number(plano.valor) * 100);
+          sessionParams.line_items = [{
+            price_data: {
+              currency: 'brl',
+              product_data: { name: plano.nome },
+              unit_amount: valorCentavos,
+            },
+            quantity: 1,
+          }];
+        }
+
+        const session = await stripe.checkout.sessions.create(sessionParams);
+        return res.json({ url: session.url });
+      }
 
       case 'grantLifetimeAccess':
         await client.query(

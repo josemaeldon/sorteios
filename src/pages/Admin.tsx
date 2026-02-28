@@ -34,6 +34,7 @@ const planSchema = z.object({
   nome: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres').max(100),
   valor: z.coerce.number().min(0, 'Valor deve ser maior ou igual a zero'),
   descricao: z.string().max(500).optional().or(z.literal('')),
+  stripe_price_id: z.string().max(255).optional().or(z.literal('')),
 });
 
 const Admin: React.FC = () => {
@@ -66,7 +67,7 @@ const Admin: React.FC = () => {
   const [planToDelete, setPlanToDelete] = useState<Plan | null>(null);
   const [planErrors, setPlanErrors] = useState<Record<string, string>>({});
   const [isSubmittingPlan, setIsSubmittingPlan] = useState(false);
-  const [planFormData, setPlanFormData] = useState({ nome: '', valor: '', descricao: '' });
+  const [planFormData, setPlanFormData] = useState({ nome: '', valor: '', descricao: '', stripe_price_id: '' });
 
   // User plan assignment state
   const [isUserPlanModalOpen, setIsUserPlanModalOpen] = useState(false);
@@ -77,6 +78,7 @@ const Admin: React.FC = () => {
   // Settings state
   const [stripePublicKey, setStripePublicKey] = useState('');
   const [stripeSecretKey, setStripeSecretKey] = useState('');
+  const [stripeWebhookSecret, setStripeWebhookSecret] = useState('');
   const [isLoadingConfig, setIsLoadingConfig] = useState(false);
   const [isSavingConfig, setIsSavingConfig] = useState(false);
   
@@ -127,6 +129,7 @@ const Admin: React.FC = () => {
     const config = await getConfiguracoes();
     setStripePublicKey(config['stripe_public_key'] || '');
     setStripeSecretKey(config['stripe_secret_key'] || '');
+    setStripeWebhookSecret(config['stripe_webhook_secret'] || '');
     setIsLoadingConfig(false);
   };
 
@@ -135,6 +138,7 @@ const Admin: React.FC = () => {
     await updateConfiguracoes({
       stripe_public_key: stripePublicKey,
       stripe_secret_key: stripeSecretKey,
+      stripe_webhook_secret: stripeWebhookSecret,
     });
     setIsSavingConfig(false);
   };
@@ -142,10 +146,10 @@ const Admin: React.FC = () => {
   const handleOpenPlanModal = (plan?: Plan) => {
     if (plan) {
       setEditingPlan(plan);
-      setPlanFormData({ nome: plan.nome, valor: String(plan.valor), descricao: plan.descricao || '' });
+      setPlanFormData({ nome: plan.nome, valor: String(plan.valor), descricao: plan.descricao || '', stripe_price_id: plan.stripe_price_id || '' });
     } else {
       setEditingPlan(null);
-      setPlanFormData({ nome: '', valor: '', descricao: '' });
+      setPlanFormData({ nome: '', valor: '', descricao: '', stripe_price_id: '' });
     }
     setPlanErrors({});
     setIsPlanModalOpen(true);
@@ -154,7 +158,7 @@ const Admin: React.FC = () => {
   const handleClosePlanModal = () => {
     setIsPlanModalOpen(false);
     setEditingPlan(null);
-    setPlanFormData({ nome: '', valor: '', descricao: '' });
+    setPlanFormData({ nome: '', valor: '', descricao: '', stripe_price_id: '' });
     setPlanErrors({});
   };
 
@@ -174,7 +178,7 @@ const Admin: React.FC = () => {
       }
     }
     setIsSubmittingPlan(true);
-    const payload = { nome: planFormData.nome, valor: Number(planFormData.valor), descricao: planFormData.descricao };
+    const payload = { nome: planFormData.nome, valor: Number(planFormData.valor), descricao: planFormData.descricao, stripe_price_id: planFormData.stripe_price_id || undefined };
     const result = editingPlan
       ? await updatePlano(editingPlan.id, payload)
       : await createPlano(payload);
@@ -466,8 +470,19 @@ const Admin: React.FC = () => {
                         </span>
                       </TableCell>
                       <TableCell>
-                        {u.plano_id
-                          ? <Badge variant="outline">{planos.find(p => p.id === u.plano_id)?.nome || 'Plano'}</Badge>
+                        {u.gratuidade_vitalicia
+                          ? <Badge variant="secondary">Gratuidade</Badge>
+                          : u.plano_id
+                          ? (
+                            <div className="flex flex-col gap-0.5">
+                              <Badge variant="outline">{planos.find(p => p.id === u.plano_id)?.nome || 'Plano'}</Badge>
+                              {u.plano_vencimento && (
+                                <span className="text-xs text-muted-foreground">
+                                  Vence: {new Date(u.plano_vencimento).toLocaleDateString('pt-BR')}
+                                </span>
+                              )}
+                            </div>
+                          )
                           : <span className="text-muted-foreground text-sm">—</span>
                         }
                       </TableCell>
@@ -686,6 +701,18 @@ const Admin: React.FC = () => {
                         disabled={isSavingConfig}
                       />
                       <p className="text-xs text-muted-foreground">Chave secreta para uso no backend (começa com sk_). Mantenha em segredo.</p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="stripe_webhook_secret">Webhook Secret</Label>
+                      <Input
+                        id="stripe_webhook_secret"
+                        type="password"
+                        value={stripeWebhookSecret}
+                        onChange={(e) => setStripeWebhookSecret(e.target.value)}
+                        placeholder="whsec_..."
+                        disabled={isSavingConfig}
+                      />
+                      <p className="text-xs text-muted-foreground">Segredo do webhook Stripe para verificação de assinaturas (começa com whsec_). Opcional mas recomendado.</p>
                     </div>
                     <Button onClick={handleSaveConfig} disabled={isSavingConfig}>
                       {isSavingConfig && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
@@ -961,6 +988,18 @@ const Admin: React.FC = () => {
               />
               {planErrors.descricao && <p className="text-destructive text-sm">{planErrors.descricao}</p>}
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="plan_stripe_price_id">Stripe Price ID (opcional)</Label>
+              <Input
+                id="plan_stripe_price_id"
+                value={planFormData.stripe_price_id}
+                onChange={(e) => setPlanFormData({ ...planFormData, stripe_price_id: e.target.value })}
+                disabled={isSubmittingPlan}
+                placeholder="price_..."
+              />
+              <p className="text-xs text-muted-foreground">ID do preço configurado no Stripe. Se informado, será usado no checkout.</p>
+              {planErrors.stripe_price_id && <p className="text-destructive text-sm">{planErrors.stripe_price_id}</p>}
+            </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={handleClosePlanModal} disabled={isSubmittingPlan}>
                 Cancelar
@@ -1024,6 +1063,11 @@ const Admin: React.FC = () => {
                 </SelectContent>
               </Select>
             </div>
+            {selectedPlanId && (
+              <p className="text-xs text-muted-foreground">
+                O plano será atribuído a partir de hoje e vencerá todo mês no mesmo dia.
+              </p>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsUserPlanModalOpen(false)} disabled={isSubmittingUserPlan}>
