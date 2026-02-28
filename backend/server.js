@@ -822,6 +822,57 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         return res.json({ data: [{ success: true }] });
       }
 
+      case 'validarCartelas': {
+        // data.sorteio_id, data.numeros: number[], data.comprador_nome (optional)
+        const numeros = (data.numeros || []).map(Number).filter(n => n > 0);
+        if (numeros.length === 0) {
+          return res.status(400).json({ error: 'Nenhum número de cartela válido fornecido' });
+        }
+        // Verify all cartelas exist for this sorteio
+        const placeholders = numeros.map((_, i) => `$${i + 2}`).join(', ');
+        const existCheck = await client.query(
+          `SELECT numero FROM cartelas WHERE sorteio_id = $1 AND numero IN (${placeholders})`,
+          [data.sorteio_id, ...numeros]
+        );
+        const existentes = new Set(existCheck.rows.map(r => r.numero));
+        const naoEncontradas = numeros.filter(n => !existentes.has(n));
+        if (naoEncontradas.length > 0) {
+          return res.status(404).json({ error: `Cartelas não encontradas neste sorteio: ${naoEncontradas.join(', ')}` });
+        }
+        // Upsert all validations
+        for (const num of numeros) {
+          if (dbConfig.type === 'mysql') {
+            await client.query(
+              `INSERT INTO cartelas_validadas (id, sorteio_id, numero, comprador_nome) VALUES (UUID(), $1, $2, $3)
+               ON DUPLICATE KEY UPDATE comprador_nome = VALUES(comprador_nome)`,
+              [data.sorteio_id, num, data.comprador_nome || null]
+            );
+          } else {
+            await client.query(
+              `INSERT INTO cartelas_validadas (sorteio_id, numero, comprador_nome)
+               VALUES ($1, $2, $3)
+               ON CONFLICT (sorteio_id, numero) DO UPDATE SET comprador_nome = EXCLUDED.comprador_nome`,
+              [data.sorteio_id, num, data.comprador_nome || null]
+            );
+          }
+        }
+        return res.json({ data: [{ success: true, count: numeros.length }] });
+      }
+
+      case 'removerValidacaoLote': {
+        // data.sorteio_id, data.numeros: number[]
+        const numeros = (data.numeros || []).map(Number).filter(n => n > 0);
+        if (numeros.length === 0) {
+          return res.json({ data: [{ success: true }] });
+        }
+        const placeholders = numeros.map((_, i) => `$${i + 2}`).join(', ');
+        await client.query(
+          `DELETE FROM cartelas_validadas WHERE sorteio_id = $1 AND numero IN (${placeholders})`,
+          [data.sorteio_id, ...numeros]
+        );
+        return res.json({ data: [{ success: true, count: numeros.length }] });
+      }
+
       case 'verificarVencedor': {
         // data.sorteio_id, data.numeros_sorteados: number[]
         // Only considers validated cartelas (cartelas_validadas table)
