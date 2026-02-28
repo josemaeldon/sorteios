@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Plan } from '@/types/auth';
 import { Button } from '@/components/ui/button';
@@ -8,16 +8,34 @@ import { Ticket, Loader2, LogOut, CheckCircle } from 'lucide-react';
 
 const Planos: React.FC = () => {
   const navigate = useNavigate();
-  const { getPublicPlanos, logout, user, createStripeCheckout } = useAuth();
+  const [searchParams] = useSearchParams();
+  const { getPublicPlanos, logout, user, createStripeCheckout, refreshUser } = useAuth();
   const [planos, setPlanos] = useState<Plan[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [checkoutLoadingId, setCheckoutLoadingId] = useState<string | null>(null);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const paymentSuccess = searchParams.get('payment') === 'success';
+
+  // After a successful Stripe payment, refresh the user profile so the new
+  // plano_id is reflected in the local state, then let the effect below
+  // redirect to the home page.
+  useEffect(() => {
+    if (!paymentSuccess) return;
+    setIsLoading(true);
+    refreshUser().catch(() => {
+      // If refresh fails, still stop showing the spinner so the user can retry
+      setIsLoading(false);
+    });
+  }, [paymentSuccess, refreshUser]);
 
   useEffect(() => {
     // If user already has access, redirect to home
     if (user?.role === 'admin' || user?.gratuidade_vitalicia || user?.plano_id) {
       navigate('/', { replace: true });
+      return;
+    }
+    if (paymentSuccess) {
+      // Still waiting for refreshUser to finish — keep showing spinner
       return;
     }
     const load = async () => {
@@ -26,12 +44,12 @@ const Planos: React.FC = () => {
       setIsLoading(false);
     };
     load();
-  }, [user, navigate, getPublicPlanos]);
+  }, [user, navigate, getPublicPlanos, paymentSuccess]);
 
   const handleCheckout = async (plano: Plan) => {
     setCheckoutError(null);
     setCheckoutLoadingId(plano.id);
-    const result = await createStripeCheckout(plano.id);
+    const result = await createStripeCheckout(plano.id, '/planos?payment=success', '/planos');
     if (result.url) {
       window.location.href = result.url;
     } else {

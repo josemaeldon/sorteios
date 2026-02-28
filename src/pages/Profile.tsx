@@ -1,13 +1,16 @@
-import React, { useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useRef, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { Plan } from '@/types/auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
-import { ArrowLeft, User, Loader2, Save, Camera, X, Lock, Mail, Type } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Badge } from '@/components/ui/badge';
+import { ArrowLeft, User, Loader2, Save, Camera, X, Lock, Mail, Type, CreditCard, CheckCircle } from 'lucide-react';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
 
@@ -28,7 +31,8 @@ const passwordSchema = z.object({
 
 const Profile: React.FC = () => {
   const navigate = useNavigate();
-  const { user, updateProfile, isAuthenticated } = useAuth();
+  const [searchParams] = useSearchParams();
+  const { user, updateProfile, isAuthenticated, getPublicPlanos, createStripeCheckout, refreshUser } = useAuth();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -36,6 +40,31 @@ const Profile: React.FC = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showPasswordFields, setShowPasswordFields] = useState(false);
+
+  // Subscription tab state
+  const [planos, setPlanos] = useState<Plan[]>([]);
+  const [isLoadingPlanos, setIsLoadingPlanos] = useState(false);
+  const [checkoutLoadingId, setCheckoutLoadingId] = useState<string | null>(null);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const paymentSuccess = searchParams.get('payment') === 'success';
+  const defaultTab = searchParams.get('tab') === 'assinatura' ? 'assinatura' : 'dados';
+
+  // After returning from a successful Stripe payment, refresh the user so the
+  // new plano_id is reflected in the local state.
+  useEffect(() => {
+    if (paymentSuccess) {
+      refreshUser()
+        .then(() => {
+          toast({ title: 'Assinatura ativada', description: 'Seu plano foi ativado com sucesso!' });
+        })
+        .catch(() => {
+          toast({ title: 'Plano ativado', description: 'Atualize a página para ver seu plano atualizado.', variant: 'destructive' });
+        })
+        .finally(() => {
+          navigate('/profile?tab=assinatura', { replace: true });
+        });
+    }
+  }, [paymentSuccess, refreshUser, toast, navigate]);
   
   const [formData, setFormData] = useState({
     nome: user?.nome || '',
@@ -55,6 +84,30 @@ const Profile: React.FC = () => {
       navigate('/auth');
     }
   }, [isAuthenticated, navigate]);
+
+  const loadPlanos = async () => {
+    if (planos.length > 0) return;
+    setIsLoadingPlanos(true);
+    const data = await getPublicPlanos();
+    setPlanos(data);
+    setIsLoadingPlanos(false);
+  };
+
+  const handleCheckout = async (plano: Plan) => {
+    setCheckoutError(null);
+    setCheckoutLoadingId(plano.id);
+    const result = await createStripeCheckout(
+      plano.id,
+      '/profile?tab=assinatura&payment=success',
+      '/profile?tab=assinatura',
+    );
+    if (result.url) {
+      window.location.href = result.url;
+    } else {
+      setCheckoutError(result.error || 'Erro ao iniciar checkout. Tente novamente.');
+      setCheckoutLoadingId(null);
+    }
+  };
 
   const handleAvatarClick = () => {
     fileInputRef.current?.click();
@@ -223,6 +276,20 @@ const Profile: React.FC = () => {
       </header>
 
       <main className="container mx-auto p-6 max-w-2xl">
+        <Tabs defaultValue={defaultTab}>
+          <TabsList className="mb-6">
+            <TabsTrigger value="dados" className="flex items-center gap-2">
+              <User className="h-4 w-4" />
+              Dados Pessoais
+            </TabsTrigger>
+            <TabsTrigger value="assinatura" className="flex items-center gap-2" onClick={loadPlanos}>
+              <CreditCard className="h-4 w-4" />
+              Minha Assinatura
+            </TabsTrigger>
+          </TabsList>
+
+          {/* ========== DADOS PESSOAIS ========== */}
+          <TabsContent value="dados">
         <form onSubmit={handleSubmit} className="space-y-6">
           {errors.form && (
             <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-lg text-destructive text-sm">
@@ -471,6 +538,112 @@ const Profile: React.FC = () => {
             </Button>
           </div>
         </form>
+          </TabsContent>
+
+          {/* ========== MINHA ASSINATURA ========== */}
+          <TabsContent value="assinatura" className="space-y-6">
+            {/* Current plan status */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <CreditCard className="h-5 w-5" />
+                  Plano Atual
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {user?.gratuidade_vitalicia ? (
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary" className="text-sm px-3 py-1">Gratuidade Vitalícia</Badge>
+                    <span className="text-muted-foreground text-sm">Acesso completo sem custo</span>
+                  </div>
+                ) : user?.plano_id ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle className="h-5 w-5 text-green-500" />
+                      <span className="font-medium">Plano ativo</span>
+                    </div>
+                    {user.plano_vencimento && (
+                      <p className="text-sm text-muted-foreground">
+                        Válido até: {new Date(user.plano_vencimento).toLocaleDateString('pt-BR')}
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground text-sm">Nenhum plano ativo. Assine um plano abaixo para usar o sistema.</p>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Plan listing */}
+            <div>
+              <h3 className="text-lg font-semibold mb-4">
+                {user?.plano_id ? 'Alterar Plano' : 'Escolha um Plano'}
+              </h3>
+
+              {checkoutError && (
+                <div className="mb-4 p-3 bg-destructive/10 border border-destructive/20 rounded-lg text-destructive text-sm">
+                  {checkoutError}
+                </div>
+              )}
+
+              {isLoadingPlanos ? (
+                <div className="flex justify-center py-8">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                </div>
+              ) : planos.length === 0 ? (
+                <Card>
+                  <CardContent className="py-8 text-center text-muted-foreground">
+                    Nenhum plano disponível no momento. Entre em contato com o administrador.
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {planos.map((plano) => {
+                    const isCurrentPlan = user?.plano_id === plano.id;
+                    return (
+                      <Card key={plano.id} className={`border-2 flex flex-col ${isCurrentPlan ? 'border-primary' : ''}`}>
+                        <CardHeader>
+                          <div className="flex items-center justify-between">
+                            <CardTitle className="text-lg">{plano.nome}</CardTitle>
+                            {isCurrentPlan && <Badge>Atual</Badge>}
+                          </div>
+                          {plano.descricao && (
+                            <CardDescription>{plano.descricao}</CardDescription>
+                          )}
+                        </CardHeader>
+                        <CardContent className="space-y-3 flex flex-col flex-1 justify-between">
+                          <div className="space-y-2">
+                            <p className="text-2xl font-bold text-primary">
+                              {(() => {
+                                const valor = Number(plano.valor);
+                                return valor > 0 ? `R$ ${valor.toFixed(2).replace('.', ',')}` : 'Gratuito';
+                              })()}
+                            </p>
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              <CheckCircle className="h-4 w-4 text-green-500" />
+                              <span>Acesso completo ao sistema</span>
+                            </div>
+                          </div>
+                          <Button
+                            className="w-full mt-2"
+                            variant={isCurrentPlan ? 'outline' : 'default'}
+                            onClick={() => handleCheckout(plano)}
+                            disabled={checkoutLoadingId !== null || isCurrentPlan}
+                          >
+                            {checkoutLoadingId === plano.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                            ) : null}
+                            {isCurrentPlan ? 'Plano atual' : Number(plano.valor) > 0 ? 'Assinar agora' : 'Ativar plano'}
+                          </Button>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </TabsContent>
+        </Tabs>
       </main>
     </div>
   );

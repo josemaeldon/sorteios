@@ -593,6 +593,17 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         );
         return res.json({ success: true });
 
+      case 'getMyProfile': {
+        const myProfileResult = await client.query(
+          'SELECT id, email, nome, role, ativo, titulo_sistema, avatar_url, created_at, updated_at, plano_id, gratuidade_vitalicia, plano_inicio, plano_vencimento FROM usuarios WHERE id = $1',
+          [data.authenticated_user_id]
+        );
+        if (myProfileResult.rows.length === 0) {
+          return res.status(404).json({ error: 'Usuário não encontrado' });
+        }
+        return res.json({ user: myProfileResult.rows[0] });
+      }
+
       case 'updateProfile': {
         const profileUserId = data.authenticated_user_id;
         
@@ -1482,10 +1493,14 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         const stripe = Stripe(stripeSecretKey);
         const baseUrl = (process.env.APP_URL || '').replace(/\/$/, '') || `${req.protocol}://${req.get('host')}`;
 
+        const isValidPath = (p) => typeof p === 'string' && /^\/[a-zA-Z0-9/_?=&-]*$/.test(p) && !p.includes('//') && !p.includes('..');
+        const successPath = isValidPath(data.success_path) ? data.success_path : '/planos';
+        const cancelPath = isValidPath(data.cancel_path) ? data.cancel_path : '/planos';
+
         let sessionParams = {
           mode: 'payment',
-          success_url: `${baseUrl}/admin`,
-          cancel_url: `${baseUrl}/planos`,
+          success_url: `${baseUrl}${successPath}`,
+          cancel_url: `${baseUrl}${cancelPath}`,
           metadata: { user_id: data.authenticated_user_id, plano_id: plano.id },
           client_reference_id: data.authenticated_user_id,
         };
