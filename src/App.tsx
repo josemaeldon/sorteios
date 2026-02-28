@@ -50,7 +50,7 @@ const App = () => (
             <Route
               path="/profile"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute skipPlanCheck>
                   <Profile />
                 </ProtectedRoute>
               }

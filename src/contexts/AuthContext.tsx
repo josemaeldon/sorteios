@@ -27,7 +27,8 @@ interface AuthContextType extends AuthState {
   grantLifetimeAccess: (userId: string, grant: boolean) => Promise<{ success: boolean; error?: string }>;
   getConfiguracoes: () => Promise<Record<string, string>>;
   updateConfiguracoes: (config: Record<string, string>) => Promise<{ success: boolean; error?: string }>;
-  createStripeCheckout: (planoId: string) => Promise<{ url?: string; error?: string }>;
+  createStripeCheckout: (planoId: string, successPath?: string, cancelPath?: string) => Promise<{ url?: string; error?: string }>;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -417,9 +418,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [user, toast]);
 
-  const createStripeCheckout = useCallback(async (planoId: string) => {
+  const createStripeCheckout = useCallback(async (planoId: string, successPath?: string, cancelPath?: string) => {
     try {
-      const result = await callApi('createStripeCheckout', { plano_id: planoId });
+      const result = await callApi('createStripeCheckout', {
+        plano_id: planoId,
+        ...(successPath ? { success_path: successPath } : {}),
+        ...(cancelPath ? { cancel_path: cancelPath } : {}),
+      });
       if (result.url) {
         return { url: result.url };
       }
@@ -428,6 +433,19 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return { error: error.message || 'Erro ao iniciar checkout' };
     }
   }, []);
+
+  const refreshUser = useCallback(async () => {
+    if (!user) return;
+    try {
+      const result = await callApi('getMyProfile');
+      if (result.user) {
+        setUser(result.user);
+        localStorage.setItem(AUTH_KEY, JSON.stringify(result.user));
+      }
+    } catch (error) {
+      console.error('Refresh user error:', error);
+    }
+  }, [user]);
 
   const value: AuthContextType = {
     user,
@@ -457,6 +475,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     getConfiguracoes,
     updateConfiguracoes,
     createStripeCheckout,
+    refreshUser,
   };
 
   return (
