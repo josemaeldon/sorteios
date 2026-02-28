@@ -680,6 +680,16 @@ const DrawTab: React.FC = () => {
               Verificar Vencedor
             </Button>
             <Button
+              onClick={handleOpenCartelaSorteioModal}
+              disabled={cartelasValidadas.length === 0}
+              size="lg"
+              variant="outline"
+              className="gap-2"
+            >
+              <Ticket className="w-5 h-5" />
+              Sortear Cartela
+            </Button>
+            <Button
               onClick={resetDraw}
               disabled={isDrawing || drawnNumbers.length === 0}
               variant="outline"
@@ -1023,6 +1033,70 @@ const DrawTab: React.FC = () => {
             </div>
           )}
         </div>
+
+      {/* Sortear Cartela Modal */}
+      <Dialog open={isCartelaSorteioModalOpen} onOpenChange={(open) => {
+        if (!isCartelaSorteioAnimating) setIsCartelaSorteioModalOpen(open);
+      }}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Ticket className="w-5 h-5" />
+              Sortear Cartela Aleatória
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-6 py-2">
+            <p className="text-sm text-muted-foreground text-center">
+              Serão consideradas apenas as <span className="font-semibold text-foreground">{cartelasValidadas.length}</span> cartela(s) validada(s).
+            </p>
+
+            <div className="flex flex-col items-center justify-center min-h-[140px]">
+              {cartelaSorteioPreview !== null ? (
+                <div className={cn(
+                  "text-7xl font-black text-primary transition-all duration-150",
+                  isCartelaSorteioAnimating && "animate-pulse"
+                )}>
+                  {cartelaSorteioPreview.toString().padStart(3, '0')}
+                </div>
+              ) : (
+                <div className="text-center text-muted-foreground">
+                  <Ticket className="w-20 h-20 mx-auto mb-3 opacity-40" />
+                  <p className="text-base">Clique em "Sortear" para começar</p>
+                </div>
+              )}
+              {!isCartelaSorteioAnimating && cartelaSorteioPreview !== null && (() => {
+                const cv = cartelasValidadas.find(c => c.numero === cartelaSorteioPreview);
+                return cv?.comprador_nome ? (
+                  <p className="mt-2 text-sm text-muted-foreground">{cv.comprador_nome}</p>
+                ) : null;
+              })()}
+            </div>
+
+            <div className="flex gap-3">
+              <Button
+                onClick={handleSortearCartela}
+                disabled={isCartelaSorteioAnimating || cartelasValidadas.length === 0}
+                className="flex-1 gap-2"
+              >
+                {isCartelaSorteioAnimating ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Shuffle className="w-4 h-4" />
+                )}
+                Sortear
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setIsCartelaSorteioModalOpen(false)}
+                disabled={isCartelaSorteioAnimating}
+                className="flex-1"
+              >
+                Fechar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Cartela numbers modal */}
       <Dialog open={selectedCartelaModal !== null} onOpenChange={() => setSelectedCartelaModal(null)}>
