@@ -6,9 +6,12 @@ import { useToast } from '@/hooks/use-toast';
 interface AuthContextType extends AuthState {
   login: (credentials: LoginCredentials) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
+  registerUser: (data: { nome: string; email: string; senha: string }) => Promise<{ success: boolean; error?: string }>;
   createUser: (data: CreateUserData) => Promise<{ success: boolean; error?: string }>;
   updateUser: (id: string, data: Partial<CreateUserData>) => Promise<{ success: boolean; error?: string }>;
   deleteUser: (id: string) => Promise<{ success: boolean; error?: string }>;
+  approveUser: (id: string) => Promise<{ success: boolean; error?: string }>;
+  rejectUser: (id: string) => Promise<{ success: boolean; error?: string }>;
   getAllUsers: () => Promise<User[]>;
   checkFirstAccess: () => Promise<boolean>;
   setupAdmin: (email: string, senha: string, nome: string, titulo_sistema: string) => Promise<{ success: boolean; error?: string }>;
@@ -135,6 +138,46 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       description: "Você foi desconectado.",
     });
   }, [toast]);
+
+  const registerUser = useCallback(async (data: { nome: string; email: string; senha: string }) => {
+    try {
+      const result = await callApi('publicRegister', data);
+      if (result.success) {
+        return { success: true };
+      }
+      return { success: false, error: result.error || 'Erro ao realizar cadastro' };
+    } catch (error: any) {
+      return { success: false, error: error.message || 'Erro ao realizar cadastro' };
+    }
+  }, []);
+
+  const approveUser = useCallback(async (id: string) => {
+    if (user?.role !== 'admin') return { success: false, error: 'Apenas administradores' };
+    try {
+      const result = await callApi('approveUser', { id });
+      if (result.success) {
+        toast({ title: 'Cadastro aprovado', description: 'O usuário foi aprovado e notificado.' });
+        return { success: true };
+      }
+      return { success: false, error: result.error || 'Erro ao aprovar usuário' };
+    } catch (error: any) {
+      return { success: false, error: error.message || 'Erro ao aprovar usuário' };
+    }
+  }, [user, toast]);
+
+  const rejectUser = useCallback(async (id: string) => {
+    if (user?.role !== 'admin') return { success: false, error: 'Apenas administradores' };
+    try {
+      const result = await callApi('rejectUser', { id });
+      if (result.success) {
+        toast({ title: 'Cadastro rejeitado', description: 'O cadastro pendente foi removido.' });
+        return { success: true };
+      }
+      return { success: false, error: result.error || 'Erro ao rejeitar usuário' };
+    } catch (error: any) {
+      return { success: false, error: error.message || 'Erro ao rejeitar usuário' };
+    }
+  }, [user, toast]);
 
   const createUser = useCallback(async (data: CreateUserData) => {
     if (user?.role !== 'admin') {
@@ -468,9 +511,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     isAuthenticated: !!user && !!token,
     login,
     logout,
+    registerUser,
     createUser,
     updateUser,
     deleteUser,
+    approveUser,
+    rejectUser,
     getAllUsers,
     checkFirstAccess,
     setupAdmin,

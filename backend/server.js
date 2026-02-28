@@ -4,6 +4,9 @@ const DatabaseAdapter = require('./db-adapter');
 const crypto = require('crypto');
 const Stripe = require('stripe');
 
+let nodemailer;
+try { nodemailer = require('nodemailer'); } catch (e) { nodemailer = null; }
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 
@@ -374,6 +377,61 @@ async function verifyJwt(token) {
 
 // ================== Middleware ==================
 
+// Simple in-memory rate limiter for sensitive public actions (login, publicRegister)
+const _rateLimitMap = new Map();
+function rateLimitCheck(ip, action, maxRequests = 10, windowMs = 60000) {
+  const key = `${ip}:${action}`;
+  const now = Date.now();
+  const entry = _rateLimitMap.get(key) || { count: 0, resetAt: now + windowMs };
+  if (now > entry.resetAt) {
+    entry.count = 0;
+    entry.resetAt = now + windowMs;
+  }
+  entry.count++;
+  _rateLimitMap.set(key, entry);
+  return entry.count <= maxRequests;
+}
+
+// Email helper
+async function sendEmail(dbClient, { to, subject, text }) {
+  if (!nodemailer) {
+    console.warn('nodemailer not available — email not sent');
+    return;
+  }
+  try {
+    const cfgResult = await dbClient.query(
+      "SELECT chave, valor FROM configuracoes WHERE chave IN ('smtp_host','smtp_port','smtp_user','smtp_pass','smtp_from_name','smtp_from_email','smtp_secure')"
+    );
+    const cfg = {};
+    cfgResult.rows.forEach(r => { cfg[r.chave] = r.valor; });
+    if (!cfg.smtp_host || !cfg.smtp_user) {
+      console.warn('SMTP not configured — email not sent');
+      return;
+    }
+    const transporter = nodemailer.createTransport({
+      host: cfg.smtp_host,
+      port: parseInt(cfg.smtp_port || '587'),
+      secure: cfg.smtp_secure === 'true',
+      auth: { user: cfg.smtp_user, pass: cfg.smtp_pass || '' },
+    });
+    await transporter.sendMail({
+      from: cfg.smtp_from_email
+        ? `"${cfg.smtp_from_name || 'Sistema'}" <${cfg.smtp_from_email}>`
+        : cfg.smtp_user,
+      to,
+      subject,
+      text,
+    });
+    console.log(`Email sent to ${to}: ${subject}`);
+  } catch (e) {
+    console.error('Email send error:', e.message);
+  }
+}
+
+function applyTemplateVars(template, vars) {
+  return template.replace(/\{\{(\w+)\}\}/g, (_, key) => (vars[key] !== undefined ? vars[key] : `{{${key}}}`));
+}
+
 // Basic Auth middleware (optional)
 function checkBasicAuth(req, res, next) {
   // If no basic auth configured, skip
@@ -402,8 +460,17 @@ function checkBasicAuth(req, res, next) {
 
 // JWT Auth middleware
 async function checkAuth(req, action) {
-  const publicActions = ['checkFirstAccess', 'setupAdmin', 'login'];
-  const adminActions = ['getUsers', 'createUser', 'updateUser', 'deleteUser', 'getAllSorteiosAdmin', 'assignSorteioToUser', 'removeUserFromSorteio', 'getSorteioUsers', 'getPlanos', 'createPlano', 'updatePlano', 'deletePlano', 'assignUserPlan', 'grantLifetimeAccess', 'getConfiguracoes', 'updateConfiguracoes'];
+  const publicActions = ['checkFirstAccess', 'setupAdmin', 'login', 'publicRegister'];
+  const adminActions = [
+    // User management
+    'getUsers', 'createUser', 'updateUser', 'deleteUser', 'approveUser', 'rejectUser',
+    // Sorteio management
+    'getAllSorteiosAdmin', 'assignSorteioToUser', 'removeUserFromSorteio', 'getSorteioUsers',
+    // Plan management
+    'getPlanos', 'createPlano', 'updatePlano', 'deletePlano', 'assignUserPlan', 'grantLifetimeAccess',
+    // Configuration
+    'getConfiguracoes', 'updateConfiguracoes',
+  ];
 
   if (publicActions.includes(action)) {
     return { authenticated: true, user: null };
@@ -438,6 +505,14 @@ app.post('/api', checkBasicAuth, async (req, res) => {
   const { action, data = {} } = req.body;
   
   console.log(`API Call: ${action}`);
+
+  // Rate-limit sensitive public actions (10 requests per minute per IP)
+  if (['login', 'publicRegister'].includes(action)) {
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    if (!rateLimitCheck(ip, action, 10, 60000)) {
+      return res.status(429).json({ error: 'Muitas tentativas. Aguarde um momento e tente novamente.' });
+    }
+  }
   
   // Check authentication
   const authResult = await checkAuth(req, action);
@@ -496,7 +571,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         }
         
         if (!foundUser.ativo) {
-          return res.json({ error: 'Usuário inativo. Contate o administrador.' });
+          return res.json({ error: 'Seu cadastro está aguardando aprovação do administrador.' });
         }
         
         const token = await createJwt({
@@ -550,7 +625,79 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         await client.query('DELETE FROM usuarios WHERE id = $1', [data.id]);
         return res.json({ success: true });
 
-      case 'getAllSorteiosAdmin':
+      case 'publicRegister': {
+        const emailCheck = await client.query('SELECT id FROM usuarios WHERE email = $1', [data.email]);
+        if (emailCheck.rows.length > 0) {
+          return res.json({ error: 'Este email já está cadastrado.' });
+        }
+        const regHash = await hashPassword(data.senha);
+        const regResult = await client.query(`
+          INSERT INTO usuarios (email, senha_hash, nome, role, ativo, titulo_sistema)
+          VALUES ($1, $2, $3, 'user', false, $4)
+          RETURNING id, email, nome, role, ativo, titulo_sistema, created_at
+        `, [data.email, regHash, data.nome, data.titulo_sistema || 'Sorteios']);
+        const newUser = regResult.rows[0];
+
+        // Notify admin by email (fire and forget)
+        try {
+          const adminResult = await client.query("SELECT email FROM usuarios WHERE role = 'admin' LIMIT 1");
+          const adminEmail = adminResult.rows[0]?.email;
+          if (adminEmail) {
+            const tplSubjectResult = await client.query("SELECT valor FROM configuracoes WHERE chave = 'email_admin_novo_cadastro_assunto'");
+            const tplBodyResult   = await client.query("SELECT valor FROM configuracoes WHERE chave = 'email_admin_novo_cadastro_corpo'");
+            const tituloResult    = await client.query("SELECT valor FROM configuracoes WHERE chave = 'titulo_sistema'");
+            const defaultSubject  = 'Novo cadastro aguardando aprovação';
+            const defaultBody     = 'Olá Administrador,\n\nUm novo usuário se cadastrou e aguarda sua aprovação:\n\nNome: {{nome_usuario}}\nEmail: {{email_usuario}}\n\nAcesse o painel de administração para aprovar ou rejeitar o cadastro.\n\nAtenciosamente,\n{{titulo_sistema}}';
+            const subject = tplSubjectResult.rows[0]?.valor || defaultSubject;
+            const bodyTpl = tplBodyResult.rows[0]?.valor || defaultBody;
+            const titulo  = tituloResult.rows[0]?.valor || 'Sistema';
+            const body = applyTemplateVars(bodyTpl, { nome_usuario: newUser.nome, email_usuario: newUser.email, titulo_sistema: titulo });
+            sendEmail(client, { to: adminEmail, subject, text: body });
+          }
+        } catch (e) {
+          console.warn('Could not send admin notification email:', e.message);
+        }
+
+        return res.json({ success: true });
+      }
+
+      case 'approveUser': {
+        const approveResult = await client.query(
+          'UPDATE usuarios SET ativo = true, updated_at = NOW() WHERE id = $1 RETURNING email, nome',
+          [data.id]
+        );
+        const approved = approveResult.rows[0];
+        if (!approved) return res.json({ error: 'Usuário não encontrado.' });
+
+        // Send approval email to user (fire and forget)
+        try {
+          const tplSubjectResult = await client.query("SELECT valor FROM configuracoes WHERE chave = 'email_confirmacao_assunto'");
+          const tplBodyResult   = await client.query("SELECT valor FROM configuracoes WHERE chave = 'email_confirmacao_corpo'");
+          const tituloResult    = await client.query("SELECT valor FROM configuracoes WHERE chave = 'titulo_sistema'");
+          const defaultSubject  = 'Seu cadastro foi aprovado';
+          const defaultBody     = 'Olá {{nome}},\n\nSeu cadastro foi aprovado! Você já pode acessar o sistema com seu email {{email}}.\n\nAtenciosamente,\n{{titulo_sistema}}';
+          const subject = tplSubjectResult.rows[0]?.valor || defaultSubject;
+          const bodyTpl = tplBodyResult.rows[0]?.valor || defaultBody;
+          const titulo  = tituloResult.rows[0]?.valor || 'Sistema';
+          const body = applyTemplateVars(bodyTpl, { nome: approved.nome, email: approved.email, titulo_sistema: titulo });
+          sendEmail(client, { to: approved.email, subject, text: body });
+        } catch (e) {
+          console.warn('Could not send approval email:', e.message);
+        }
+
+        return res.json({ success: true });
+      }
+
+      case 'rejectUser': {
+        const rejectResult = await client.query(
+          'DELETE FROM usuarios WHERE id = $1 AND ativo = false RETURNING email, nome',
+          [data.id]
+        );
+        if (rejectResult.rows.length === 0) return res.json({ error: 'Usuário pendente não encontrado.' });
+        return res.json({ success: true });
+      }
+
+
         result = await client.query(`
           SELECT s.*, u.nome as owner_nome, u.email as owner_email
           FROM sorteios s
