@@ -28,6 +28,8 @@ const getApiConfig = (): ApiConfig => {
 
 export const apiConfig = getApiConfig();
 
+export const isSelfhostedMode = true;
+
 // Token storage keys
 const TOKEN_KEY = 'bingo_auth_token';
 

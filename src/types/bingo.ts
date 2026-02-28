@@ -52,7 +52,23 @@ export interface Cartela {
   status: 'disponivel' | 'ativa' | 'vendida' | 'devolvida';
   vendedor_id?: string;
   vendedor_nome?: string;
+  comprador_nome?: string;
   numeros_grade?: number[][]; // per-prize flat 25-number grids (0 = blank center); index = premio index
+}
+
+export interface LojaCartela {
+  id: string;
+  user_id?: string;
+  card_set_id: string;
+  card_set_nome?: string;
+  numero_cartela: number;
+  preco: number;
+  status: 'disponivel' | 'vendida';
+  comprador_nome?: string;
+  comprador_email?: string;
+  card_data: string; // JSON of BingoCardGrid
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface CartelaAtribuida {

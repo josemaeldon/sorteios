@@ -12,6 +12,7 @@ import {
   FiltrosVendas,
   CartelaLayout,
   CartelaValidada,
+  LojaCartela,
 } from '@/types/bingo';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
@@ -93,6 +94,13 @@ interface BingoContextType {
   addVenda: (venda: Omit<Venda, 'id' | 'created_at' | 'updated_at'>) => Promise<void>;
   updateVenda: (id: string, venda: Partial<Venda>) => Promise<void>;
   deleteVenda: (id: string) => Promise<void>;
+
+  // CRUD Operations - Loja Pública
+  lojaCartelas: LojaCartela[];
+  loadMinhaLoja: () => Promise<void>;
+  adicionarCartelaLoja: (cardSetId: string, numeroCartela: number, preco: number, cardData: string) => Promise<LojaCartela>;
+  removerCartelaLoja: (id: string) => Promise<void>;
+  atualizarPrecoLojaCartela: (id: string, preco: number) => Promise<void>;
   
   // Refresh all data for current sorteio
   refreshData: () => Promise<void>;
@@ -113,6 +121,7 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const [vendas, setVendas] = useState<Venda[]>([]);
   const [cartelaLayouts, setCartelaLayouts] = useState<CartelaLayout[]>([]);
   const [cartelasValidadas, setCartelasValidadas] = useState<CartelaValidada[]>([]);
+  const [lojaCartelas, setLojaCartelas] = useState<LojaCartela[]>([]);
   const [currentTab, setCurrentTab] = useState<TabType>('sorteios');
   const [isLoading, setIsLoading] = useState(false);
   
@@ -670,6 +679,41 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   }, [sorteioAtivo, callApi, toast, loadCartelasValidadas]);
 
+  // ================== LOJA PÚBLICA ==================
+  const loadMinhaLoja = useCallback(async () => {
+    try {
+      const result = await callApi('getMinhaLoja', {});
+      setLojaCartelas(result.data || []);
+    } catch (error: any) {
+      console.error('Error loading loja:', error);
+    }
+  }, [callApi]);
+
+  const adicionarCartelaLoja = useCallback(async (cardSetId: string, numeroCartela: number, preco: number, cardData: string): Promise<LojaCartela> => {
+    const result = await callApi('adicionarCartelaLoja', { card_set_id: cardSetId, numero_cartela: numeroCartela, preco, card_data: cardData });
+    if (!result.data) throw new Error(result.error || 'Erro ao disponibilizar cartela.');
+    setLojaCartelas(prev => {
+      const idx = prev.findIndex(c => c.card_set_id === cardSetId && c.numero_cartela === numeroCartela);
+      if (idx >= 0) {
+        const updated = [...prev];
+        updated[idx] = result.data;
+        return updated;
+      }
+      return [...prev, result.data];
+    });
+    return result.data;
+  }, [callApi]);
+
+  const removerCartelaLoja = useCallback(async (id: string) => {
+    await callApi('removerCartelaLoja', { id });
+    setLojaCartelas(prev => prev.filter(c => c.id !== id));
+  }, [callApi]);
+
+  const atualizarPrecoLojaCartela = useCallback(async (id: string, preco: number) => {
+    await callApi('atualizarPrecoLojaCartela', { id, preco });
+    setLojaCartelas(prev => prev.map(c => c.id === id ? { ...c, preco } : c));
+  }, [callApi]);
+
   // ================== REFRESH & SET SORTEIO ATIVO ==================
   const refreshData = useCallback(async () => {
     if (!sorteioAtivo) return;
@@ -769,6 +813,11 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     addVenda,
     updateVenda,
     deleteVenda,
+    lojaCartelas,
+    loadMinhaLoja,
+    adicionarCartelaLoja,
+    removerCartelaLoja,
+    atualizarPrecoLojaCartela,
     refreshData
   };
   

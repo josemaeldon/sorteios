@@ -3,7 +3,7 @@ import JsBarcode from 'jsbarcode';
 import {
   LayoutGrid, Plus, Trash2, Download, RefreshCw, ChevronLeft, ChevronRight,
   Image, Type, AlignLeft, AlignCenter, AlignRight, Bold, Loader2, FileText,
-  Save, List, X, Edit2, Barcode, Copy,
+  Save, List, X, Edit2, Barcode, Copy, ShoppingCart, Store, Link, DollarSign,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,7 +23,8 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { CartelaLayout } from '@/types/bingo';
+import { CartelaLayout, LojaCartela } from '@/types/bingo';
+import { useAuth } from '@/contexts/AuthContext';
 
 // ─── Canvas constants ─────────────────────────────────────────────────────────
 /** px per mm — keeps A4 canvas at ~595×841 px (72 dpi equivalent) */
@@ -247,7 +248,9 @@ const BingoCardsBuilderTab: React.FC = () => {
   const {
     sorteioAtivo, cartelas, salvarNumerosCartelas,
     cartelaLayouts, loadCartelaLayouts, saveCartelaLayout, updateCartelaLayout, deleteCartelaLayout,
+    lojaCartelas, loadMinhaLoja, adicionarCartelaLoja, removerCartelaLoja, atualizarPrecoLojaCartela,
   } = useBingo();
+  const { user } = useAuth();
   const { toast } = useToast();
 
   // Layout
@@ -263,6 +266,14 @@ const BingoCardsBuilderTab: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [numeroPremios, setNumeroPremios] = useState(() => Math.max(1, sorteioAtivo?.premios?.length ?? 1));
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
+
+  // Loja state
+  const [showVenderModal, setShowVenderModal] = useState(false);
+  const [vendaPreco, setVendaPreco] = useState('');
+  const [isVendendo, setIsVendendo] = useState(false);
+  const [showMinhaLojaDialog, setShowMinhaLojaDialog] = useState(false);
+  const [editingPrecoId, setEditingPrecoId] = useState<string | null>(null);
+  const [editingPrecoValor, setEditingPrecoValor] = useState('');
 
   // Sync numeroPremios when the active sorteio changes (intentionally only on id change,
   // not premios.length, so user customisation within the same sorteio is preserved)
@@ -588,6 +599,55 @@ const BingoCardsBuilderTab: React.FC = () => {
     setShowLayoutsList(false);
   };
 
+  // ─── Loja handlers ─────────────────────────────────────────────────────────
+  const handleOpenVenderModal = () => {
+    setVendaPreco(String(sorteioAtivo?.valor_cartela ?? ''));
+    setShowVenderModal(true);
+  };
+
+  const handleConfirmarVenda = async () => {
+    if (!activeLayoutId || !previewCard) return;
+    // Accept both "1.99" and "1,99" — strip thousands separators, normalise decimal
+    const normalised = vendaPreco.trim().replace(/\./g, '').replace(',', '.');
+    const preco = parseFloat(normalised);
+    if (isNaN(preco) || preco < 0) {
+      toast({ title: 'Preço inválido', variant: 'destructive' });
+      return;
+    }
+    setIsVendendo(true);
+    try {
+      await adicionarCartelaLoja(activeLayoutId, previewCard.cartelaNumero, preco, JSON.stringify(previewCard));
+      toast({ title: `Cartela ${previewCard.cartelaNumero.toString().padStart(3, '0')} disponibilizada para venda!` });
+      setShowVenderModal(false);
+    } catch (err: any) {
+      toast({ title: err.message || 'Erro ao disponibilizar cartela', variant: 'destructive' });
+    } finally {
+      setIsVendendo(false);
+    }
+  };
+
+  const handleOpenMinhaLoja = async () => {
+    await loadMinhaLoja();
+    setShowMinhaLojaDialog(true);
+  };
+
+  const handleSalvarPrecoEdicao = async (id: string) => {
+    const normalised = editingPrecoValor.trim().replace(/\./g, '').replace(',', '.');
+    const preco = parseFloat(normalised);
+    if (isNaN(preco) || preco < 0) {
+      toast({ title: 'Preço inválido', variant: 'destructive' });
+      return;
+    }
+    try {
+      await atualizarPrecoLojaCartela(id, preco);
+      setEditingPrecoId(null);
+    } catch {
+      toast({ title: 'Erro ao atualizar preço', variant: 'destructive' });
+    }
+  };
+
+  const publicUrl = user ? `${window.location.origin}/loja/${user.id}` : '';
+
   // ─── Render ────────────────────────────────────────────────────────────────
   if (!sorteioAtivo) {
     return (
@@ -647,6 +707,10 @@ const BingoCardsBuilderTab: React.FC = () => {
           <Button onClick={handleExportPDF} disabled={isExporting || cards.length === 0} className="gap-2">
             {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
             Exportar PDF {cards.length > 0 && `(${cards.length})`}
+          </Button>
+          <Button variant="outline" size="sm" className="gap-2" onClick={handleOpenMinhaLoja}>
+            <Store className="w-4 h-4" />
+            Minha Loja {lojaCartelas.length > 0 && `(${lojaCartelas.length})`}
           </Button>
         </div>
       </div>
@@ -776,6 +840,19 @@ const BingoCardsBuilderTab: React.FC = () => {
                   <ChevronRight className="w-4 h-4" />
                 </Button>
               </div>
+              {activeLayoutId && previewCard && (
+                <Button
+                  size="sm"
+                  variant={lojaCartelas.some(c => c.card_set_id === activeLayoutId && c.numero_cartela === previewCard.cartelaNumero) ? 'default' : 'outline'}
+                  className="w-full gap-1 h-7 text-xs"
+                  onClick={handleOpenVenderModal}
+                >
+                  <ShoppingCart className="w-3 h-3" />
+                  {lojaCartelas.some(c => c.card_set_id === activeLayoutId && c.numero_cartela === previewCard.cartelaNumero)
+                    ? 'Na loja ✓'
+                    : 'Disponibilizar para Venda'}
+                </Button>
+              )}
             </div>
           )}
 
@@ -1254,6 +1331,124 @@ const BingoCardsBuilderTab: React.FC = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* ── Disponibilizar para Venda modal ── */}
+      <Dialog open={showVenderModal} onOpenChange={setShowVenderModal}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShoppingCart className="w-5 h-5" />
+              Disponibilizar para Venda
+            </DialogTitle>
+          </DialogHeader>
+          {previewCard && (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Cartela <strong>{previewCard.cartelaNumero.toString().padStart(3, '0')}</strong> será disponibilizada na sua loja pública.
+              </p>
+              <div className="space-y-1.5">
+                <Label className="text-sm">Preço (R$)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={vendaPreco}
+                  onChange={(e) => setVendaPreco(e.target.value)}
+                  placeholder="0.00"
+                  className="h-9"
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowVenderModal(false)}>Cancelar</Button>
+            <Button onClick={handleConfirmarVenda} disabled={isVendendo} className="gap-2">
+              {isVendendo ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShoppingCart className="w-4 h-4" />}
+              Disponibilizar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Minha Loja dialog ── */}
+      <Dialog open={showMinhaLojaDialog} onOpenChange={setShowMinhaLojaDialog}>
+        <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Store className="w-5 h-5" />
+              Minha Loja
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 overflow-y-auto flex-1">
+            {/* Public link */}
+            <div className="flex items-center gap-2 p-3 bg-primary/5 border border-primary/20 rounded-lg">
+              <Link className="w-4 h-4 text-primary flex-shrink-0" />
+              <span className="text-xs text-muted-foreground flex-1 truncate">{publicUrl}</span>
+              <Button size="sm" variant="outline" className="h-7 text-xs gap-1 flex-shrink-0"
+                onClick={() => { navigator.clipboard.writeText(publicUrl); toast({ title: 'Link copiado!' }); }}>
+                <Copy className="w-3 h-3" /> Copiar
+              </Button>
+              <Button size="sm" variant="outline" className="h-7 text-xs gap-1 flex-shrink-0"
+                onClick={() => window.open(publicUrl, '_blank')}>
+                Abrir
+              </Button>
+            </div>
+
+            {lojaCartelas.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground text-sm">
+                Nenhuma cartela na loja. Acesse a Prévia e clique em "Disponibilizar para Venda".
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {lojaCartelas.map((lc) => (
+                  <div key={lc.id} className="flex items-center gap-3 p-3 border border-border rounded-lg bg-card">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium">Cartela {lc.numero_cartela.toString().padStart(3, '0')}</p>
+                      {lc.card_set_nome && <p className="text-xs text-muted-foreground truncate">{lc.card_set_nome}</p>}
+                      {lc.status === 'vendida' && lc.comprador_nome && (
+                        <p className="text-xs text-green-600 font-medium">Vendida para: {lc.comprador_nome}</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {lc.status === 'disponivel' ? (
+                        editingPrecoId === lc.id ? (
+                          <div className="flex items-center gap-1">
+                            <Input
+                              type="number" min="0" step="0.01"
+                              value={editingPrecoValor}
+                              onChange={(e) => setEditingPrecoValor(e.target.value)}
+                              className="h-7 w-24 text-xs"
+                            />
+                            <Button size="sm" className="h-7 text-xs" onClick={() => handleSalvarPrecoEdicao(lc.id)}>OK</Button>
+                            <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setEditingPrecoId(null)} aria-label="Cancelar edição">✕</Button>
+                          </div>
+                        ) : (
+                          <button
+                            className="text-sm font-semibold text-primary hover:underline flex items-center gap-1"
+                            onClick={() => { setEditingPrecoId(lc.id); setEditingPrecoValor(String(lc.preco)); }}
+                          >
+                            <DollarSign className="w-3 h-3" />
+                            R$ {Number(lc.preco).toFixed(2).replace('.', ',')}
+                            <Edit2 className="w-3 h-3" />
+                          </button>
+                        )
+                      ) : (
+                        <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full border border-green-200">Vendida</span>
+                      )}
+                      <Button
+                        size="icon" variant="ghost" className="h-7 w-7 text-destructive"
+                        onClick={() => removerCartelaLoja(lc.id)}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 };

@@ -228,7 +228,7 @@ const CartelasTab: React.FC = () => {
 
   const getTooltip = (cartela: Cartela) => {
     const vendedor = cartela.vendedor_id ? vendedores.find(v => v.id === cartela.vendedor_id) : null;
-    const nome = vendedor?.nome || cartela.vendedor_nome || 'N/A';
+    const nome = vendedor?.nome || cartela.vendedor_nome || cartela.comprador_nome || 'N/A';
     switch (cartela.status) {
       case 'disponivel': return 'Disponível';
       case 'ativa':      return `Atribuída: ${nome}`;
@@ -712,6 +712,9 @@ const CartelasTab: React.FC = () => {
                 {getStatusLabel(selectedCartela?.status ?? '')}
               </span>
             </DialogTitle>
+            {selectedCartela?.comprador_nome && selectedCartela.status === 'vendida' && (
+              <p className="text-sm text-muted-foreground mt-1">Comprador: <strong>{selectedCartela.comprador_nome}</strong></p>
+            )}
           </DialogHeader>
 
           {editMode ? (
