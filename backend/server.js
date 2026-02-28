@@ -1480,7 +1480,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         }
         const plano = planoResult.rows[0];
         const stripe = Stripe(stripeSecretKey);
-        const baseUrl = (process.env.APP_URL || '').replace(/\/$/, '') || 'http://localhost:5173';
+        const baseUrl = (process.env.APP_URL || '').replace(/\/$/, '') || `${req.protocol}://${req.get('host')}`;
 
         let sessionParams = {
           mode: 'payment',
