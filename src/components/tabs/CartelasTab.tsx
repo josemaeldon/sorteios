@@ -122,7 +122,7 @@ const CartelasTab: React.FC = () => {
   const [validacaoNumero, setValidacaoNumero] = useState('');
   const [validacaoNome, setValidacaoNome] = useState('');
   const [isValidando, setIsValidando] = useState(false);
-  const [tamanhoLote, setTamanhoLote] = useState(10);
+  const [tamanhoLote, setTamanhoLote] = useState(50);
 
   if (!sorteioAtivo) {
     return (

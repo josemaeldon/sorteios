@@ -50,6 +50,7 @@ const ANIMATION_INTERVAL_MS = 100;
 const FULLSCREEN_FONT_SIZE_DEFAULT = 300;
 const WINNING_SCORE = 25;
 const Z_INDEX_WINNER_POPUP = 9999;
+const LOTE_SIZE = 50;
 
 const DrawTab: React.FC = () => {
   const { sorteioAtivo, cartelas, cartelasValidadas, loadCartelasValidadas } = useBingo();
@@ -83,7 +84,7 @@ const DrawTab: React.FC = () => {
   const [vencedoras, setVencedoras] = useState<number[]>([]);
   const [isVerifying, setIsVerifying] = useState(false);
   const [selectedCartelaModal, setSelectedCartelaModal] = useState<{ numero: number; nome?: string; grade: number[] } | null>(null);
-  const [ganhadoresPop, setGanhadoresPop] = useState<{ numero: number; nome?: string }[]>([]);
+  const [ganhadoresPop, setGanhadoresPop] = useState<{ numero: number; nome?: string; lote?: number }[]>([]);
   
   const animationIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const fullscreenRef = useRef<HTMLDivElement>(null);
@@ -494,7 +495,7 @@ const DrawTab: React.FC = () => {
     // Sort descending by score
     scored.sort((a, b) => b.score - a.score);
 
-    // Find top-10 distinct score levels, grouping ties
+    // Find top-20 distinct score levels, grouping ties
     const result: { score: number; cartelas: { numero: number; nome?: string }[] }[] = [];
     for (const { numero, score, nome } of scored) {
       if (score === 0) continue;
@@ -502,7 +503,7 @@ const DrawTab: React.FC = () => {
       if (existing) {
         existing.cartelas.push({ numero, nome });
       } else {
-        if (result.length < 10) {
+        if (result.length < 20) {
           result.push({ score, cartelas: [{ numero, nome }] });
         }
       }
@@ -516,7 +517,10 @@ const DrawTab: React.FC = () => {
       const newWinners = winnerEntry.cartelas.filter(c => !ganhadoresPopShownRef.current.has(c.numero));
       if (newWinners.length > 0) {
         newWinners.forEach(c => ganhadoresPopShownRef.current.add(c.numero));
-        setGanhadoresPop(winnerEntry.cartelas);
+        setGanhadoresPop(winnerEntry.cartelas.map(c => {
+          const idx = cartelasValidadas.findIndex(cv => cv.numero === c.numero);
+          return { ...c, lote: idx !== -1 ? Math.floor(idx / LOTE_SIZE) + 1 : undefined };
+        }));
       }
     }
   }, [topScoringCartelas]);
@@ -722,7 +726,7 @@ const DrawTab: React.FC = () => {
                       <div className="w-96 flex-shrink-0 bg-card rounded-lg p-6">
                         <h3 className="text-2xl font-bold flex items-center gap-2 mb-4">
                           <Trophy className="w-6 h-6 text-yellow-500" />
-                          Top 10 Cartelas
+                          Top 20 Cartelas
                         </h3>
                         <div className="space-y-3">
                           {topScoringCartelas.map((entry, idx) => (
@@ -759,9 +763,9 @@ const DrawTab: React.FC = () => {
                   <h2 className="text-4xl font-black mb-2">Temos um Ganhador! 🎉</h2>
                   <p className="text-muted-foreground mb-6">Cartela(s) com todos os números sorteados</p>
                   <div className="space-y-2 mb-8">
-                    {ganhadoresPop.map(({ numero, nome }) => (
+                    {ganhadoresPop.map(({ numero, nome, lote }) => (
                       <div key={numero} className="text-2xl font-bold text-primary">
-                        Cartela {numero.toString().padStart(3, '0')}{nome ? ` - ${nome}` : ''}
+                        Cartela {numero.toString().padStart(3, '0')}{nome ? ` - ${nome}` : ''}{lote !== undefined ? ` · Lote ${lote}` : ''}
                       </div>
                     ))}
                   </div>
@@ -867,14 +871,14 @@ const DrawTab: React.FC = () => {
           )}
           </div>
 
-          {/* Top 10 scoring cartelas - RIGHT SIDEBAR */}
+          {/* Top 20 scoring cartelas - RIGHT SIDEBAR */}
           {topScoringCartelas.length > 0 && (
             <div className="w-80 flex-shrink-0">
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="flex items-center gap-2">
                     <Trophy className="w-5 h-5 text-yellow-500" />
-                    Top 10 Cartelas
+                    Top 20 Cartelas
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
