@@ -69,6 +69,8 @@ app.post('/stripe-webhook', express.raw({ type: 'application/json' }), async (re
       const session = event.data.object;
       const userId = session.metadata && session.metadata.user_id;
       const planoId = session.metadata && session.metadata.plano_id;
+      const sessionType = session.metadata && session.metadata.type;
+      const lojaCartelaId = session.metadata && session.metadata.loja_cartela_id;
 
       if (userId && planoId) {
         const updateClient = await dbAdapter.getConnection();
@@ -79,6 +81,34 @@ app.post('/stripe-webhook', express.raw({ type: 'application/json' }), async (re
             'UPDATE usuarios SET plano_id = $1, plano_inicio = $2, plano_vencimento = $3, updated_at = NOW() WHERE id = $4',
             [planoId, now, vencimento, userId]
           );
+        } finally {
+          updateClient.release();
+        }
+      }
+
+      if (sessionType === 'cartela_loja' && lojaCartelaId) {
+        const updateClient = await dbAdapter.getConnection();
+        try {
+          const compradorNome = (session.metadata && session.metadata.comprador_nome) || '';
+          const compradorEmail = (session.metadata && session.metadata.comprador_email) || session.customer_email || '';
+          const compradorEndereco = (session.metadata && session.metadata.comprador_endereco) || '';
+          const compradorCidade = (session.metadata && session.metadata.comprador_cidade) || '';
+          const compradorTelefone = (session.metadata && session.metadata.comprador_telefone) || '';
+          const lojaResult = await updateClient.query(
+            'SELECT lc.*, bcs.sorteio_id FROM loja_cartelas lc JOIN bingo_card_sets bcs ON lc.card_set_id = bcs.id WHERE lc.id = $1',
+            [lojaCartelaId]
+          );
+          if (lojaResult.rows.length > 0) {
+            const lc = lojaResult.rows[0];
+            await updateClient.query(
+              'UPDATE loja_cartelas SET status = $1, comprador_nome = $2, comprador_email = $3, comprador_endereco = $4, comprador_cidade = $5, comprador_telefone = $6, stripe_session_id = $7, updated_at = NOW() WHERE id = $8',
+              ['vendida', compradorNome, compradorEmail, compradorEndereco, compradorCidade, compradorTelefone, session.id, lojaCartelaId]
+            );
+            await updateClient.query(
+              'UPDATE cartelas SET status = $1, comprador_nome = $2, updated_at = NOW() WHERE sorteio_id = $3 AND numero = $4',
+              ['vendida', compradorNome, lc.sorteio_id, lc.numero_cartela]
+            );
+          }
         } finally {
           updateClient.release();
         }
@@ -155,6 +185,50 @@ async function initSchema() {
             UNIQUE KEY uq_validada_sorteio_numero (sorteio_id, numero)
           )
         `);
+        // Create loja_cartelas table (MySQL)
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS loja_cartelas (
+            id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+            user_id CHAR(36) NOT NULL,
+            card_set_id CHAR(36) NOT NULL,
+            numero_cartela INT NOT NULL,
+            preco DECIMAL(10,2) NOT NULL DEFAULT 0,
+            status VARCHAR(20) NOT NULL DEFAULT 'disponivel',
+            comprador_nome VARCHAR(255),
+            comprador_email VARCHAR(255),
+            comprador_endereco VARCHAR(255),
+            comprador_cidade VARCHAR(255),
+            comprador_telefone VARCHAR(50),
+            stripe_session_id VARCHAR(255),
+            card_data LONGTEXT NOT NULL,
+            layout_data LONGTEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+            updated_at TIMESTAMP DEFAULT NOW() ON UPDATE NOW() NOT NULL,
+            UNIQUE KEY uq_loja_cartela (user_id, card_set_id, numero_cartela)
+          )
+        `);
+        // Add new columns to loja_cartelas if upgrading (MySQL)
+        const lojaExtraCols = [
+          ['comprador_endereco', 'ALTER TABLE loja_cartelas ADD COLUMN comprador_endereco VARCHAR(255)'],
+          ['comprador_cidade',   'ALTER TABLE loja_cartelas ADD COLUMN comprador_cidade VARCHAR(255)'],
+          ['comprador_telefone', 'ALTER TABLE loja_cartelas ADD COLUMN comprador_telefone VARCHAR(50)'],
+          ['layout_data',        "ALTER TABLE loja_cartelas ADD COLUMN layout_data LONGTEXT NOT NULL DEFAULT ''"],
+        ];
+        for (const [, sql] of lojaExtraCols) {
+          try { await client.query(sql); } catch (e) {
+            if (!e.message || !e.message.includes('Duplicate column')) {
+              console.warn('loja_cartelas migration warning (may be pre-existing):', e.message);
+            }
+          }
+        }
+        // Add comprador_nome to cartelas (MySQL)
+        try {
+          await client.query(`ALTER TABLE cartelas ADD COLUMN comprador_nome VARCHAR(255)`);
+        } catch (e) {
+          if (!e.message || !e.message.includes('Duplicate column')) {
+            console.warn('Could not add comprador_nome to cartelas:', e.message);
+          }
+        }
         // Create planos table (MySQL)
         await client.query(`
           CREATE TABLE IF NOT EXISTS planos (
@@ -250,6 +324,35 @@ async function initSchema() {
             UNIQUE(sorteio_id, numero)
           )
         `);
+        // Create loja_cartelas table (PostgreSQL)
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS public.loja_cartelas (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID NOT NULL,
+            card_set_id UUID NOT NULL,
+            numero_cartela INT NOT NULL,
+            preco NUMERIC(10,2) NOT NULL DEFAULT 0,
+            status VARCHAR(20) NOT NULL DEFAULT 'disponivel',
+            comprador_nome VARCHAR(255),
+            comprador_email VARCHAR(255),
+            comprador_endereco VARCHAR(255),
+            comprador_cidade VARCHAR(255),
+            comprador_telefone VARCHAR(50),
+            stripe_session_id VARCHAR(255),
+            card_data TEXT NOT NULL,
+            layout_data TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+            UNIQUE(user_id, card_set_id, numero_cartela)
+          )
+        `);
+        // Add new columns to loja_cartelas if upgrading (PostgreSQL)
+        await client.query(`ALTER TABLE loja_cartelas ADD COLUMN IF NOT EXISTS comprador_endereco VARCHAR(255)`);
+        await client.query(`ALTER TABLE loja_cartelas ADD COLUMN IF NOT EXISTS comprador_cidade VARCHAR(255)`);
+        await client.query(`ALTER TABLE loja_cartelas ADD COLUMN IF NOT EXISTS comprador_telefone VARCHAR(50)`);
+        await client.query(`ALTER TABLE loja_cartelas ADD COLUMN IF NOT EXISTS layout_data TEXT NOT NULL DEFAULT ''`);
+        // Add comprador_nome to cartelas (PostgreSQL)
+        await client.query(`ALTER TABLE cartelas ADD COLUMN IF NOT EXISTS comprador_nome VARCHAR(255)`);
         // Create planos table (PostgreSQL)
         await client.query(`
           CREATE TABLE IF NOT EXISTS public.planos (
@@ -294,6 +397,7 @@ const BASIC_AUTH_PASS = process.env.BASIC_AUTH_PASS || '';
 // JWT Secret
 const JWT_SECRET = process.env.JWT_SECRET || 'bingo_jwt_secret_2024_secure';
 const JWT_EXPIRY_HOURS = 24;
+const STRIPE_MIN_AMOUNT_CENTAVOS = 50; // R$ 0,50 — Stripe minimum for BRL
 
 // ================== Utility Functions ==================
 
@@ -461,7 +565,7 @@ function checkBasicAuth(req, res, next) {
 
 // JWT Auth middleware
 async function checkAuth(req, action) {
-  const publicActions = ['checkFirstAccess', 'setupAdmin', 'login', 'publicRegister'];
+  const publicActions = ['checkFirstAccess', 'setupAdmin', 'login', 'publicRegister', 'getPublicPlanos', 'getLojaPublica', 'createStripeCheckoutCartela', 'confirmStripeCheckoutCartela'];
   const adminActions = [
     // User management
     'getUsers', 'createUser', 'updateUser', 'deleteUser', 'approveUser', 'rejectUser',
@@ -508,7 +612,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
   console.log(`API Call: ${action}`);
 
   // Rate-limit sensitive public actions (10 requests per minute per IP)
-  if (['login', 'publicRegister'].includes(action)) {
+  if (['login', 'publicRegister', 'createStripeCheckoutCartela', 'confirmStripeCheckoutCartela'].includes(action)) {
     const ip = req.ip || req.socket.remoteAddress || 'unknown';
     if (!rateLimitCheck(ip, action, 10, 60000)) {
       return res.status(429).json({ error: 'Muitas tentativas. Aguarde um momento e tente novamente.' });
@@ -999,7 +1103,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
       // ================== CARTELAS ==================
       case 'getCartelas': {
         result = await client.query(
-          'SELECT numero, status, vendedor_id, numeros_grade FROM cartelas WHERE sorteio_id = $1 ORDER BY numero',
+          'SELECT numero, status, vendedor_id, numeros_grade, comprador_nome FROM cartelas WHERE sorteio_id = $1 ORDER BY numero',
           [data.sorteio_id]
         );
         // Normalize numeros_grade to number[][] format
@@ -1764,6 +1868,194 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           }
         }
         return res.json({ success: true });
+      }
+
+      // ================== LOJA PÚBLICA ==================
+      case 'getLojaPublica': {
+        // Public: get user's store by user_id
+        const ownerResult = await client.query(
+          'SELECT id, nome, titulo_sistema FROM usuarios WHERE id = $1 AND ativo = true',
+          [data.user_id]
+        );
+        if (ownerResult.rows.length === 0) {
+          return res.status(404).json({ error: 'Loja não encontrada.' });
+        }
+        const owner = ownerResult.rows[0];
+        const lojaResult = await client.query(
+          'SELECT id, numero_cartela, preco, status, card_data, layout_data FROM loja_cartelas WHERE user_id = $1 AND status = $2 ORDER BY numero_cartela ASC',
+          [data.user_id, 'disponivel']
+        );
+        return res.json({ owner: { nome: owner.nome, titulo_sistema: owner.titulo_sistema }, cartelas: lojaResult.rows });
+      }
+
+      case 'getMinhaLoja': {
+        const minhaLojaResult = await client.query(
+          `SELECT lc.id, lc.card_set_id, lc.numero_cartela, lc.preco, lc.status, lc.comprador_nome, lc.card_data, lc.created_at, bcs.nome as card_set_nome
+           FROM loja_cartelas lc
+           LEFT JOIN bingo_card_sets bcs ON lc.card_set_id = bcs.id
+           WHERE lc.user_id = $1
+           ORDER BY lc.numero_cartela ASC`,
+          [data.authenticated_user_id]
+        );
+        return res.json({ data: minhaLojaResult.rows });
+      }
+
+      case 'adicionarCartelaLoja': {
+        if (!data.card_set_id || !data.numero_cartela || !data.card_data) {
+          return res.status(400).json({ error: 'Dados incompletos.' });
+        }
+        const preco = Number(data.preco) >= 0 ? Number(data.preco) : 0;
+        const layoutData = data.layout_data || '';
+        if (dbConfig.type === 'mysql') {
+          result = await client.query(
+            `INSERT INTO loja_cartelas (id, user_id, card_set_id, numero_cartela, preco, card_data, layout_data)
+             VALUES (UUID(), $1, $2, $3, $4, $5, $6)
+             ON DUPLICATE KEY UPDATE preco = VALUES(preco), card_data = VALUES(card_data), layout_data = VALUES(layout_data), updated_at = NOW()`,
+            [data.authenticated_user_id, data.card_set_id, data.numero_cartela, preco, data.card_data, layoutData]
+          );
+          const inserted = await client.query(
+            'SELECT * FROM loja_cartelas WHERE user_id = $1 AND card_set_id = $2 AND numero_cartela = $3',
+            [data.authenticated_user_id, data.card_set_id, data.numero_cartela]
+          );
+          return res.json({ data: inserted.rows[0] });
+        } else {
+          result = await client.query(
+            `INSERT INTO loja_cartelas (user_id, card_set_id, numero_cartela, preco, card_data, layout_data)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             ON CONFLICT (user_id, card_set_id, numero_cartela) DO UPDATE SET preco = EXCLUDED.preco, card_data = EXCLUDED.card_data, layout_data = EXCLUDED.layout_data, updated_at = NOW()
+             RETURNING *`,
+            [data.authenticated_user_id, data.card_set_id, data.numero_cartela, preco, data.card_data, layoutData]
+          );
+          return res.json({ data: result.rows[0] });
+        }
+      }
+
+      case 'removerCartelaLoja':
+        await client.query(
+          'DELETE FROM loja_cartelas WHERE id = $1 AND user_id = $2',
+          [data.id, data.authenticated_user_id]
+        );
+        return res.json({ success: true });
+
+      case 'atualizarPrecoLojaCartela': {
+        const novoPreco = Number(data.preco) >= 0 ? Number(data.preco) : 0;
+        await client.query(
+          'UPDATE loja_cartelas SET preco = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3',
+          [novoPreco, data.id, data.authenticated_user_id]
+        );
+        return res.json({ success: true });
+      }
+
+      case 'createStripeCheckoutCartela': {
+        if (!data.loja_cartela_id) {
+          return res.status(400).json({ error: 'Cartela não especificada.' });
+        }
+        const cfgCartela = await client.query(
+          'SELECT chave, valor FROM configuracoes WHERE chave = $1',
+          ['stripe_secret_key']
+        );
+        const stripeKeyCartela = cfgCartela.rows.length > 0 ? cfgCartela.rows[0].valor || '' : '';
+        if (!stripeKeyCartela) {
+          return res.status(400).json({ error: 'Pagamento online não configurado. Contate o vendedor.' });
+        }
+        const lojaCartelaResult = await client.query(
+          'SELECT lc.*, u.nome as owner_nome FROM loja_cartelas lc JOIN usuarios u ON lc.user_id = u.id WHERE lc.id = $1 AND lc.status = $2',
+          [data.loja_cartela_id, 'disponivel']
+        );
+        if (lojaCartelaResult.rows.length === 0) {
+          return res.status(404).json({ error: 'Cartela não disponível para compra.' });
+        }
+        const lojaCartela = lojaCartelaResult.rows[0];
+        const valorCentavos = Math.round(Number(lojaCartela.preco) * 100);
+        if (valorCentavos < STRIPE_MIN_AMOUNT_CENTAVOS) {
+          return res.status(400).json({ error: `Valor mínimo para pagamento online é R$ ${(STRIPE_MIN_AMOUNT_CENTAVOS / 100).toFixed(2).replace('.', ',')}.` });
+        }
+        const stripeCartela = Stripe(stripeKeyCartela);
+        const baseUrlCartela = (process.env.APP_URL || '').replace(/\/$/, '') || `${req.protocol}://${req.get('host')}`;
+        const isValidPathCartela = (p) => typeof p === 'string' && /^\/[a-zA-Z0-9/_?=&-]*$/.test(p) && !p.includes('//') && !p.includes('..');
+        const successPathCartela = isValidPathCartela(data.success_path) ? data.success_path : `/loja/${lojaCartela.user_id}`;
+        const cancelPathCartela = isValidPathCartela(data.cancel_path) ? data.cancel_path : `/loja/${lojaCartela.user_id}`;
+        const successUrlCartela = successPathCartela.includes('?')
+          ? `${baseUrlCartela}${successPathCartela}&session_id={CHECKOUT_SESSION_ID}`
+          : `${baseUrlCartela}${successPathCartela}?payment=success&session_id={CHECKOUT_SESSION_ID}`;
+        const cartelaSession = await stripeCartela.checkout.sessions.create({
+          mode: 'payment',
+          success_url: successUrlCartela,
+          cancel_url: `${baseUrlCartela}${cancelPathCartela}`,
+          customer_email: data.comprador_email || undefined,
+          line_items: [{
+            price_data: {
+              currency: 'brl',
+              product_data: { name: `Cartela ${String(lojaCartela.numero_cartela).padStart(3, '0')} — ${lojaCartela.owner_nome}` },
+              unit_amount: valorCentavos,
+            },
+            quantity: 1,
+          }],
+          metadata: {
+            type: 'cartela_loja',
+            loja_cartela_id: lojaCartela.id,
+            comprador_nome: data.comprador_nome || '',
+            comprador_email: data.comprador_email || '',
+            comprador_endereco: data.comprador_endereco || '',
+            comprador_cidade: data.comprador_cidade || '',
+            comprador_telefone: data.comprador_telefone || '',
+          },
+        });
+        return res.json({ url: cartelaSession.url });
+      }
+
+      case 'confirmStripeCheckoutCartela': {
+        if (!data.session_id) {
+          return res.status(400).json({ error: 'Session ID não informado.' });
+        }
+        const cfgConfirm = await client.query(
+          'SELECT valor FROM configuracoes WHERE chave = $1',
+          ['stripe_secret_key']
+        );
+        const stripeKeyConfirm = cfgConfirm.rows.length > 0 ? cfgConfirm.rows[0].valor || '' : '';
+        if (!stripeKeyConfirm) {
+          return res.status(400).json({ error: 'Stripe não configurado.' });
+        }
+        const stripeConfirm = Stripe(stripeKeyConfirm);
+        const cartelaCheckoutSession = await stripeConfirm.checkout.sessions.retrieve(data.session_id);
+        if (cartelaCheckoutSession.payment_status !== 'paid' && cartelaCheckoutSession.payment_status !== 'no_payment_required') {
+          return res.status(402).json({ error: 'Pagamento não confirmado.' });
+        }
+        const sessionMeta = cartelaCheckoutSession.metadata || {};
+        if (sessionMeta.type !== 'cartela_loja' || !sessionMeta.loja_cartela_id) {
+          return res.status(400).json({ error: 'Sessão inválida.' });
+        }
+        const lcConfirmResult = await client.query(
+          'SELECT lc.*, bcs.sorteio_id FROM loja_cartelas lc JOIN bingo_card_sets bcs ON lc.card_set_id = bcs.id WHERE lc.id = $1',
+          [sessionMeta.loja_cartela_id]
+        );
+        if (lcConfirmResult.rows.length === 0) {
+          return res.status(404).json({ error: 'Cartela não encontrada.' });
+        }
+        const lcConfirm = lcConfirmResult.rows[0];
+        const compradorNomeConfirm = sessionMeta.comprador_nome || '';
+        const compradorEmailConfirm = sessionMeta.comprador_email || cartelaCheckoutSession.customer_email || '';
+        const compradorEnderecoConfirm = sessionMeta.comprador_endereco || '';
+        const compradorCidadeConfirm = sessionMeta.comprador_cidade || '';
+        const compradorTelefoneConfirm = sessionMeta.comprador_telefone || '';
+        await client.query(
+          'UPDATE loja_cartelas SET status = $1, comprador_nome = $2, comprador_email = $3, comprador_endereco = $4, comprador_cidade = $5, comprador_telefone = $6, stripe_session_id = $7, updated_at = NOW() WHERE id = $8',
+          ['vendida', compradorNomeConfirm, compradorEmailConfirm, compradorEnderecoConfirm, compradorCidadeConfirm, compradorTelefoneConfirm, data.session_id, lcConfirm.id]
+        );
+        await client.query(
+          'UPDATE cartelas SET status = $1, comprador_nome = $2, updated_at = NOW() WHERE sorteio_id = $3 AND numero = $4',
+          ['vendida', compradorNomeConfirm, lcConfirm.sorteio_id, lcConfirm.numero_cartela]
+        );
+        return res.json({
+          success: true,
+          numero_cartela: lcConfirm.numero_cartela,
+          comprador_nome: compradorNomeConfirm,
+          comprador_endereco: compradorEnderecoConfirm,
+          comprador_cidade: compradorCidadeConfirm,
+          comprador_telefone: compradorTelefoneConfirm,
+          card_data: lcConfirm.card_data,
+          layout_data: lcConfirm.layout_data,
+        });
       }
 
       default:
