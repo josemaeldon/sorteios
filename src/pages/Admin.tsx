@@ -14,7 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowLeft, Plus, Pencil, Trash2, Users, Loader2, ShieldCheck, User as UserIcon, UserPlus, UserMinus, Ticket, CreditCard, Settings, Gift } from 'lucide-react';
+import { ArrowLeft, Plus, Pencil, Trash2, Users, Loader2, ShieldCheck, User as UserIcon, UserPlus, UserMinus, Ticket, CreditCard, Settings, Gift, Mail, Check, X, Clock } from 'lucide-react';
 import { z } from 'zod';
 
 interface SorteioAdmin extends Sorteio {
@@ -41,7 +41,7 @@ const planSchema = z.object({
 
 const Admin: React.FC = () => {
   const navigate = useNavigate();
-  const { user, getAllUsers, createUser, updateUser, deleteUser, isAuthenticated, getAllSorteiosAdmin, getSorteioUsers, assignSorteioToUser, removeUserFromSorteio, getPlanos, createPlano, updatePlano, deletePlano, assignUserPlan, grantLifetimeAccess, getConfiguracoes, updateConfiguracoes } = useAuth();
+  const { user, getAllUsers, createUser, updateUser, deleteUser, approveUser, rejectUser, isAuthenticated, getAllSorteiosAdmin, getSorteioUsers, assignSorteioToUser, removeUserFromSorteio, getPlanos, createPlano, updatePlano, deletePlano, assignUserPlan, grantLifetimeAccess, getConfiguracoes, updateConfiguracoes } = useAuth();
   
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -77,12 +77,39 @@ const Admin: React.FC = () => {
   const [selectedPlanId, setSelectedPlanId] = useState<string>('');
   const [isSubmittingUserPlan, setIsSubmittingUserPlan] = useState(false);
 
-  // Settings state
+  // Settings / Stripe state
   const [stripePublicKey, setStripePublicKey] = useState('');
   const [stripeSecretKey, setStripeSecretKey] = useState('');
   const [stripeWebhookSecret, setStripeWebhookSecret] = useState('');
   const [isLoadingConfig, setIsLoadingConfig] = useState(false);
   const [isSavingConfig, setIsSavingConfig] = useState(false);
+
+  // SMTP state
+  const [smtpHost, setSmtpHost] = useState('');
+  const [smtpPort, setSmtpPort] = useState('587');
+  const [smtpUser, setSmtpUser] = useState('');
+  const [smtpPass, setSmtpPass] = useState('');
+  const [smtpFromName, setSmtpFromName] = useState('');
+  const [smtpFromEmail, setSmtpFromEmail] = useState('');
+  const [smtpSecure, setSmtpSecure] = useState(false);
+  const [isSavingSmtp, setIsSavingSmtp] = useState(false);
+
+  // Email template state
+  const [tplAdminSubject, setTplAdminSubject] = useState('Novo cadastro aguardando aprovação');
+  const [tplAdminBody, setTplAdminBody] = useState('Olá Administrador,\n\nUm novo usuário se cadastrou e aguarda sua aprovação:\n\nNome: {{nome_usuario}}\nEmail: {{email_usuario}}\n\nAcesse o painel de administração para aprovar ou rejeitar o cadastro.\n\nAtenciosamente,\n{{titulo_sistema}}');
+  const [tplApprovalSubject, setTplApprovalSubject] = useState('Seu cadastro foi aprovado');
+  const [tplApprovalBody, setTplApprovalBody] = useState('Olá {{nome}},\n\nSeu cadastro foi aprovado! Você já pode acessar o sistema com seu email {{email}}.\n\nAtenciosamente,\n{{titulo_sistema}}');
+  const [tplResetSubject, setTplResetSubject] = useState('Redefinição de senha');
+  const [tplResetBody, setTplResetBody] = useState('Olá {{nome}},\n\nVocê solicitou a redefinição de sua senha. Clique no link abaixo:\n\n{{link}}\n\nSe não foi você quem solicitou, ignore este email.\n\nAtenciosamente,\n{{titulo_sistema}}');
+  const [isSavingTemplates, setIsSavingTemplates] = useState(false);
+
+  // Pending approval state
+  const [isApprovingId, setIsApprovingId] = useState<string | null>(null);
+  const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
+  const [userToReject, setUserToReject] = useState<User | null>(null);
+
+  const pendingUsers = users.filter(u => !u.ativo);
+  const activeUsers = users.filter(u => u.ativo);
   
   const [formData, setFormData] = useState<Partial<CreateUserData>>({
     nome: '',
@@ -132,6 +159,21 @@ const Admin: React.FC = () => {
     setStripePublicKey(config['stripe_public_key'] || '');
     setStripeSecretKey(config['stripe_secret_key'] || '');
     setStripeWebhookSecret(config['stripe_webhook_secret'] || '');
+    // SMTP
+    setSmtpHost(config['smtp_host'] || '');
+    setSmtpPort(config['smtp_port'] || '587');
+    setSmtpUser(config['smtp_user'] || '');
+    setSmtpPass(config['smtp_pass'] || '');
+    setSmtpFromName(config['smtp_from_name'] || '');
+    setSmtpFromEmail(config['smtp_from_email'] || '');
+    setSmtpSecure(config['smtp_secure'] === 'true');
+    // Email templates
+    if (config['email_admin_novo_cadastro_assunto']) setTplAdminSubject(config['email_admin_novo_cadastro_assunto']);
+    if (config['email_admin_novo_cadastro_corpo'])   setTplAdminBody(config['email_admin_novo_cadastro_corpo']);
+    if (config['email_confirmacao_assunto'])          setTplApprovalSubject(config['email_confirmacao_assunto']);
+    if (config['email_confirmacao_corpo'])            setTplApprovalBody(config['email_confirmacao_corpo']);
+    if (config['email_redefinicao_assunto'])          setTplResetSubject(config['email_redefinicao_assunto']);
+    if (config['email_redefinicao_corpo'])            setTplResetBody(config['email_redefinicao_corpo']);
     setIsLoadingConfig(false);
   };
 
@@ -143,6 +185,55 @@ const Admin: React.FC = () => {
       stripe_webhook_secret: stripeWebhookSecret,
     });
     setIsSavingConfig(false);
+  };
+
+  const handleSaveSmtp = async () => {
+    setIsSavingSmtp(true);
+    await updateConfiguracoes({
+      smtp_host: smtpHost,
+      smtp_port: smtpPort,
+      smtp_user: smtpUser,
+      smtp_pass: smtpPass,
+      smtp_from_name: smtpFromName,
+      smtp_from_email: smtpFromEmail,
+      smtp_secure: smtpSecure ? 'true' : 'false',
+    });
+    setIsSavingSmtp(false);
+  };
+
+  const handleSaveTemplates = async () => {
+    setIsSavingTemplates(true);
+    await updateConfiguracoes({
+      email_admin_novo_cadastro_assunto: tplAdminSubject,
+      email_admin_novo_cadastro_corpo: tplAdminBody,
+      email_confirmacao_assunto: tplApprovalSubject,
+      email_confirmacao_corpo: tplApprovalBody,
+      email_redefinicao_assunto: tplResetSubject,
+      email_redefinicao_corpo: tplResetBody,
+    });
+    setIsSavingTemplates(false);
+  };
+
+  const handleApproveUser = async (u: User) => {
+    setIsApprovingId(u.id);
+    await approveUser(u.id);
+    setIsApprovingId(null);
+    loadUsers();
+  };
+
+  const handleRejectClick = (u: User) => {
+    setUserToReject(u);
+    setIsRejectModalOpen(true);
+  };
+
+  const handleConfirmReject = async () => {
+    if (!userToReject) return;
+    setIsSubmitting(true);
+    await rejectUser(userToReject.id);
+    setIsSubmitting(false);
+    setIsRejectModalOpen(false);
+    setUserToReject(null);
+    loadUsers();
   };
 
   const handleOpenPlanModal = (plan?: Plan) => {
@@ -408,6 +499,11 @@ const Admin: React.FC = () => {
             <TabsTrigger value="usuarios" className="flex items-center gap-2">
               <Users className="h-4 w-4" />
               Usuários
+              {pendingUsers.length > 0 && (
+                <Badge variant="destructive" className="ml-1 h-5 w-5 p-0 flex items-center justify-center text-xs">
+                  {pendingUsers.length}
+                </Badge>
+              )}
             </TabsTrigger>
             <TabsTrigger value="planos" className="flex items-center gap-2">
               <CreditCard className="h-4 w-4" />
@@ -417,15 +513,84 @@ const Admin: React.FC = () => {
               <Settings className="h-4 w-4" />
               Configurações
             </TabsTrigger>
+            <TabsTrigger value="email" className="flex items-center gap-2">
+              <Mail className="h-4 w-4" />
+              Email / SMTP
+            </TabsTrigger>
           </TabsList>
 
           {/* ========== USUÁRIOS TAB ========== */}
           <TabsContent value="usuarios" className="space-y-6">
+
+          {/* ── Cadastros Pendentes ── */}
+          {pendingUsers.length > 0 && (
+            <Card className="border-orange-300">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-orange-700">
+                  <Clock className="h-5 w-5" />
+                  Cadastros Pendentes
+                  <Badge variant="destructive">{pendingUsers.length}</Badge>
+                </CardTitle>
+                <CardDescription>Novos cadastros aguardando aprovação do administrador</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="table-container">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Nome</TableHead>
+                        <TableHead>Email</TableHead>
+                        <TableHead>Solicitado em</TableHead>
+                        <TableHead className="w-[140px]">Ações</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {pendingUsers.map((u) => (
+                        <TableRow key={u.id}>
+                          <TableCell className="font-medium">{u.nome}</TableCell>
+                          <TableCell>{u.email}</TableCell>
+                          <TableCell>{new Date(u.created_at).toLocaleDateString('pt-BR')}</TableCell>
+                          <TableCell>
+                            <div className="flex gap-1">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-green-700 border-green-300 hover:bg-green-50"
+                                disabled={isApprovingId === u.id}
+                                onClick={() => handleApproveUser(u)}
+                                title="Aprovar cadastro"
+                              >
+                                {isApprovingId === u.id
+                                  ? <Loader2 className="h-4 w-4 animate-spin" />
+                                  : <Check className="h-4 w-4" />}
+                                <span className="ml-1">Aprovar</span>
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-destructive border-destructive/30 hover:bg-destructive/5"
+                                onClick={() => handleRejectClick(u)}
+                                title="Rejeitar cadastro"
+                              >
+                                <X className="h-4 w-4" />
+                                <span className="ml-1">Rejeitar</span>
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
-              <CardTitle>Usuários</CardTitle>
-              <CardDescription>{users.length} usuário(s) cadastrado(s)</CardDescription>
+              <CardTitle>Usuários Ativos</CardTitle>
+              <CardDescription>{activeUsers.length} usuário(s) ativo(s)</CardDescription>
             </div>
             <Button onClick={() => handleOpenModal()}>
               <Plus className="h-4 w-4 mr-2" />
@@ -448,7 +613,7 @@ const Admin: React.FC = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {users.map((u) => (
+                  {activeUsers.map((u) => (
                     <TableRow key={u.id}>
                       <TableCell className="font-medium">
                         <div className="flex items-center gap-2">
@@ -725,10 +890,166 @@ const Admin: React.FC = () => {
               </CardContent>
             </Card>
           </TabsContent>
+
+          {/* ========== EMAIL / SMTP TAB ========== */}
+          <TabsContent value="email" className="space-y-6">
+            {isLoadingConfig ? (
+              <div className="flex items-center justify-center py-16">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : (
+              <>
+                {/* SMTP Settings */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Mail className="h-5 w-5" />
+                      Configurações de SMTP
+                    </CardTitle>
+                    <CardDescription>Configure o servidor de e-mail para envio de notificações</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl">
+                      <div className="space-y-2">
+                        <Label htmlFor="smtp_host">Servidor SMTP (Host)</Label>
+                        <Input id="smtp_host" value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} placeholder="smtp.gmail.com" disabled={isSavingSmtp} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="smtp_port">Porta</Label>
+                        <Input id="smtp_port" value={smtpPort} onChange={(e) => setSmtpPort(e.target.value)} placeholder="587" disabled={isSavingSmtp} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="smtp_user">Usuário / Email</Label>
+                        <Input id="smtp_user" type="email" value={smtpUser} onChange={(e) => setSmtpUser(e.target.value)} placeholder="noreply@exemplo.com" disabled={isSavingSmtp} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="smtp_pass">Senha</Label>
+                        <Input id="smtp_pass" type="password" value={smtpPass} onChange={(e) => setSmtpPass(e.target.value)} placeholder="••••••••" disabled={isSavingSmtp} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="smtp_from_name">Nome do Remetente</Label>
+                        <Input id="smtp_from_name" value={smtpFromName} onChange={(e) => setSmtpFromName(e.target.value)} placeholder="Sistema de Sorteios" disabled={isSavingSmtp} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="smtp_from_email">Email do Remetente</Label>
+                        <Input id="smtp_from_email" type="email" value={smtpFromEmail} onChange={(e) => setSmtpFromEmail(e.target.value)} placeholder="noreply@exemplo.com" disabled={isSavingSmtp} />
+                      </div>
+                      <div className="flex items-center gap-3 col-span-full">
+                        <Switch id="smtp_secure" checked={smtpSecure} onCheckedChange={setSmtpSecure} disabled={isSavingSmtp} />
+                        <Label htmlFor="smtp_secure">Usar SSL/TLS (porta 465)</Label>
+                      </div>
+                    </div>
+                    <Button className="mt-4" onClick={handleSaveSmtp} disabled={isSavingSmtp}>
+                      {isSavingSmtp && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                      Salvar SMTP
+                    </Button>
+                  </CardContent>
+                </Card>
+
+                {/* Email Templates */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Modelos de E-mail</CardTitle>
+                    <CardDescription>
+                      Personalize as mensagens enviadas pelo sistema. Use as variáveis disponíveis entre chaves duplas.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-8">
+
+                    {/* Admin notification */}
+                    <div className="space-y-3">
+                      <div>
+                        <h4 className="font-semibold text-sm">Notificação de novo cadastro (para o Administrador)</h4>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Variáveis disponíveis: <code className="bg-muted px-1 rounded">{'{{nome_usuario}}'}</code>{' '}
+                          <code className="bg-muted px-1 rounded">{'{{email_usuario}}'}</code>{' '}
+                          <code className="bg-muted px-1 rounded">{'{{titulo_sistema}}'}</code>
+                        </p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="tpl_admin_subject">Assunto</Label>
+                        <Input id="tpl_admin_subject" value={tplAdminSubject} onChange={(e) => setTplAdminSubject(e.target.value)} disabled={isSavingTemplates} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="tpl_admin_body">Mensagem</Label>
+                        <Textarea id="tpl_admin_body" rows={5} value={tplAdminBody} onChange={(e) => setTplAdminBody(e.target.value)} disabled={isSavingTemplates} className="font-mono text-sm" />
+                      </div>
+                    </div>
+
+                    <div className="border-t pt-6 space-y-3">
+                      <div>
+                        <h4 className="font-semibold text-sm">Confirmação de cadastro aprovado (para o Usuário)</h4>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Variáveis disponíveis: <code className="bg-muted px-1 rounded">{'{{nome}}'}</code>{' '}
+                          <code className="bg-muted px-1 rounded">{'{{email}}'}</code>{' '}
+                          <code className="bg-muted px-1 rounded">{'{{titulo_sistema}}'}</code>
+                        </p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="tpl_approval_subject">Assunto</Label>
+                        <Input id="tpl_approval_subject" value={tplApprovalSubject} onChange={(e) => setTplApprovalSubject(e.target.value)} disabled={isSavingTemplates} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="tpl_approval_body">Mensagem</Label>
+                        <Textarea id="tpl_approval_body" rows={5} value={tplApprovalBody} onChange={(e) => setTplApprovalBody(e.target.value)} disabled={isSavingTemplates} className="font-mono text-sm" />
+                      </div>
+                    </div>
+
+                    <div className="border-t pt-6 space-y-3">
+                      <div>
+                        <h4 className="font-semibold text-sm">Redefinição de senha</h4>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Variáveis disponíveis: <code className="bg-muted px-1 rounded">{'{{nome}}'}</code>{' '}
+                          <code className="bg-muted px-1 rounded">{'{{email}}'}</code>{' '}
+                          <code className="bg-muted px-1 rounded">{'{{link}}'}</code>{' '}
+                          <code className="bg-muted px-1 rounded">{'{{titulo_sistema}}'}</code>
+                        </p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="tpl_reset_subject">Assunto</Label>
+                        <Input id="tpl_reset_subject" value={tplResetSubject} onChange={(e) => setTplResetSubject(e.target.value)} disabled={isSavingTemplates} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="tpl_reset_body">Mensagem</Label>
+                        <Textarea id="tpl_reset_body" rows={5} value={tplResetBody} onChange={(e) => setTplResetBody(e.target.value)} disabled={isSavingTemplates} className="font-mono text-sm" />
+                      </div>
+                    </div>
+
+                    <Button onClick={handleSaveTemplates} disabled={isSavingTemplates}>
+                      {isSavingTemplates && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                      Salvar Modelos
+                    </Button>
+                  </CardContent>
+                </Card>
+              </>
+            )}
+          </TabsContent>
         </Tabs>
       </main>
 
-      {/* Create/Edit User Modal */}
+      {/* Reject pending user confirmation modal */}
+      <Dialog open={isRejectModalOpen} onOpenChange={setIsRejectModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rejeitar Cadastro</DialogTitle>
+            <DialogDescription>
+              Tem certeza que deseja rejeitar o cadastro de "{userToReject?.nome}" ({userToReject?.email})?
+              O registro será removido permanentemente.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsRejectModalOpen(false)} disabled={isSubmitting}>
+              Cancelar
+            </Button>
+            <Button variant="destructive" onClick={handleConfirmReject} disabled={isSubmitting}>
+              {isSubmitting && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+              Rejeitar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
         <DialogContent>
           <DialogHeader>
