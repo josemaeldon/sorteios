@@ -1,4 +1,5 @@
 import jsPDF from 'jspdf';
+import JsBarcode from 'jsbarcode';
 
 export const BINGO_COLS = ['B', 'I', 'N', 'G', 'O'] as const;
 export const A4_W_MM = 210;
@@ -14,7 +15,7 @@ export interface BingoCardGrid {
 
 export interface CanvasElement {
   id: string;
-  type: 'card_number' | 'bingo_grid' | 'text';
+  type: 'card_number' | 'bingo_grid' | 'text' | 'barcode';
   x: number;       // mm from left
   y: number;       // mm from top
   width: number;   // mm
@@ -39,6 +40,9 @@ export interface CanvasElement {
   showFreeText?: boolean;     // show FREE text in center cell (default false)
   // text specific
   content?: string;
+  // barcode specific
+  barcodeFormat?: string;     // default 'CODE128'
+  showBarcodeText?: boolean;  // show text below barcode (default true)
 }
 
 export interface CanvasBackground {
@@ -127,6 +131,23 @@ export function generateAllBingoCards(quantidade: number, numeroPremios: number 
 function hexToRgb(hex: string): [number, number, number] {
   const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex || '#000000');
   return m ? [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)] : [0, 0, 0];
+}
+
+/** Render a barcode for `value` to a PNG data-URL using JsBarcode on a canvas */
+function renderBarcodeToDataUrl(value: string, format: string, showText: boolean): string | null {
+  try {
+    const canvas = document.createElement('canvas');
+    JsBarcode(canvas, value, {
+      format: format,
+      displayValue: showText,
+      margin: 4,
+      background: '#ffffff',
+      lineColor: '#000000',
+    });
+    return canvas.toDataURL('image/png');
+  } catch {
+    return null;
+  }
 }
 
 function drawGridPdf(doc: jsPDF, el: CanvasElement, grid: number[][], offsetY: number = 0) {
@@ -247,6 +268,14 @@ export async function exportBingoCardsPDF(
         const tx = align === 'center' ? el.x + el.width / 2
           : align === 'right' ? el.x + el.width : el.x;
         doc.text(el.content ?? '', tx, el.y + el.height * 0.72, { align });
+      } else if (el.type === 'barcode') {
+        const barcodeValue = card.cartelaNumero.toString().padStart(6, '0');
+        const format = el.barcodeFormat ?? 'CODE128';
+        const showText = el.showBarcodeText !== false;
+        const dataUrl = renderBarcodeToDataUrl(barcodeValue, format, showText);
+        if (dataUrl) {
+          doc.addImage(dataUrl, 'PNG', el.x, el.y, el.width, el.height);
+        }
       }
     }
   }
