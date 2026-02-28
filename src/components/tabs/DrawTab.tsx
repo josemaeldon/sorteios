@@ -445,6 +445,7 @@ const DrawTab: React.FC = () => {
     setVencedoras([]);
     setGanhadoresPop([]);
     ganhadoresPopShownRef.current.clear();
+    setCartelaSorteada(null);
   };
 
   const addManualNumber = async () => {
@@ -976,7 +977,7 @@ const DrawTab: React.FC = () => {
           </div>
 
           {/* RIGHT SIDEBAR */}
-          {(topScoringCartelas.length > 0 || vencedoras.length > 0) && (
+          {(topScoringCartelas.length > 0 || vencedoras.length > 0 || cartelaSorteada) && (
             <div className="w-80 flex-shrink-0">
               {/* Winner results */}
               {vencedoras.length > 0 && (
@@ -999,7 +1000,7 @@ const DrawTab: React.FC = () => {
                 </Card>
               )}
               {topScoringCartelas.length > 0 && (
-              <Card>
+              <Card className="mb-4">
                 <CardHeader className="pb-3">
                   <CardTitle className="flex items-center gap-2">
                     <Trophy className="w-5 h-5 text-yellow-500" />
@@ -1029,6 +1030,33 @@ const DrawTab: React.FC = () => {
                   </div>
                 </CardContent>
               </Card>
+              )}
+              {cartelaSorteada && (
+                <Card className="border-2 border-primary">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2 text-primary">
+                      <Ticket className="w-5 h-5" />
+                      Cartela Sorteada
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="text-center space-y-3">
+                    <div className="text-5xl font-black text-primary">
+                      {cartelaSorteada.numero.toString().padStart(3, '0')}
+                    </div>
+                    {cartelaSorteada.nome && (
+                      <p className="text-sm text-muted-foreground font-medium">{cartelaSorteada.nome}</p>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full gap-2"
+                      onClick={handleOpenCartelaSorteioModal}
+                    >
+                      <Shuffle className="w-4 h-4" />
+                      Novo Sorteio
+                    </Button>
+                  </CardContent>
+                </Card>
               )}
             </div>
           )}
@@ -1244,36 +1272,6 @@ const DrawTab: React.FC = () => {
           )}
         </div>
 
-        {/* RIGHT SIDEBAR - Drawn Cartela */}
-        {cartelaSorteada && (
-          <div className="w-72 flex-shrink-0">
-            <Card className="border-2 border-primary">
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-primary">
-                  <Ticket className="w-5 h-5" />
-                  Cartela Sorteada
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="text-center space-y-3">
-                <div className="text-5xl font-black text-primary">
-                  {cartelaSorteada.numero.toString().padStart(3, '0')}
-                </div>
-                {cartelaSorteada.nome && (
-                  <p className="text-sm text-muted-foreground font-medium">{cartelaSorteada.nome}</p>
-                )}
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="w-full gap-2"
-                  onClick={handleOpenCartelaSorteioModal}
-                >
-                  <Shuffle className="w-4 h-4" />
-                  Novo Sorteio
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
-        )}
       </div>
 
       {/* Create/Edit Modal */}
