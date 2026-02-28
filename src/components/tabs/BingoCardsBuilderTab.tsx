@@ -262,6 +262,7 @@ const BingoCardsBuilderTab: React.FC = () => {
   const [isExporting, setIsExporting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [numeroPremios, setNumeroPremios] = useState(() => Math.max(1, sorteioAtivo?.premios?.length ?? 1));
+  const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
 
   // Sync numeroPremios when the active sorteio changes (intentionally only on id change,
   // not premios.length, so user customisation within the same sorteio is preserved)
@@ -480,7 +481,7 @@ const BingoCardsBuilderTab: React.FC = () => {
   };
 
   // ─── Generate cards ────────────────────────────────────────────────────────
-  const handleGenerate = async () => {
+  const doGenerate = async () => {
     const count = totalCards;
     const generated = generateAllBingoCards(count, numeroPremios);
     setCards(generated);
@@ -500,6 +501,14 @@ const BingoCardsBuilderTab: React.FC = () => {
       toast({ title: `${count} cartelas geradas. Erro ao salvar no banco.`, variant: 'destructive' });
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleGenerate = async () => {
+    if (cards.length > 0) {
+      setShowGenerateConfirm(true);
+    } else {
+      await doGenerate();
     }
   };
 
@@ -1195,8 +1204,7 @@ const BingoCardsBuilderTab: React.FC = () => {
       </Dialog>
 
       {/* ── Delete Layout Confirmation ── */}
-      <AlertDialog open={!!deletingLayoutId} onOpenChange={(open) => { if (!open) setDeletingLayoutId(null); }}>
-        <AlertDialogContent>
+      <AlertDialog open={!!deletingLayoutId} onOpenChange={(open) => { if (!open) setDeletingLayoutId(null); }}>        <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Excluir cartela?</AlertDialogTitle>
             <AlertDialogDescription>
@@ -1221,6 +1229,27 @@ const BingoCardsBuilderTab: React.FC = () => {
               }}
             >
               Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── Regenerate Cards Confirmation ── */}
+      <AlertDialog open={showGenerateConfirm} onOpenChange={(open) => { if (!open) setShowGenerateConfirm(false); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Gerar novas cartelas?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Todos os números das cartelas atuais serão perdidos e novas cartelas serão geradas. Deseja continuar?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={async () => { setShowGenerateConfirm(false); await doGenerate(); }}
+            >
+              Gerar novas cartelas
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
