@@ -849,31 +849,32 @@ const DrawTab: React.FC = () => {
             </Card>
           </div>
 
-          {/* Winner results */}
-          {vencedoras.length > 0 && (
-            <Card className="border-2 border-success">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-success flex items-center gap-2">
-                  <CheckCircle className="w-5 h-5" />
-                  Cartela(s) com todos os números sorteados!
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-wrap gap-3">
-                  {vencedoras.map((num) => (
-                    <div key={num} className="px-4 py-2 rounded-lg bg-success/10 border border-success text-success font-bold text-xl">
-                      Cartela {num.toString().padStart(3, '0')}
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
           </div>
 
-          {/* Top 20 scoring cartelas - RIGHT SIDEBAR */}
-          {topScoringCartelas.length > 0 && (
+          {/* RIGHT SIDEBAR */}
+          {(topScoringCartelas.length > 0 || vencedoras.length > 0) && (
             <div className="w-80 flex-shrink-0">
+              {/* Winner results */}
+              {vencedoras.length > 0 && (
+                <Card className="border-2 border-success mb-4">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-success flex items-center gap-2">
+                      <CheckCircle className="w-5 h-5" />
+                      Cartela(s) Vencedoras
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex flex-wrap gap-3">
+                      {vencedoras.map((num) => (
+                        <div key={num} className="px-4 py-2 rounded-lg bg-success/10 border border-success text-success font-bold text-xl">
+                          Cartela {num.toString().padStart(3, '0')}
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+              {topScoringCartelas.length > 0 && (
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="flex items-center gap-2">
@@ -904,6 +905,7 @@ const DrawTab: React.FC = () => {
                   </div>
                 </CardContent>
               </Card>
+              )}
             </div>
           )}
         </div>
