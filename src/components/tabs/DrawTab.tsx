@@ -247,14 +247,9 @@ const DrawTab: React.FC = () => {
       const soldCartelas = cartelas.filter(c => c.status === 'vendida' && c.numeros_grade && c.numeros_grade.length > 0);
       let poolNumbers: number[];
       if (soldCartelas.length > 0) {
-        const allNums = new Set<number>();
-        for (const c of soldCartelas) {
-          for (const grid of c.numeros_grade!) {
-            for (const n of grid) {
-              if (n !== 0) allNums.add(n);
-            }
-          }
-        }
+        const allNums = new Set<number>(
+          soldCartelas.flatMap(c => c.numeros_grade!.flatMap(grid => grid.filter(n => n !== 0)))
+        );
         poolNumbers = Array.from(allNums).filter(n => n >= rodada.range_start && n <= rodada.range_end).sort((a, b) => a - b);
       } else {
         // Fallback to full range if no sold cartelas found
