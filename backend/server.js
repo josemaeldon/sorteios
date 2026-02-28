@@ -754,7 +754,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         // data.sorteio_id, data.numeros_sorteados: number[]
         const numerosSet = new Set((data.numeros_sorteados || []).map(Number));
         const cartelasResult = await client.query(
-          `SELECT numero, numeros_grade FROM cartelas WHERE sorteio_id = $1 AND numeros_grade IS NOT NULL ORDER BY numero`,
+          `SELECT numero, numeros_grade FROM cartelas WHERE sorteio_id = $1 AND numeros_grade IS NOT NULL AND status = 'vendida' ORDER BY numero`,
           [data.sorteio_id]
         );
         const vencedoras = [];

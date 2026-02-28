@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import JsBarcode from 'jsbarcode';
 import {
   LayoutGrid, Plus, Trash2, Download, RefreshCw, ChevronLeft, ChevronRight,
   Image, Type, AlignLeft, AlignCenter, AlignRight, Bold, Loader2, FileText,
-  Save, List, X, Edit2,
+  Save, List, X, Edit2, Barcode,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -313,6 +314,18 @@ const BingoCardsBuilderTab: React.FC = () => {
       id,
       x: ref.x + 5,
       y: ref.y + 5,
+    };
+    setLayout((prev) => ({ ...prev, elements: [...prev.elements, el] }));
+    setSelectedId(id);
+  };
+
+  const addBarcodeElement = () => {
+    const id = `barcode_${Date.now()}`;
+    const el: CanvasElement = {
+      id, type: 'barcode',
+      x: 30, y: 4, width: 150, height: 20,
+      barcodeFormat: 'CODE128',
+      showBarcodeText: true,
     };
     setLayout((prev) => ({ ...prev, elements: [...prev.elements, el] }));
     setSelectedId(id);
@@ -629,6 +642,21 @@ const BingoCardsBuilderTab: React.FC = () => {
             <Button size="sm" variant="outline" onClick={addTextElement} className="w-full gap-1 h-7 text-xs">
               <Plus className="w-3 h-3" /> Adicionar Texto
             </Button>
+            {layout.elements
+              .filter((e) => e.type === 'barcode')
+              .map((e) => (
+                <button
+                  key={e.id}
+                  onClick={() => setSelectedId(e.id)}
+                  className={`w-full text-left px-2 py-1.5 rounded text-sm flex items-center gap-2 transition-colors ${selectedId === e.id ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
+                >
+                  <Barcode className="w-3.5 h-3.5" />
+                  <span className="truncate">Código de Barras</span>
+                </button>
+              ))}
+            <Button size="sm" variant="outline" onClick={addBarcodeElement} className="w-full gap-1 h-7 text-xs">
+              <Plus className="w-3 h-3" /> Adicionar Código de Barras
+            </Button>
           </div>
 
           {/* Background */}
@@ -788,6 +816,29 @@ const BingoCardsBuilderTab: React.FC = () => {
                     </div>
                   )}
 
+                  {el.type === 'barcode' && (() => {
+                    const barcodeValue = (previewCard?.cartelaNumero ?? 1).toString().padStart(6, '0');
+                    const canvasRef2 = document.createElement('canvas');
+                    try {
+                      JsBarcode(canvasRef2, barcodeValue, {
+                        format: el.barcodeFormat ?? 'CODE128',
+                        displayValue: el.showBarcodeText !== false,
+                        margin: 4,
+                        background: '#ffffff',
+                        lineColor: '#000000',
+                      });
+                      return (
+                        <img
+                          src={canvasRef2.toDataURL('image/png')}
+                          alt={`Barcode ${barcodeValue}`}
+                          style={{ width: '100%', height: '100%', objectFit: 'fill' }}
+                        />
+                      );
+                    } catch {
+                      return <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: '#666' }}>Código de Barras</div>;
+                    }
+                  })()}
+
                   {/* Resize handles (only on selected) */}
                   {isSelected && (
                     <ResizeHandles
@@ -822,8 +873,9 @@ const BingoCardsBuilderTab: React.FC = () => {
                     return `Grade Bingo ${idx + 1}`;
                   })()}
                   {selectedEl.type === 'text' && 'Texto'}
+                  {selectedEl.type === 'barcode' && 'Código de Barras'}
                 </p>
-                {(selectedEl.type === 'text' || (selectedEl.type === 'bingo_grid' && layout.elements.filter(e => e.type === 'bingo_grid').length > 1)) && (
+                {(selectedEl.type === 'text' || selectedEl.type === 'barcode' || (selectedEl.type === 'bingo_grid' && layout.elements.filter(e => e.type === 'bingo_grid').length > 1)) && (
                   <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive"
                     onClick={() => deleteElement(selectedEl.id)}>
                     <Trash2 className="w-3.5 h-3.5" />
@@ -967,6 +1019,36 @@ const BingoCardsBuilderTab: React.FC = () => {
                     </div>
                   </div>
                 </>
+              )}
+
+              {/* Barcode properties */}
+              {selectedEl.type === 'barcode' && (
+                <div className="border-t border-border pt-2 space-y-2">
+                  <p className="text-xs font-semibold text-muted-foreground mb-2">Código de Barras</p>
+                  <PropRow label="Formato">
+                    <select
+                      value={selectedEl.barcodeFormat ?? 'CODE128'}
+                      onChange={(e) => updateElement(selectedEl.id, { barcodeFormat: e.target.value })}
+                      className="h-7 text-xs w-full rounded border border-border bg-background px-2"
+                    >
+                      <option value="CODE128">CODE128</option>
+                      <option value="CODE39">CODE39</option>
+                      <option value="EAN13">EAN-13</option>
+                      <option value="EAN8">EAN-8</option>
+                    </select>
+                  </PropRow>
+                  <PropRow label="">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedEl.showBarcodeText !== false}
+                        onChange={(e) => updateElement(selectedEl.id, { showBarcodeText: e.target.checked })}
+                        className="w-3.5 h-3.5"
+                      />
+                      <span className="text-xs">Mostrar número abaixo do código</span>
+                    </label>
+                  </PropRow>
+                </div>
               )}
             </div>
           )}

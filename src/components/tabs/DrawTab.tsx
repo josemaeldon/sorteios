@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useBingo } from '@/contexts/BingoContext';
 import { RodadaSorteio } from '@/types/bingo';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,7 +18,9 @@ import {
   Trash2, 
   CheckCircle, 
   XCircle, 
-  ArrowLeft 
+  ArrowLeft,
+  Loader2,
+  Trophy,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { callApi } from '@/lib/apiClient';
@@ -48,7 +50,7 @@ const ANIMATION_INTERVAL_MS = 100;
 const FULLSCREEN_FONT_SIZE_DEFAULT = 300;
 
 const DrawTab: React.FC = () => {
-  const { sorteioAtivo } = useBingo();
+  const { sorteioAtivo, cartelas } = useBingo();
   const { toast } = useToast();
   
   // Rodadas state
@@ -241,12 +243,27 @@ const DrawTab: React.FC = () => {
       setSelectedRodada(rodada);
       setShowDrawing(true);
       
-      // Generate available numbers from rodada range
-      const allNumbers: number[] = [];
-      for (let i = rodada.range_start; i <= rodada.range_end; i++) {
-        allNumbers.push(i);
+      // Build available numbers from sold cartelas' grids only
+      const soldCartelas = cartelas.filter(c => c.status === 'vendida' && c.numeros_grade && c.numeros_grade.length > 0);
+      let poolNumbers: number[];
+      if (soldCartelas.length > 0) {
+        const allNums = new Set<number>();
+        for (const c of soldCartelas) {
+          for (const grid of c.numeros_grade!) {
+            for (const n of grid) {
+              if (n !== 0) allNums.add(n);
+            }
+          }
+        }
+        poolNumbers = Array.from(allNums).filter(n => n >= rodada.range_start && n <= rodada.range_end).sort((a, b) => a - b);
+      } else {
+        // Fallback to full range if no sold cartelas found
+        poolNumbers = [];
+        for (let i = rodada.range_start; i <= rodada.range_end; i++) {
+          poolNumbers.push(i);
+        }
       }
-      setAvailableNumbers(allNumbers);
+      setAvailableNumbers(poolNumbers);
       
       // Load history for this rodada
       const historyResult = await callApi('getRodadaHistorico', { rodada_id: rodada.id });
@@ -432,6 +449,38 @@ const DrawTab: React.FC = () => {
     setVencedoras([]);
     loadRodadas();
   };
+
+  // Compute top-5 scoring cartelas: sold cartelas sorted by how many drawn numbers they contain
+  const topScoringCartelas = useMemo(() => {
+    if (drawnNumbers.length === 0) return [];
+    const drawnSet = new Set(drawnNumbers);
+    const soldWithGrade = cartelas.filter(c => c.status === 'vendida' && c.numeros_grade && c.numeros_grade.length > 0);
+    if (soldWithGrade.length === 0) return [];
+
+    const scored = soldWithGrade.map(c => {
+      const allNums = c.numeros_grade!.flatMap(g => g.filter(n => n !== 0));
+      const score = allNums.filter(n => drawnSet.has(n)).length;
+      return { numero: c.numero, score };
+    });
+
+    // Sort descending by score
+    scored.sort((a, b) => b.score - a.score);
+
+    // Find top-5 distinct score levels, grouping ties
+    const result: { score: number; cartelas: number[] }[] = [];
+    for (const { numero, score } of scored) {
+      if (score === 0) continue;
+      const existing = result.find(r => r.score === score);
+      if (existing) {
+        existing.cartelas.push(numero);
+      } else {
+        if (result.length < 5) {
+          result.push({ score, cartelas: [numero] });
+        }
+      }
+    }
+    return result;
+  }, [drawnNumbers, cartelas]);
 
   if (!sorteioAtivo) {
     return (
@@ -701,6 +750,35 @@ const DrawTab: React.FC = () => {
             </CardContent>
           </Card>
         </div>
+
+        {/* Top 5 scoring cartelas */}
+        {topScoringCartelas.length > 0 && (
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2">
+                <Trophy className="w-5 h-5 text-yellow-500" />
+                Top 5 Cartelas
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {topScoringCartelas.map((entry, idx) => (
+                  <div key={entry.score} className="flex items-center gap-3">
+                    <span className="text-sm font-bold text-muted-foreground w-5">{idx + 1}º</span>
+                    <span className="text-sm font-semibold text-primary w-16">{entry.score} pts</span>
+                    <div className="flex flex-wrap gap-1">
+                      {entry.cartelas.map(num => (
+                        <span key={num} className="px-2 py-0.5 rounded bg-muted text-foreground text-xs font-mono">
+                          {num.toString().padStart(3, '0')}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Winner results */}
         {vencedoras.length > 0 && (
