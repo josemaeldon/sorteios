@@ -1,7 +1,7 @@
 import React from 'react';
 import { Sorteio } from '@/types/bingo';
 import { formatarData, formatarMoeda, getStatusLabel } from '@/lib/utils/formatters';
-import { Edit, Trash2 } from 'lucide-react';
+import { Edit, Trash2, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface SorteioCardProps {
@@ -59,6 +59,12 @@ const SorteioCard: React.FC<SorteioCardProps> = ({
           <span className={cn('status-badge', `status-${sorteio.status}`)}>
             {getStatusLabel(sorteio.status)}
           </span>
+          {sorteio.owner_nome && (
+            <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
+              <User className="w-3 h-3" />
+              <span>{sorteio.owner_nome}</span>
+            </div>
+          )}
         </div>
         <div className="text-right">
           <div className="text-sm text-muted-foreground">{formatarData(sorteio.data_sorteio)}</div>

@@ -9,6 +9,8 @@ export interface Sorteio {
   status: 'agendado' | 'em_andamento' | 'concluido';
   created_at?: string;
   updated_at?: string;
+  owner_nome?: string;
+  owner_email?: string;
   vendas?: {
     cartelas_vendidas: number;
     total_arrecadado: number;
