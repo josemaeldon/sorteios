@@ -64,9 +64,10 @@ const Planos: React.FC = () => {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <p className="text-2xl font-bold text-primary">
-                    {plano.valor > 0
-                      ? `R$ ${plano.valor.toFixed(2).replace('.', ',')}`
-                      : 'Gratuito'}
+                    {(() => {
+                      const valor = Number(plano.valor);
+                      return valor > 0 ? `R$ ${valor.toFixed(2).replace('.', ',')}` : 'Gratuito';
+                    })()}
                   </p>
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <CheckCircle className="h-4 w-4 text-green-500" />
