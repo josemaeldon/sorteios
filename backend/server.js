@@ -39,11 +39,8 @@ app.post('/stripe-webhook', express.raw({ type: 'application/json' }), async (re
     let webhookSecret = '';
     let stripeSecretKey = '';
     try {
-      const cfgResult = await configClient.query('SELECT chave, valor FROM configuracoes WHERE chave IN ($1, $2)', ['stripe_secret_key', 'stripe_webhook_secret']);
-      cfgResult.rows.forEach(r => {
-        if (r.chave === 'stripe_secret_key') stripeSecretKey = r.valor || '';
-        if (r.chave === 'stripe_webhook_secret') webhookSecret = r.valor || '';
-      });
+      stripeSecretKey = await getStripeSecretKey(configClient);
+      webhookSecret = await getStripeWebhookSecret(configClient);
     } finally {
       configClient.release();
     }
@@ -448,6 +445,34 @@ const JWT_EXPIRY_HOURS = 24;
 const STRIPE_MIN_AMOUNT_CENTAVOS = 50; // R$ 0,50 — Stripe minimum for BRL
 
 // ================== Utility Functions ==================
+
+/** Returns the active Stripe secret key based on sandbox mode config.
+ *  If stripe_sandbox_mode is 'true', uses stripe_sandbox_secret_key;
+ *  otherwise uses stripe_secret_key. */
+async function getStripeSecretKey(dbClient) {
+  const cfgResult = await dbClient.query(
+    "SELECT chave, valor FROM configuracoes WHERE chave IN ('stripe_secret_key', 'stripe_sandbox_secret_key', 'stripe_sandbox_mode')"
+  );
+  const cfg = {};
+  cfgResult.rows.forEach(r => { cfg[r.chave] = r.valor || ''; });
+  if (cfg['stripe_sandbox_mode'] === 'true') {
+    return cfg['stripe_sandbox_secret_key'] || '';
+  }
+  return cfg['stripe_secret_key'] || '';
+}
+
+/** Returns active Stripe webhook secret based on sandbox mode config. */
+async function getStripeWebhookSecret(dbClient) {
+  const cfgResult = await dbClient.query(
+    "SELECT chave, valor FROM configuracoes WHERE chave IN ('stripe_webhook_secret', 'stripe_sandbox_webhook_secret', 'stripe_sandbox_mode')"
+  );
+  const cfg = {};
+  cfgResult.rows.forEach(r => { cfg[r.chave] = r.valor || ''; });
+  if (cfg['stripe_sandbox_mode'] === 'true') {
+    return cfg['stripe_sandbox_webhook_secret'] || '';
+  }
+  return cfg['stripe_webhook_secret'] || '';
+}
 
 async function hashPassword(password) {
   const hash = crypto.createHash('sha256');
