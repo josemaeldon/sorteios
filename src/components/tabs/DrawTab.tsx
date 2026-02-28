@@ -468,25 +468,27 @@ const DrawTab: React.FC = () => {
     );
     if (validatedWithGrade.length === 0) return [];
 
+    const nomeByNumero = new Map(cartelasValidadas.map(cv => [cv.numero, cv.comprador_nome]));
+
     const scored = validatedWithGrade.map(c => {
       const allNums = c.numeros_grade!.flatMap(g => g.filter(n => n !== 0));
       const score = allNums.filter(n => drawnSet.has(n)).length;
-      return { numero: c.numero, score };
+      return { numero: c.numero, score, nome: nomeByNumero.get(c.numero) };
     });
 
     // Sort descending by score
     scored.sort((a, b) => b.score - a.score);
 
     // Find top-5 distinct score levels, grouping ties
-    const result: { score: number; cartelas: number[] }[] = [];
-    for (const { numero, score } of scored) {
+    const result: { score: number; cartelas: { numero: number; nome?: string }[] }[] = [];
+    for (const { numero, score, nome } of scored) {
       if (score === 0) continue;
       const existing = result.find(r => r.score === score);
       if (existing) {
-        existing.cartelas.push(numero);
+        existing.cartelas.push({ numero, nome });
       } else {
         if (result.length < 5) {
-          result.push({ score, cartelas: [numero] });
+          result.push({ score, cartelas: [{ numero, nome }] });
         }
       }
     }
@@ -685,6 +687,30 @@ const DrawTab: React.FC = () => {
                         </div>
                       </div>
                     )}
+
+                    {topScoringCartelas.length > 0 && (
+                      <div className="bg-card rounded-lg p-6">
+                        <h3 className="text-2xl font-bold flex items-center gap-2 mb-4">
+                          <Trophy className="w-6 h-6 text-yellow-500" />
+                          Top 5 Cartelas
+                        </h3>
+                        <div className="space-y-3">
+                          {topScoringCartelas.map((entry, idx) => (
+                            <div key={entry.score} className="flex items-center gap-3">
+                              <span className="text-lg font-bold text-muted-foreground w-6">{idx + 1}º</span>
+                              <span className="text-lg font-semibold text-primary w-20">{entry.score} pts</span>
+                              <div className="flex flex-wrap gap-2">
+                                {entry.cartelas.map(({ numero, nome }) => (
+                                  <span key={numero} className="px-3 py-1 rounded bg-muted text-foreground text-sm font-mono">
+                                    {numero.toString().padStart(3, '0')}{nome ? ` - ${nome}` : ''}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </CardContent>
@@ -778,9 +804,9 @@ const DrawTab: React.FC = () => {
                     <span className="text-sm font-bold text-muted-foreground w-5">{idx + 1}º</span>
                     <span className="text-sm font-semibold text-primary w-16">{entry.score} pts</span>
                     <div className="flex flex-wrap gap-1">
-                      {entry.cartelas.map(num => (
-                        <span key={num} className="px-2 py-0.5 rounded bg-muted text-foreground text-xs font-mono">
-                          {num.toString().padStart(3, '0')}
+                      {entry.cartelas.map(({ numero, nome }) => (
+                        <span key={numero} className="px-2 py-0.5 rounded bg-muted text-foreground text-xs font-mono">
+                          {numero.toString().padStart(3, '0')}{nome ? ` - ${nome}` : ''}
                         </span>
                       ))}
                     </div>
