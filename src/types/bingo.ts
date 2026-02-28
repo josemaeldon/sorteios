@@ -145,6 +145,13 @@ export interface FiltrosVendas {
   periodo: 'todos' | 'hoje' | 'semana' | 'mes';
 }
 
+export interface CartelaValidada {
+  id: string;
+  numero: number;
+  comprador_nome?: string;
+  created_at: string;
+}
+
 export interface CartelaLayout {
   id: string;
   sorteio_id: string;

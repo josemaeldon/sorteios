@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useBingo } from '@/contexts/BingoContext';
-import { Grid3X3, Search, Filter, Eraser, User, Loader2, Edit2, Trash2, Printer, Plus, RefreshCw, Save, X } from 'lucide-react';
+import { Grid3X3, Search, Filter, Eraser, User, Loader2, Edit2, Trash2, Printer, Plus, RefreshCw, Save, X, CheckSquare } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
@@ -94,8 +94,15 @@ const CartelasTab: React.FC = () => {
     salvarNumerosCartelas,
     deleteCartela,
     createCartela,
+    cartelasValidadas,
+    loadCartelasValidadas,
+    validarCartela,
+    removerValidacaoCartela,
   } = useBingo();
   const { toast } = useToast();
+
+  // ─── Sub-tab ───────────────────────────────────────────────────────────────
+  const [subTab, setSubTab] = useState<'lista' | 'validacao'>('lista');
 
   // ─── Cartela view / edit state ─────────────────────────────────────────────
   const [selectedCartela, setSelectedCartela] = useState<Cartela | null>(null);
@@ -110,6 +117,12 @@ const CartelasTab: React.FC = () => {
   const [showNewModal, setShowNewModal] = useState(false);
   const [newGrid, setNewGrid] = useState<number[]>(Array(25).fill(0));
   const [isSavingNew, setIsSavingNew] = useState(false);
+
+  // ─── Validation state ──────────────────────────────────────────────────────
+  const [validacaoNumero, setValidacaoNumero] = useState('');
+  const [validacaoNome, setValidacaoNome] = useState('');
+  const [isValidando, setIsValidando] = useState(false);
+  const [tamanhoLote, setTamanhoLote] = useState(10);
 
   if (!sorteioAtivo) {
     return (
@@ -257,6 +270,36 @@ const CartelasTab: React.FC = () => {
     }
   };
 
+  // ─── Validation handlers ──────────────────────────────────────────────────
+  const handleValidarCartela = async () => {
+    const num = parseInt(validacaoNumero);
+    if (!num || num < 1) {
+      toast({ title: 'Número inválido', description: 'Digite um número de cartela válido.', variant: 'destructive' });
+      return;
+    }
+    setIsValidando(true);
+    try {
+      await validarCartela(num, validacaoNome.trim() || undefined);
+      toast({ title: `Cartela ${formatarNumeroCartela(num)} validada!` });
+      setValidacaoNumero('');
+      setValidacaoNome('');
+    } catch {
+      // error handled in context
+    } finally {
+      setIsValidando(false);
+    }
+  };
+
+  // Group validated cartelas into batches for display
+  const lotes = React.useMemo(() => {
+    const size = Math.max(1, tamanhoLote);
+    const result: typeof cartelasValidadas[] = [];
+    for (let i = 0; i < cartelasValidadas.length; i += size) {
+      result.push(cartelasValidadas.slice(i, i + size));
+    }
+    return result;
+  }, [cartelasValidadas, tamanhoLote]);
+
   // ─── Permission helpers ────────────────────────────────────────────────────
   const canEdit   = selectedCartela?.status !== 'vendida';
   const canDelete = selectedCartela?.status === 'disponivel';
@@ -277,154 +320,302 @@ const CartelasTab: React.FC = () => {
             )}
           </p>
         </div>
-        <Button onClick={openNewModal} className="gap-2">
-          <Plus className="w-4 h-4" />
-          Nova Cartela
-        </Button>
-      </div>
-
-      {/* Estatísticas */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <div className="stat-card">
-          <div className="text-sm text-muted-foreground">Disponíveis</div>
-          <div className="text-2xl font-bold text-foreground">
-            {contadores.disponivel}
-            {contadores.devolvida > 0 && (
-              <span className="text-sm font-normal text-muted-foreground ml-1">
-                (+{contadores.devolvida} devolvidas)
-              </span>
-            )}
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="text-sm text-muted-foreground">Atribuídas</div>
-          <div className="text-2xl font-bold text-warning">{contadores.atribuida}</div>
-        </div>
-        <div className="stat-card">
-          <div className="text-sm text-muted-foreground">Vendidas</div>
-          <div className="text-2xl font-bold text-success">{contadores.vendida}</div>
-        </div>
-        <div className="stat-card">
-          <div className="text-sm text-muted-foreground">Devolvidas</div>
-          <div className="text-2xl font-bold text-danger">{contadores.devolvida}</div>
-        </div>
-      </div>
-
-      {/* Filtros */}
-      <div className="filter-bar">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="space-y-2">
-            <label className="text-sm font-semibold text-foreground flex items-center gap-1">
-              <Search className="w-4 h-4" />
-              Número da Cartela
-            </label>
-            <Input
-              placeholder="Digite o número..."
-              value={filtrosCartelas.busca}
-              onChange={(e) => setFiltrosCartelas({ ...filtrosCartelas, busca: e.target.value })}
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-semibold text-foreground flex items-center gap-1">
-              <Filter className="w-4 h-4" />
-              Status
-            </label>
-            <Select
-              value={filtrosCartelas.status}
-              onValueChange={(value: any) => setFiltrosCartelas({ ...filtrosCartelas, status: value })}
-            >
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="todos">Todos</SelectItem>
-                <SelectItem value="disponivel">Disponíveis</SelectItem>
-                <SelectItem value="ativa">Atribuídas</SelectItem>
-                <SelectItem value="vendida">Vendidas</SelectItem>
-                <SelectItem value="devolvida">Devolvidas</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-semibold text-foreground flex items-center gap-1">
-              <User className="w-4 h-4" />
-              Vendedor
-            </label>
-            <Select
-              value={filtrosCartelas.vendedor}
-              onValueChange={(value) => setFiltrosCartelas({ ...filtrosCartelas, vendedor: value })}
-            >
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="todos">Todos</SelectItem>
-                {vendedores.map(v => (
-                  <SelectItem key={v.id} value={v.id}>{v.nome}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex items-end">
-            <Button variant="outline" onClick={limparFiltros} className="w-full gap-2">
-              <Eraser className="w-4 h-4" />
-              Limpar
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* Legenda */}
-      <div className="bg-card p-4 rounded-xl border border-border mb-6">
-        <h3 className="font-semibold text-foreground mb-3">Legenda:</h3>
-        <div className="flex flex-wrap gap-4">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded bg-card border-2 border-border" />
-            <span className="text-sm text-muted-foreground">Disponível</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded status-atribuida" />
-            <span className="text-sm text-muted-foreground">Atribuída</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded status-vendida" />
-            <span className="text-sm text-muted-foreground">Vendida</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded status-devolvida" />
-            <span className="text-sm text-muted-foreground">Devolvida</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Grid de Cartelas */}
-      <div className="bg-card p-6 rounded-xl border border-border">
-        {isLoading ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="w-8 h-8 animate-spin text-primary" />
-            <span className="ml-2 text-muted-foreground">Carregando cartelas...</span>
-          </div>
-        ) : (
-          <div className="flex flex-wrap justify-start">
-            {cartelasFiltradas.map((cartela) => (
-              <div
-                key={cartela.numero}
-                className={cn(
-                  'cartela-item cursor-pointer hover:ring-2 hover:ring-primary',
-                  getCartelaStatusClass(cartela.status),
-                )}
-                onClick={() => openCartela(cartela)}
-              >
-                {formatarNumeroCartela(cartela.numero)}
-                <div className="cartela-tooltip">{getTooltip(cartela)}</div>
-              </div>
-            ))}
-            {cartelasFiltradas.length === 0 && (
-              <div className="w-full text-center py-12">
-                <Filter className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-50" />
-                <p className="text-lg text-muted-foreground">Nenhuma cartela encontrada</p>
-                <p className="text-sm text-muted-foreground mt-2">Tente ajustar os filtros de busca</p>
-              </div>
-            )}
-          </div>
+        {subTab === 'lista' && (
+          <Button onClick={openNewModal} className="gap-2">
+            <Plus className="w-4 h-4" />
+            Nova Cartela
+          </Button>
         )}
       </div>
+
+      {/* Sub-tab navigation */}
+      <div className="flex gap-1 mb-6 border-b border-border">
+        <button
+          onClick={() => setSubTab('lista')}
+          className={cn(
+            'px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors',
+            subTab === 'lista'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          )}
+        >
+          <Grid3X3 className="w-4 h-4 inline mr-1.5 -mt-0.5" />
+          Lista de Cartelas
+        </button>
+        <button
+          onClick={() => { setSubTab('validacao'); loadCartelasValidadas(); }}
+          className={cn(
+            'px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors',
+            subTab === 'validacao'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          )}
+        >
+          <CheckSquare className="w-4 h-4 inline mr-1.5 -mt-0.5" />
+          Validação
+          {cartelasValidadas.length > 0 && (
+            <span className="ml-1.5 bg-primary text-primary-foreground text-xs rounded-full px-1.5 py-0.5">
+              {cartelasValidadas.length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {subTab === 'lista' ? (
+        <>
+          {/* Estatísticas */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div className="stat-card">
+              <div className="text-sm text-muted-foreground">Disponíveis</div>
+              <div className="text-2xl font-bold text-foreground">
+                {contadores.disponivel}
+                {contadores.devolvida > 0 && (
+                  <span className="text-sm font-normal text-muted-foreground ml-1">
+                    (+{contadores.devolvida} devolvidas)
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="stat-card">
+              <div className="text-sm text-muted-foreground">Atribuídas</div>
+              <div className="text-2xl font-bold text-warning">{contadores.atribuida}</div>
+            </div>
+            <div className="stat-card">
+              <div className="text-sm text-muted-foreground">Vendidas</div>
+              <div className="text-2xl font-bold text-success">{contadores.vendida}</div>
+            </div>
+            <div className="stat-card">
+              <div className="text-sm text-muted-foreground">Devolvidas</div>
+              <div className="text-2xl font-bold text-danger">{contadores.devolvida}</div>
+            </div>
+          </div>
+
+          {/* Filtros */}
+          <div className="filter-bar">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-foreground flex items-center gap-1">
+                  <Search className="w-4 h-4" />
+                  Número da Cartela
+                </label>
+                <Input
+                  placeholder="Digite o número..."
+                  value={filtrosCartelas.busca}
+                  onChange={(e) => setFiltrosCartelas({ ...filtrosCartelas, busca: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-foreground flex items-center gap-1">
+                  <Filter className="w-4 h-4" />
+                  Status
+                </label>
+                <Select
+                  value={filtrosCartelas.status}
+                  onValueChange={(value: any) => setFiltrosCartelas({ ...filtrosCartelas, status: value })}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos</SelectItem>
+                    <SelectItem value="disponivel">Disponíveis</SelectItem>
+                    <SelectItem value="ativa">Atribuídas</SelectItem>
+                    <SelectItem value="vendida">Vendidas</SelectItem>
+                    <SelectItem value="devolvida">Devolvidas</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-foreground flex items-center gap-1">
+                  <User className="w-4 h-4" />
+                  Vendedor
+                </label>
+                <Select
+                  value={filtrosCartelas.vendedor}
+                  onValueChange={(value) => setFiltrosCartelas({ ...filtrosCartelas, vendedor: value })}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos</SelectItem>
+                    {vendedores.map(v => (
+                      <SelectItem key={v.id} value={v.id}>{v.nome}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-end">
+                <Button variant="outline" onClick={limparFiltros} className="w-full gap-2">
+                  <Eraser className="w-4 h-4" />
+                  Limpar
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          {/* Legenda */}
+          <div className="bg-card p-4 rounded-xl border border-border mb-6">
+            <h3 className="font-semibold text-foreground mb-3">Legenda:</h3>
+            <div className="flex flex-wrap gap-4">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded bg-card border-2 border-border" />
+                <span className="text-sm text-muted-foreground">Disponível</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded status-atribuida" />
+                <span className="text-sm text-muted-foreground">Atribuída</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded status-vendida" />
+                <span className="text-sm text-muted-foreground">Vendida</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded status-devolvida" />
+                <span className="text-sm text-muted-foreground">Devolvida</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Grid de Cartelas */}
+          <div className="bg-card p-6 rounded-xl border border-border">
+            {isLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                <span className="ml-2 text-muted-foreground">Carregando cartelas...</span>
+              </div>
+            ) : (
+              <div className="flex flex-wrap justify-start">
+                {cartelasFiltradas.map((cartela) => (
+                  <div
+                    key={cartela.numero}
+                    className={cn(
+                      'cartela-item cursor-pointer hover:ring-2 hover:ring-primary',
+                      getCartelaStatusClass(cartela.status),
+                    )}
+                    onClick={() => openCartela(cartela)}
+                  >
+                    {formatarNumeroCartela(cartela.numero)}
+                    <div className="cartela-tooltip">{getTooltip(cartela)}</div>
+                  </div>
+                ))}
+                {cartelasFiltradas.length === 0 && (
+                  <div className="w-full text-center py-12">
+                    <Filter className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-50" />
+                    <p className="text-lg text-muted-foreground">Nenhuma cartela encontrada</p>
+                    <p className="text-sm text-muted-foreground mt-2">Tente ajustar os filtros de busca</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </>
+      ) : (
+        /* ── Validation sub-tab ── */
+        <div className="space-y-6">
+          {/* Add validation form */}
+          <div className="bg-card p-6 rounded-xl border border-border">
+            <h3 className="font-semibold text-foreground mb-4 flex items-center gap-2">
+              <CheckSquare className="w-5 h-5" />
+              Validar Cartela
+            </h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              Adicione os números das cartelas validadas. O sorteio considerará apenas as cartelas validadas aqui.
+            </p>
+            <div className="flex flex-wrap gap-3 items-end">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-foreground">Número da Cartela *</label>
+                <Input
+                  type="number"
+                  min={1}
+                  placeholder="Ex: 42"
+                  value={validacaoNumero}
+                  onChange={(e) => setValidacaoNumero(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleValidarCartela()}
+                  className="w-36"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-foreground">Nome do Comprador (opcional)</label>
+                <Input
+                  placeholder="Nome de quem comprou..."
+                  value={validacaoNome}
+                  onChange={(e) => setValidacaoNome(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleValidarCartela()}
+                  className="w-56"
+                />
+              </div>
+              <Button onClick={handleValidarCartela} disabled={isValidando} className="gap-2">
+                {isValidando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                Validar
+              </Button>
+            </div>
+          </div>
+
+          {/* Batch size + summary */}
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-medium text-foreground">Cartelas por lote:</span>
+              <Input
+                type="number"
+                min={1}
+                max={500}
+                value={tamanhoLote}
+                onChange={(e) => setTamanhoLote(Math.max(1, parseInt(e.target.value) || tamanhoLote))}
+                className="w-20"
+              />
+            </div>
+            <div className="text-sm text-muted-foreground">
+              {cartelasValidadas.length} cartela(s) validada(s)
+              {lotes.length > 0 && ` em ${lotes.length} lote(s)`}
+            </div>
+          </div>
+
+          {/* Batches display */}
+          {cartelasValidadas.length === 0 ? (
+            <div className="bg-card p-12 rounded-xl border border-border text-center">
+              <CheckSquare className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-40" />
+              <p className="text-lg text-muted-foreground">Nenhuma cartela validada</p>
+              <p className="text-sm text-muted-foreground mt-1">Use o formulário acima para validar cartelas</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {lotes.map((lote, loteIdx) => (
+                <div key={loteIdx} className="bg-card rounded-xl border border-border overflow-hidden">
+                  <div className="px-4 py-2.5 bg-muted/40 border-b border-border">
+                    <span className="text-sm font-semibold text-foreground">
+                      Lote {loteIdx + 1}
+                      <span className="ml-2 text-muted-foreground font-normal text-xs">
+                        ({lote.length} cartela{lote.length !== 1 ? 's' : ''})
+                      </span>
+                    </span>
+                  </div>
+                  <div className="p-4">
+                    <div className="flex flex-wrap gap-2">
+                      {lote.map((cv) => (
+                        <div
+                          key={cv.numero}
+                          className="flex items-center gap-1.5 bg-background border border-border rounded-lg px-3 py-1.5 group"
+                        >
+                          <span className="text-sm font-semibold text-foreground">
+                            {formatarNumeroCartela(cv.numero)}
+                          </span>
+                          {cv.comprador_nome && (
+                            <span className="text-xs text-muted-foreground">— {cv.comprador_nome}</span>
+                          )}
+                          <button
+                            onClick={() => removerValidacaoCartela(cv.numero)}
+                            className="ml-1 text-muted-foreground hover:text-destructive transition-colors opacity-0 group-hover:opacity-100"
+                            title="Remover validação"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── Modal: View / Edit cartela ── */}
       <Dialog

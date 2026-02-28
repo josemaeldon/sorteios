@@ -11,6 +11,7 @@ import {
   FiltrosAtribuicoes,
   FiltrosVendas,
   CartelaLayout,
+  CartelaValidada,
 } from '@/types/bingo';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
@@ -25,6 +26,7 @@ interface BingoContextType {
   atribuicoes: Atribuicao[];
   vendas: Venda[];
   cartelaLayouts: CartelaLayout[];
+  cartelasValidadas: CartelaValidada[];
   currentTab: TabType;
   isLoading: boolean;
   
@@ -70,6 +72,11 @@ interface BingoContextType {
   updateCartelaLayout: (id: string, nome: string, layoutData: string, cardsData: string) => Promise<void>;
   deleteCartelaLayout: (id: string) => Promise<void>;
   
+  // CRUD Operations - Cartelas Validadas
+  loadCartelasValidadas: () => Promise<void>;
+  validarCartela: (numero: number, compradorNome?: string) => Promise<void>;
+  removerValidacaoCartela: (numero: number) => Promise<void>;
+  
   // CRUD Operations - Atribuicoes
   loadAtribuicoes: () => Promise<void>;
   addAtribuicao: (vendedorId: string, cartelas: number[]) => Promise<void>;
@@ -103,6 +110,7 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const [atribuicoes, setAtribuicoes] = useState<Atribuicao[]>([]);
   const [vendas, setVendas] = useState<Venda[]>([]);
   const [cartelaLayouts, setCartelaLayouts] = useState<CartelaLayout[]>([]);
+  const [cartelasValidadas, setCartelasValidadas] = useState<CartelaValidada[]>([]);
   const [currentTab, setCurrentTab] = useState<TabType>('sorteios');
   const [isLoading, setIsLoading] = useState(false);
   
@@ -603,6 +611,40 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     setCartelaLayouts(prev => prev.filter(l => l.id !== id));
   }, [callApi]);
 
+  // ================== CARTELAS VALIDADAS ==================
+  const loadCartelasValidadas = useCallback(async () => {
+    if (!sorteioAtivo) return;
+    try {
+      const result = await callApi('getCartelasValidadas', { sorteio_id: sorteioAtivo.id });
+      setCartelasValidadas(result.data || []);
+    } catch (error: any) {
+      console.error('Error loading cartelas validadas:', error);
+    }
+  }, [sorteioAtivo, callApi]);
+
+  const validarCartela = useCallback(async (numero: number, compradorNome?: string) => {
+    if (!sorteioAtivo) return;
+    try {
+      await callApi('validarCartela', { sorteio_id: sorteioAtivo.id, numero, comprador_nome: compradorNome || null });
+      await loadCartelasValidadas();
+    } catch (error: any) {
+      console.error('Error validating cartela:', error);
+      toast({ title: 'Erro ao validar cartela', description: error.message, variant: 'destructive' });
+      throw error;
+    }
+  }, [sorteioAtivo, callApi, toast, loadCartelasValidadas]);
+
+  const removerValidacaoCartela = useCallback(async (numero: number) => {
+    if (!sorteioAtivo) return;
+    try {
+      await callApi('removerValidacaoCartela', { sorteio_id: sorteioAtivo.id, numero });
+      await loadCartelasValidadas();
+    } catch (error: any) {
+      console.error('Error removing cartela validation:', error);
+      toast({ title: 'Erro ao remover validação', description: error.message, variant: 'destructive' });
+    }
+  }, [sorteioAtivo, callApi, toast, loadCartelasValidadas]);
+
   // ================== REFRESH & SET SORTEIO ATIVO ==================
   const refreshData = useCallback(async () => {
     if (!sorteioAtivo) return;
@@ -615,11 +657,12 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         loadAtribuicoes(),
         loadVendas(),
         loadCartelaLayouts(),
+        loadCartelasValidadas(),
       ]);
     } finally {
       setIsLoading(false);
     }
-  }, [sorteioAtivo, loadVendedores, loadCartelas, loadAtribuicoes, loadVendas, loadCartelaLayouts]);
+  }, [sorteioAtivo, loadVendedores, loadCartelas, loadAtribuicoes, loadVendas, loadCartelaLayouts, loadCartelasValidadas]);
 
   const setSorteioAtivo = useCallback((sorteio: Sorteio | null) => {
     setSorteioAtivoState(sorteio);
@@ -635,6 +678,7 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       setAtribuicoes([]);
       setVendas([]);
       setCartelaLayouts([]);
+      setCartelasValidadas([]);
     }
   }, [sorteioAtivo?.id]);
 
@@ -653,6 +697,7 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     atribuicoes,
     vendas,
     cartelaLayouts,
+    cartelasValidadas,
     currentTab,
     isLoading,
     filtrosVendedores,
@@ -683,6 +728,9 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     saveCartelaLayout,
     updateCartelaLayout,
     deleteCartelaLayout,
+    loadCartelasValidadas,
+    validarCartela,
+    removerValidacaoCartela,
     loadAtribuicoes,
     addAtribuicao,
     addCartelasToAtribuicao,
