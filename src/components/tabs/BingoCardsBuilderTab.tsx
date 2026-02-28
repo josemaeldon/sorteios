@@ -276,6 +276,14 @@ const BingoCardsBuilderTab: React.FC = () => {
   const [editingPrecoId, setEditingPrecoId] = useState<string | null>(null);
   const [editingPrecoValor, setEditingPrecoValor] = useState('');
 
+  // Bulk publish state
+  const [showBulkVenderModal, setShowBulkVenderModal] = useState(false);
+  const [bulkFrom, setBulkFrom] = useState(1);
+  const [bulkTo, setBulkTo] = useState(1);
+  const [bulkPreco, setBulkPreco] = useState('');
+  const [isBulkVendendo, setIsBulkVendendo] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState(0);
+
   // Sync numeroPremios when the active sorteio changes (intentionally only on id change,
   // not premios.length, so user customisation within the same sorteio is preserved)
   useEffect(() => {
@@ -647,6 +655,53 @@ const BingoCardsBuilderTab: React.FC = () => {
     setShowMinhaLojaDialog(true);
   };
 
+  const handleOpenBulkVender = () => {
+    setBulkFrom(1);
+    setBulkTo(cards.length);
+    setBulkPreco(String(sorteioAtivo?.valor_cartela ?? ''));
+    setBulkProgress(0);
+    setShowBulkVenderModal(true);
+  };
+
+  const handleBulkVender = async () => {
+    if (!activeLayoutId) return;
+    const normalised = bulkPreco.trim().includes(',')
+      ? bulkPreco.trim().replace(/\./g, '').replace(',', '.')
+      : bulkPreco.trim();
+    const preco = parseFloat(normalised);
+    if (isNaN(preco) || preco < 0) {
+      toast({ title: 'Preço inválido', variant: 'destructive' });
+      return;
+    }
+    const fromNum = Math.max(1, Math.round(bulkFrom));
+    const toNum = Math.min(cards.length, Math.round(bulkTo));
+    if (fromNum > toNum) {
+      toast({ title: 'Intervalo inválido', variant: 'destructive' });
+      return;
+    }
+    const targetCards = cards.filter(c => c.cartelaNumero >= fromNum && c.cartelaNumero <= toNum);
+    if (targetCards.length === 0) {
+      toast({ title: 'Nenhuma cartela encontrada no intervalo', variant: 'destructive' });
+      return;
+    }
+    setIsBulkVendendo(true);
+    setBulkProgress(0);
+    let added = 0;
+    try {
+      for (const card of targetCards) {
+        await adicionarCartelaLoja(activeLayoutId, card.cartelaNumero, preco, JSON.stringify(card), JSON.stringify(layout));
+        added++;
+        setBulkProgress(Math.round((added / targetCards.length) * 100));
+      }
+      toast({ title: `${added} cartela${added !== 1 ? 's' : ''} disponibilizada${added !== 1 ? 's' : ''} para venda!` });
+      setShowBulkVenderModal(false);
+    } catch (err: any) {
+      toast({ title: err.message || 'Erro ao disponibilizar cartelas', variant: 'destructive' });
+    } finally {
+      setIsBulkVendendo(false);
+    }
+  };
+
   const handleSalvarPrecoEdicao = async (id: string) => {
     const normalised = editingPrecoValor.trim().includes(',')
       ? editingPrecoValor.trim().replace(/\./g, '').replace(',', '.')
@@ -901,6 +956,17 @@ const BingoCardsBuilderTab: React.FC = () => {
                   {lojaCartelas.some(c => c.card_set_id === activeLayoutId && c.numero_cartela === previewCard.cartelaNumero)
                     ? 'Na loja ✓'
                     : 'Disponibilizar para Venda'}
+                </Button>
+              )}
+              {activeLayoutId && cards.length > 1 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full gap-1 h-7 text-xs"
+                  onClick={handleOpenBulkVender}
+                >
+                  <Store className="w-3 h-3" />
+                  Disponibilizar Várias em Prévia
                 </Button>
               )}
             </div>
@@ -1522,6 +1588,80 @@ const BingoCardsBuilderTab: React.FC = () => {
               </div>
             )}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Disponibilizar Várias em Prévia dialog ── */}
+      <Dialog open={showBulkVenderModal} onOpenChange={(open) => { if (!open && !isBulkVendendo) setShowBulkVenderModal(false); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Store className="w-5 h-5" />
+              Disponibilizar Várias em Prévia
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Selecione o intervalo de cartelas para disponibilizar na loja. As cartelas já existentes serão atualizadas com o novo preço.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-sm">Da cartela</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={cards.length}
+                  value={bulkFrom}
+                  onChange={(e) => setBulkFrom(Number(e.target.value))}
+                  className="h-9"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-sm">Até a cartela</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={cards.length}
+                  value={bulkTo}
+                  onChange={(e) => setBulkTo(Number(e.target.value))}
+                  className="h-9"
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-sm">Preço (R$)</Label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={bulkPreco}
+                onChange={(e) => setBulkPreco(e.target.value)}
+                placeholder="0.00"
+                className="h-9"
+              />
+            </div>
+            {isBulkVendendo && (
+              <div className="space-y-1">
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>Publicando cartelas…</span>
+                  <span>{bulkProgress}%</span>
+                </div>
+                <div className="w-full bg-muted rounded-full h-2">
+                  <div
+                    className="bg-primary h-2 rounded-full transition-all"
+                    style={{ width: `${bulkProgress}%` }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowBulkVenderModal(false)} disabled={isBulkVendendo}>Cancelar</Button>
+            <Button onClick={handleBulkVender} disabled={isBulkVendendo} className="gap-2">
+              {isBulkVendendo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Store className="w-4 h-4" />}
+              Disponibilizar
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>
