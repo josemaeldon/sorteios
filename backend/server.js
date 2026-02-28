@@ -798,6 +798,13 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         await client.query('DELETE FROM sorteio_historico WHERE rodada_id = $1', [data.rodada_id]);
         return res.json({ data: [{ success: true }] });
 
+      case 'deleteRodadaNumero':
+        await client.query(
+          'DELETE FROM sorteio_historico WHERE rodada_id = $1 AND numero_sorteado = $2',
+          [data.rodada_id, data.numero_sorteado]
+        );
+        return res.json({ data: [{ success: true }] });
+
       // ================== VENDEDORES ==================
       case 'getVendedores':
         result = await client.query(
