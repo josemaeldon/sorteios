@@ -20,13 +20,14 @@ interface AuthContextType extends AuthState {
   removeUserFromSorteio: (sorteioId: string, userId: string) => Promise<{ success: boolean; error?: string }>;
   getPublicPlanos: () => Promise<Plan[]>;
   getPlanos: () => Promise<Plan[]>;
-  createPlano: (data: { nome: string; valor: number; descricao?: string }) => Promise<{ success: boolean; error?: string }>;
-  updatePlano: (id: string, data: { nome: string; valor: number; descricao?: string }) => Promise<{ success: boolean; error?: string }>;
+  createPlano: (data: { nome: string; valor: number; descricao?: string; stripe_price_id?: string }) => Promise<{ success: boolean; error?: string }>;
+  updatePlano: (id: string, data: { nome: string; valor: number; descricao?: string; stripe_price_id?: string }) => Promise<{ success: boolean; error?: string }>;
   deletePlano: (id: string) => Promise<{ success: boolean; error?: string }>;
   assignUserPlan: (userId: string, planoId: string | null) => Promise<{ success: boolean; error?: string }>;
   grantLifetimeAccess: (userId: string, grant: boolean) => Promise<{ success: boolean; error?: string }>;
   getConfiguracoes: () => Promise<Record<string, string>>;
   updateConfiguracoes: (config: Record<string, string>) => Promise<{ success: boolean; error?: string }>;
+  createStripeCheckout: (planoId: string) => Promise<{ url?: string; error?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -318,7 +319,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [user]);
 
-  const createPlano = useCallback(async (data: { nome: string; valor: number; descricao?: string }) => {
+  const createPlano = useCallback(async (data: { nome: string; valor: number; descricao?: string; stripe_price_id?: string }) => {
     if (user?.role !== 'admin') return { success: false, error: 'Apenas administradores' };
     try {
       const result = await callApi('createPlano', data);
@@ -332,7 +333,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [user, toast]);
 
-  const updatePlano = useCallback(async (id: string, data: { nome: string; valor: number; descricao?: string }) => {
+  const updatePlano = useCallback(async (id: string, data: { nome: string; valor: number; descricao?: string; stripe_price_id?: string }) => {
     if (user?.role !== 'admin') return { success: false, error: 'Apenas administradores' };
     try {
       const result = await callApi('updatePlano', { id, ...data });
@@ -416,6 +417,18 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [user, toast]);
 
+  const createStripeCheckout = useCallback(async (planoId: string) => {
+    try {
+      const result = await callApi('createStripeCheckout', { plano_id: planoId });
+      if (result.url) {
+        return { url: result.url };
+      }
+      return { error: result.error || 'Erro ao iniciar checkout' };
+    } catch (error: any) {
+      return { error: error.message || 'Erro ao iniciar checkout' };
+    }
+  }, []);
+
   const value: AuthContextType = {
     user,
     isLoading,
@@ -443,6 +456,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     grantLifetimeAccess,
     getConfiguracoes,
     updateConfiguracoes,
+    createStripeCheckout,
   };
 
   return (

@@ -12,6 +12,8 @@ export interface User {
   updated_at?: string;
   plano_id?: string | null;
   gratuidade_vitalicia?: boolean;
+  plano_inicio?: string | null;
+  plano_vencimento?: string | null;
 }
 
 export interface Plan {
@@ -20,6 +22,7 @@ export interface Plan {
   valor: number;
   descricao?: string;
   ativo: boolean;
+  stripe_price_id?: string | null;
   created_at: string;
   updated_at?: string;
 }
