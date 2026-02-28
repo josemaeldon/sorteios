@@ -319,7 +319,10 @@ const LojaPublica: React.FC = () => {
       if (next.has(cartela.id)) {
         next.delete(cartela.id);
       } else {
-        if (next.size >= CART_MAX_ITEMS) return prev; // limit reached
+        if (next.size >= CART_MAX_ITEMS) {
+          // Feedback handled via the floating bar limit message; silently ignore
+          return prev;
+        }
         next.add(cartela.id);
       }
       return next;
@@ -483,32 +486,39 @@ const LojaPublica: React.FC = () => {
       {/* Floating cart bar */}
       {cartIds.size > 0 && (
         <div className="fixed bottom-6 inset-x-0 flex justify-center z-30 px-4">
-          <div className="bg-blue-900 text-white rounded-full shadow-xl px-6 py-3 flex items-center gap-4 max-w-lg w-full sm:w-auto">
-            <ShoppingCart className="w-5 h-5 flex-shrink-0" />
-            <span className="font-semibold flex-1 sm:flex-none">
-              {cartIds.size} {cartIds.size === 1 ? 'cartela' : 'cartelas'} — R$ {cartTotal.toFixed(2).replace('.', ',')}
-            </span>
-            <Button
-              className="bg-white text-blue-900 hover:bg-blue-50 rounded-full h-8 px-4 text-sm font-bold flex-shrink-0"
-              onClick={() => {
-                setCartCompradorNome('');
-                setCartCompradorEmail('');
-                setCartCompradorEndereco('');
-                setCartCompradorCidade('');
-                setCartCompradorTelefone('');
-                setCartCheckoutError(null);
-                setShowCartModal(true);
-              }}
-            >
-              Finalizar Compra
-            </Button>
-            <button
-              className="text-white/70 hover:text-white flex-shrink-0"
-              onClick={() => setCartIds(new Set())}
-              title="Limpar carrinho"
-            >
-              <X className="w-4 h-4" />
-            </button>
+          <div className="bg-blue-900 text-white rounded-2xl shadow-xl px-6 py-3 flex flex-col items-center gap-2 max-w-lg w-full sm:w-auto sm:rounded-full sm:flex-row sm:gap-4">
+            <div className="flex items-center gap-3 w-full sm:w-auto">
+              <ShoppingCart className="w-5 h-5 flex-shrink-0" />
+              <span className="font-semibold flex-1 sm:flex-none">
+                {cartIds.size} {cartIds.size === 1 ? 'cartela' : 'cartelas'} — R$ {cartTotal.toFixed(2).replace('.', ',')}
+              </span>
+              {cartIds.size >= CART_MAX_ITEMS && (
+                <span className="text-yellow-300 text-xs">(limite atingido)</span>
+              )}
+            </div>
+            <div className="flex items-center gap-3 w-full sm:justify-end">
+              <Button
+                className="bg-white text-blue-900 hover:bg-blue-50 rounded-full h-8 px-4 text-sm font-bold flex-shrink-0"
+                onClick={() => {
+                  setCartCompradorNome('');
+                  setCartCompradorEmail('');
+                  setCartCompradorEndereco('');
+                  setCartCompradorCidade('');
+                  setCartCompradorTelefone('');
+                  setCartCheckoutError(null);
+                  setShowCartModal(true);
+                }}
+              >
+                Finalizar Compra
+              </Button>
+              <button
+                className="text-white/70 hover:text-white flex-shrink-0"
+                onClick={() => setCartIds(new Set())}
+                title="Limpar carrinho"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -104,10 +104,58 @@ app.post('/stripe-webhook', express.raw({ type: 'application/json' }), async (re
               'UPDATE loja_cartelas SET status = $1, comprador_nome = $2, comprador_email = $3, comprador_endereco = $4, comprador_cidade = $5, comprador_telefone = $6, stripe_session_id = $7, updated_at = NOW() WHERE id = $8',
               ['vendida', compradorNome, compradorEmail, compradorEndereco, compradorCidade, compradorTelefone, session.id, lojaCartelaId]
             );
-            await updateClient.query(
-              'UPDATE cartelas SET status = $1, comprador_nome = $2, updated_at = NOW() WHERE sorteio_id = $3 AND numero = $4',
-              ['vendida', compradorNome, lc.sorteio_id, lc.numero_cartela]
+            if (lc.sorteio_id) {
+              await updateClient.query(
+                'UPDATE cartelas SET status = $1, comprador_nome = $2, updated_at = NOW() WHERE sorteio_id = $3 AND numero = $4',
+                ['vendida', compradorNome, lc.sorteio_id, lc.numero_cartela]
+              );
+              await updateClient.query(
+                `UPDATE atribuicao_cartelas SET status = 'vendida' WHERE numero_cartela = $1 AND atribuicao_id IN (SELECT id FROM atribuicoes WHERE sorteio_id = $2)`,
+                [lc.numero_cartela, lc.sorteio_id]
+              );
+            }
+          }
+        } finally {
+          updateClient.release();
+        }
+      }
+
+      if (sessionType === 'cartela_loja_multi') {
+        const updateClient = await dbAdapter.getConnection();
+        try {
+          const compradorNome = (session.metadata && session.metadata.comprador_nome) || '';
+          const compradorEmail = (session.metadata && session.metadata.comprador_email) || session.customer_email || '';
+          const compradorEndereco = (session.metadata && session.metadata.comprador_endereco) || '';
+          const compradorCidade = (session.metadata && session.metadata.comprador_cidade) || '';
+          const compradorTelefone = (session.metadata && session.metadata.comprador_telefone) || '';
+          const allIds = [];
+          for (let i = 0; i < 10; i++) {
+            const key = i === 0 ? 'loja_cartela_ids' : `loja_cartela_ids_${i}`;
+            if (session.metadata && session.metadata[key]) allIds.push(...session.metadata[key].split(',').filter(Boolean));
+            else break;
+          }
+          for (const lcId of allIds) {
+            const lojaMultiResult = await updateClient.query(
+              'SELECT lc.*, bcs.sorteio_id FROM loja_cartelas lc JOIN bingo_card_sets bcs ON lc.card_set_id = bcs.id WHERE lc.id = $1',
+              [lcId]
             );
+            if (lojaMultiResult.rows.length > 0) {
+              const lc = lojaMultiResult.rows[0];
+              await updateClient.query(
+                'UPDATE loja_cartelas SET status = $1, comprador_nome = $2, comprador_email = $3, comprador_endereco = $4, comprador_cidade = $5, comprador_telefone = $6, stripe_session_id = $7, updated_at = NOW() WHERE id = $8',
+                ['vendida', compradorNome, compradorEmail, compradorEndereco, compradorCidade, compradorTelefone, session.id, lc.id]
+              );
+              if (lc.sorteio_id) {
+                await updateClient.query(
+                  'UPDATE cartelas SET status = $1, comprador_nome = $2, updated_at = NOW() WHERE sorteio_id = $3 AND numero = $4',
+                  ['vendida', compradorNome, lc.sorteio_id, lc.numero_cartela]
+                );
+                await updateClient.query(
+                  `UPDATE atribuicao_cartelas SET status = 'vendida' WHERE numero_cartela = $1 AND atribuicao_id IN (SELECT id FROM atribuicoes WHERE sorteio_id = $2)`,
+                  [lc.numero_cartela, lc.sorteio_id]
+                );
+              }
+            }
           }
         } finally {
           updateClient.release();
@@ -2042,10 +2090,16 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           'UPDATE loja_cartelas SET status = $1, comprador_nome = $2, comprador_email = $3, comprador_endereco = $4, comprador_cidade = $5, comprador_telefone = $6, stripe_session_id = $7, updated_at = NOW() WHERE id = $8',
           ['vendida', compradorNomeConfirm, compradorEmailConfirm, compradorEnderecoConfirm, compradorCidadeConfirm, compradorTelefoneConfirm, data.session_id, lcConfirm.id]
         );
-        await client.query(
-          'UPDATE cartelas SET status = $1, comprador_nome = $2, updated_at = NOW() WHERE sorteio_id = $3 AND numero = $4',
-          ['vendida', compradorNomeConfirm, lcConfirm.sorteio_id, lcConfirm.numero_cartela]
-        );
+        if (lcConfirm.sorteio_id) {
+          await client.query(
+            'UPDATE cartelas SET status = $1, comprador_nome = $2, updated_at = NOW() WHERE sorteio_id = $3 AND numero = $4',
+            ['vendida', compradorNomeConfirm, lcConfirm.sorteio_id, lcConfirm.numero_cartela]
+          );
+          await client.query(
+            `UPDATE atribuicao_cartelas SET status = 'vendida' WHERE numero_cartela = $1 AND atribuicao_id IN (SELECT id FROM atribuicoes WHERE sorteio_id = $2)`,
+            [lcConfirm.numero_cartela, lcConfirm.sorteio_id]
+          );
+        }
         return res.json({
           success: true,
           numero_cartela: lcConfirm.numero_cartela,
@@ -2106,7 +2160,8 @@ app.post('/api', checkBasicAuth, async (req, res) => {
             quantity: 1,
           };
         });
-        // Store IDs in metadata (split across keys to stay within 500-char limit per value)
+        // Store IDs in metadata split across keys to stay within Stripe's 500-char limit per value.
+        // UUID = 36 chars + comma separator = 37 chars; 12 × 37 = 444 chars < 500-char limit.
         const idsChunks = [];
         for (let i = 0; i < multiIds.length; i += 12) {
           idsChunks.push(multiIds.slice(i, i + 12).join(','));
@@ -2177,10 +2232,16 @@ app.post('/api', checkBasicAuth, async (req, res) => {
             'UPDATE loja_cartelas SET status = $1, comprador_nome = $2, comprador_email = $3, comprador_endereco = $4, comprador_cidade = $5, comprador_telefone = $6, stripe_session_id = $7, updated_at = NOW() WHERE id = $8',
             ['vendida', compradorNomeMulti, compradorEmailMulti, compradorEnderecoMulti, compradorCidadeMulti, compradorTelefoneMulti, data.session_id, lcMulti.id]
           );
-          await client.query(
-            'UPDATE cartelas SET status = $1, comprador_nome = $2, updated_at = NOW() WHERE sorteio_id = $3 AND numero = $4',
-            ['vendida', compradorNomeMulti, lcMulti.sorteio_id, lcMulti.numero_cartela]
-          );
+          if (lcMulti.sorteio_id) {
+            await client.query(
+              'UPDATE cartelas SET status = $1, comprador_nome = $2, updated_at = NOW() WHERE sorteio_id = $3 AND numero = $4',
+              ['vendida', compradorNomeMulti, lcMulti.sorteio_id, lcMulti.numero_cartela]
+            );
+            await client.query(
+              `UPDATE atribuicao_cartelas SET status = 'vendida' WHERE numero_cartela = $1 AND atribuicao_id IN (SELECT id FROM atribuicoes WHERE sorteio_id = $2)`,
+              [lcMulti.numero_cartela, lcMulti.sorteio_id]
+            );
+          }
           purchasedCartelas.push({
             numero_cartela: lcMulti.numero_cartela,
             card_data: lcMulti.card_data,
