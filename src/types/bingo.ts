@@ -50,7 +50,7 @@ export interface Cartela {
   status: 'disponivel' | 'ativa' | 'vendida' | 'devolvida';
   vendedor_id?: string;
   vendedor_nome?: string;
-  numeros_grade?: number[]; // flat 25-number grid (0 = blank center)
+  numeros_grade?: number[][]; // per-prize flat 25-number grids (0 = blank center); index = premio index
 }
 
 export interface CartelaAtribuida {
@@ -143,6 +143,16 @@ export interface FiltrosVendas {
   status: 'todos' | 'pendente' | 'concluida';
   vendedor: string;
   periodo: 'todos' | 'hoje' | 'semana' | 'mes';
+}
+
+export interface CartelaLayout {
+  id: string;
+  sorteio_id: string;
+  nome: string;
+  layout_data: string;  // JSON of CanvasLayout
+  cards_data: string;   // JSON of BingoCardGrid[]
+  created_at?: string;
+  updated_at?: string;
 }
 
 export type TabType = 'sorteios' | 'dashboard' | 'rodadas' | 'vendedores' | 'cartelas' | 'atribuicoes' | 'vendas' | 'relatorios' | 'sorteio' | 'cartelas-bingo';

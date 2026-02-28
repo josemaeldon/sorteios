@@ -103,19 +103,20 @@ export function generateBingoGrid(): number[][] {
 export function generateAllBingoCards(quantidade: number, numeroPremios: number = 1): BingoCardGrid[] {
   const premios = Math.max(1, Math.min(6, Math.round(numeroPremios)));
   const cards: BingoCardGrid[] = [];
-  const seen = new Set<string>();
+  // Track seen grids per prize to avoid duplicates across cards for the same prize slot
+  const seenPerPremio = Array.from({ length: premios }, () => new Set<string>());
   for (let i = 1; i <= quantidade; i++) {
-    let grid: number[][] = [];
-    let key = '';
-    let tries = 0;
-    do {
-      grid = generateBingoGrid();
-      key = grid.flat().join(',');
-      tries++;
-    } while (seen.has(key) && tries < 500);
-    seen.add(key);
-    // All prizes show the same 25 numbers — replicate the single grid N times
-    const grids = Array.from({ length: premios }, () => grid);
+    // Each prize gets its own independent, unique grid
+    const grids = Array.from({ length: premios }, (_, p) => {
+      let g: number[][] = [];
+      let tries = 0;
+      do {
+        g = generateBingoGrid();
+        tries++;
+      } while (seenPerPremio[p].has(g.flat().join(',')) && tries < 500);
+      seenPerPremio[p].add(g.flat().join(','));
+      return g;
+    });
     cards.push({ cartelaNumero: i, grids });
   }
   return cards;
