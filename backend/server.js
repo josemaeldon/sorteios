@@ -91,6 +91,9 @@ app.post('/stripe-webhook', express.raw({ type: 'application/json' }), async (re
         try {
           const compradorNome = (session.metadata && session.metadata.comprador_nome) || '';
           const compradorEmail = (session.metadata && session.metadata.comprador_email) || session.customer_email || '';
+          const compradorEndereco = (session.metadata && session.metadata.comprador_endereco) || '';
+          const compradorCidade = (session.metadata && session.metadata.comprador_cidade) || '';
+          const compradorTelefone = (session.metadata && session.metadata.comprador_telefone) || '';
           const lojaResult = await updateClient.query(
             'SELECT lc.*, bcs.sorteio_id FROM loja_cartelas lc JOIN bingo_card_sets bcs ON lc.card_set_id = bcs.id WHERE lc.id = $1',
             [lojaCartelaId]
@@ -98,8 +101,8 @@ app.post('/stripe-webhook', express.raw({ type: 'application/json' }), async (re
           if (lojaResult.rows.length > 0) {
             const lc = lojaResult.rows[0];
             await updateClient.query(
-              'UPDATE loja_cartelas SET status = $1, comprador_nome = $2, comprador_email = $3, stripe_session_id = $4, updated_at = NOW() WHERE id = $5',
-              ['vendida', compradorNome, compradorEmail, session.id, lojaCartelaId]
+              'UPDATE loja_cartelas SET status = $1, comprador_nome = $2, comprador_email = $3, comprador_endereco = $4, comprador_cidade = $5, comprador_telefone = $6, stripe_session_id = $7, updated_at = NOW() WHERE id = $8',
+              ['vendida', compradorNome, compradorEmail, compradorEndereco, compradorCidade, compradorTelefone, session.id, lojaCartelaId]
             );
             await updateClient.query(
               'UPDATE cartelas SET status = $1, comprador_nome = $2, updated_at = NOW() WHERE sorteio_id = $3 AND numero = $4',
@@ -193,13 +196,31 @@ async function initSchema() {
             status VARCHAR(20) NOT NULL DEFAULT 'disponivel',
             comprador_nome VARCHAR(255),
             comprador_email VARCHAR(255),
+            comprador_endereco VARCHAR(255),
+            comprador_cidade VARCHAR(255),
+            comprador_telefone VARCHAR(50),
             stripe_session_id VARCHAR(255),
             card_data LONGTEXT NOT NULL,
+            layout_data LONGTEXT NOT NULL DEFAULT '',
             created_at TIMESTAMP DEFAULT NOW() NOT NULL,
             updated_at TIMESTAMP DEFAULT NOW() ON UPDATE NOW() NOT NULL,
             UNIQUE KEY uq_loja_cartela (user_id, card_set_id, numero_cartela)
           )
         `);
+        // Add new columns to loja_cartelas if upgrading (MySQL)
+        const lojaExtraCols = [
+          ['comprador_endereco', 'ALTER TABLE loja_cartelas ADD COLUMN comprador_endereco VARCHAR(255)'],
+          ['comprador_cidade',   'ALTER TABLE loja_cartelas ADD COLUMN comprador_cidade VARCHAR(255)'],
+          ['comprador_telefone', 'ALTER TABLE loja_cartelas ADD COLUMN comprador_telefone VARCHAR(50)'],
+          ['layout_data',        "ALTER TABLE loja_cartelas ADD COLUMN layout_data LONGTEXT NOT NULL DEFAULT ''"],
+        ];
+        for (const [, sql] of lojaExtraCols) {
+          try { await client.query(sql); } catch (e) {
+            if (!e.message || !e.message.includes('Duplicate column')) {
+              console.warn('loja_cartelas migration warning (may be pre-existing):', e.message);
+            }
+          }
+        }
         // Add comprador_nome to cartelas (MySQL)
         try {
           await client.query(`ALTER TABLE cartelas ADD COLUMN comprador_nome VARCHAR(255)`);
@@ -314,13 +335,22 @@ async function initSchema() {
             status VARCHAR(20) NOT NULL DEFAULT 'disponivel',
             comprador_nome VARCHAR(255),
             comprador_email VARCHAR(255),
+            comprador_endereco VARCHAR(255),
+            comprador_cidade VARCHAR(255),
+            comprador_telefone VARCHAR(50),
             stripe_session_id VARCHAR(255),
             card_data TEXT NOT NULL,
+            layout_data TEXT NOT NULL DEFAULT '',
             created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
             UNIQUE(user_id, card_set_id, numero_cartela)
           )
         `);
+        // Add new columns to loja_cartelas if upgrading (PostgreSQL)
+        await client.query(`ALTER TABLE loja_cartelas ADD COLUMN IF NOT EXISTS comprador_endereco VARCHAR(255)`);
+        await client.query(`ALTER TABLE loja_cartelas ADD COLUMN IF NOT EXISTS comprador_cidade VARCHAR(255)`);
+        await client.query(`ALTER TABLE loja_cartelas ADD COLUMN IF NOT EXISTS comprador_telefone VARCHAR(50)`);
+        await client.query(`ALTER TABLE loja_cartelas ADD COLUMN IF NOT EXISTS layout_data TEXT NOT NULL DEFAULT ''`);
         // Add comprador_nome to cartelas (PostgreSQL)
         await client.query(`ALTER TABLE cartelas ADD COLUMN IF NOT EXISTS comprador_nome VARCHAR(255)`);
         // Create planos table (PostgreSQL)
@@ -1852,7 +1882,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         }
         const owner = ownerResult.rows[0];
         const lojaResult = await client.query(
-          'SELECT id, numero_cartela, preco, status, card_data FROM loja_cartelas WHERE user_id = $1 AND status = $2 ORDER BY numero_cartela ASC',
+          'SELECT id, numero_cartela, preco, status, card_data, layout_data FROM loja_cartelas WHERE user_id = $1 AND status = $2 ORDER BY numero_cartela ASC',
           [data.user_id, 'disponivel']
         );
         return res.json({ owner: { nome: owner.nome, titulo_sistema: owner.titulo_sistema }, cartelas: lojaResult.rows });
@@ -1875,12 +1905,13 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           return res.status(400).json({ error: 'Dados incompletos.' });
         }
         const preco = Number(data.preco) >= 0 ? Number(data.preco) : 0;
+        const layoutData = data.layout_data || '';
         if (dbConfig.type === 'mysql') {
           result = await client.query(
-            `INSERT INTO loja_cartelas (id, user_id, card_set_id, numero_cartela, preco, card_data)
-             VALUES (UUID(), $1, $2, $3, $4, $5)
-             ON DUPLICATE KEY UPDATE preco = VALUES(preco), card_data = VALUES(card_data), updated_at = NOW()`,
-            [data.authenticated_user_id, data.card_set_id, data.numero_cartela, preco, data.card_data]
+            `INSERT INTO loja_cartelas (id, user_id, card_set_id, numero_cartela, preco, card_data, layout_data)
+             VALUES (UUID(), $1, $2, $3, $4, $5, $6)
+             ON DUPLICATE KEY UPDATE preco = VALUES(preco), card_data = VALUES(card_data), layout_data = VALUES(layout_data), updated_at = NOW()`,
+            [data.authenticated_user_id, data.card_set_id, data.numero_cartela, preco, data.card_data, layoutData]
           );
           const inserted = await client.query(
             'SELECT * FROM loja_cartelas WHERE user_id = $1 AND card_set_id = $2 AND numero_cartela = $3',
@@ -1889,11 +1920,11 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           return res.json({ data: inserted.rows[0] });
         } else {
           result = await client.query(
-            `INSERT INTO loja_cartelas (user_id, card_set_id, numero_cartela, preco, card_data)
-             VALUES ($1, $2, $3, $4, $5)
-             ON CONFLICT (user_id, card_set_id, numero_cartela) DO UPDATE SET preco = EXCLUDED.preco, card_data = EXCLUDED.card_data, updated_at = NOW()
+            `INSERT INTO loja_cartelas (user_id, card_set_id, numero_cartela, preco, card_data, layout_data)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             ON CONFLICT (user_id, card_set_id, numero_cartela) DO UPDATE SET preco = EXCLUDED.preco, card_data = EXCLUDED.card_data, layout_data = EXCLUDED.layout_data, updated_at = NOW()
              RETURNING *`,
-            [data.authenticated_user_id, data.card_set_id, data.numero_cartela, preco, data.card_data]
+            [data.authenticated_user_id, data.card_set_id, data.numero_cartela, preco, data.card_data, layoutData]
           );
           return res.json({ data: result.rows[0] });
         }
@@ -1937,7 +1968,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         const lojaCartela = lojaCartelaResult.rows[0];
         const valorCentavos = Math.round(Number(lojaCartela.preco) * 100);
         if (valorCentavos < STRIPE_MIN_AMOUNT_CENTAVOS) {
-          return res.status(400).json({ error: 'Valor mínimo para pagamento online é R$ 0,50.' });
+          return res.status(400).json({ error: `Valor mínimo para pagamento online é R$ ${(STRIPE_MIN_AMOUNT_CENTAVOS / 100).toFixed(2).replace('.', ',')}.` });
         }
         const stripeCartela = Stripe(stripeKeyCartela);
         const baseUrlCartela = (process.env.APP_URL || '').replace(/\/$/, '') || `${req.protocol}://${req.get('host')}`;
@@ -1965,6 +1996,9 @@ app.post('/api', checkBasicAuth, async (req, res) => {
             loja_cartela_id: lojaCartela.id,
             comprador_nome: data.comprador_nome || '',
             comprador_email: data.comprador_email || '',
+            comprador_endereco: data.comprador_endereco || '',
+            comprador_cidade: data.comprador_cidade || '',
+            comprador_telefone: data.comprador_telefone || '',
           },
         });
         return res.json({ url: cartelaSession.url });
@@ -2001,15 +2035,27 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         const lcConfirm = lcConfirmResult.rows[0];
         const compradorNomeConfirm = sessionMeta.comprador_nome || '';
         const compradorEmailConfirm = sessionMeta.comprador_email || cartelaCheckoutSession.customer_email || '';
+        const compradorEnderecoConfirm = sessionMeta.comprador_endereco || '';
+        const compradorCidadeConfirm = sessionMeta.comprador_cidade || '';
+        const compradorTelefoneConfirm = sessionMeta.comprador_telefone || '';
         await client.query(
-          'UPDATE loja_cartelas SET status = $1, comprador_nome = $2, comprador_email = $3, stripe_session_id = $4, updated_at = NOW() WHERE id = $5',
-          ['vendida', compradorNomeConfirm, compradorEmailConfirm, data.session_id, lcConfirm.id]
+          'UPDATE loja_cartelas SET status = $1, comprador_nome = $2, comprador_email = $3, comprador_endereco = $4, comprador_cidade = $5, comprador_telefone = $6, stripe_session_id = $7, updated_at = NOW() WHERE id = $8',
+          ['vendida', compradorNomeConfirm, compradorEmailConfirm, compradorEnderecoConfirm, compradorCidadeConfirm, compradorTelefoneConfirm, data.session_id, lcConfirm.id]
         );
         await client.query(
           'UPDATE cartelas SET status = $1, comprador_nome = $2, updated_at = NOW() WHERE sorteio_id = $3 AND numero = $4',
           ['vendida', compradorNomeConfirm, lcConfirm.sorteio_id, lcConfirm.numero_cartela]
         );
-        return res.json({ success: true, numero_cartela: lcConfirm.numero_cartela, comprador_nome: compradorNomeConfirm });
+        return res.json({
+          success: true,
+          numero_cartela: lcConfirm.numero_cartela,
+          comprador_nome: compradorNomeConfirm,
+          comprador_endereco: compradorEnderecoConfirm,
+          comprador_cidade: compradorCidadeConfirm,
+          comprador_telefone: compradorTelefoneConfirm,
+          card_data: lcConfirm.card_data,
+          layout_data: lcConfirm.layout_data,
+        });
       }
 
       default:

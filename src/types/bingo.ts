@@ -66,7 +66,11 @@ export interface LojaCartela {
   status: 'disponivel' | 'vendida';
   comprador_nome?: string;
   comprador_email?: string;
+  comprador_endereco?: string;
+  comprador_cidade?: string;
+  comprador_telefone?: string;
   card_data: string; // JSON of BingoCardGrid
+  layout_data: string; // JSON of CanvasLayout
   created_at?: string;
   updated_at?: string;
 }

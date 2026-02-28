@@ -1,13 +1,23 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { Loader2, ShoppingCart, Ticket, CheckCircle, XCircle } from 'lucide-react';
+import { Loader2, ShoppingCart, Ticket, CheckCircle, XCircle, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { callApi } from '@/lib/apiClient';
-import { BingoCardGrid, BINGO_COLS } from '@/lib/utils/bingoCardUtils';
+import { BingoCardGrid, CanvasLayout, BINGO_COLS, exportBingoCardsPDF, BuyerData, BUYER_ELEMENT_LABELS } from '@/lib/utils/bingoCardUtils';
 import { LojaCartela } from '@/types/bingo';
+
+/** Returns the set of buyer element types present in the layout */
+function detectBuyerFields(layoutData: string): Set<string> {
+  try {
+    const layout: CanvasLayout = JSON.parse(layoutData);
+    return new Set(layout.elements.map(e => e.type).filter(t => t.startsWith('buyer_')));
+  } catch {
+    return new Set();
+  }
+}
 
 // ─── Bingo card renderer for the public page ─────────────────────────────────
 const BingoGridPublic: React.FC<{ grid: number[][] }> = ({ grid }) => (
@@ -91,13 +101,27 @@ const LojaPublica: React.FC = () => {
   const sessionId = searchParams.get('session_id');
   const [confirmingPayment, setConfirmingPayment] = useState(false);
   const [paymentResult, setPaymentResult] = useState<{ ok: boolean; message: string } | null>(null);
+  // Card data for download after purchase
+  const [purchasedCardData, setPurchasedCardData] = useState<{
+    cardData: string; layoutData: string; buyerData: BuyerData; numeroCartela: number;
+  } | null>(null);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   // Buy modal state
   const [buyingCartela, setBuyingCartela] = useState<LojaCartela | null>(null);
   const [compradorNome, setCompradorNome] = useState('');
   const [compradorEmail, setCompradorEmail] = useState('');
+  const [compradorEndereco, setCompradorEndereco] = useState('');
+  const [compradorCidade, setCompradorCidade] = useState('');
+  const [compradorTelefone, setCompradorTelefone] = useState('');
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
+
+  // Buyer fields required by the current card's layout
+  const buyerFields = React.useMemo(
+    () => buyingCartela?.layout_data ? detectBuyerFields(buyingCartela.layout_data) : new Set<string>(),
+    [buyingCartela]
+  );
 
   const loadLoja = useCallback(async () => {
     if (!userId) return;
@@ -125,6 +149,20 @@ const LojaPublica: React.FC = () => {
       .then((result) => {
         if (result.success) {
           setPaymentResult({ ok: true, message: `Cartela ${String(result.numero_cartela).padStart(3, '0')} comprada com sucesso! Obrigado${result.comprador_nome ? `, ${result.comprador_nome}` : ''}!` });
+          // Store card data for download
+          if (result.card_data && result.layout_data) {
+            setPurchasedCardData({
+              cardData: result.card_data,
+              layoutData: result.layout_data,
+              numeroCartela: result.numero_cartela,
+              buyerData: {
+                nome: result.comprador_nome || '',
+                endereco: result.comprador_endereco || '',
+                cidade: result.comprador_cidade || '',
+                telefone: result.comprador_telefone || '',
+              },
+            });
+          }
           // Reload to remove sold card from list
           loadLoja();
         } else {
@@ -137,10 +175,27 @@ const LojaPublica: React.FC = () => {
       .finally(() => setConfirmingPayment(false));
   }, [paymentSuccess, sessionId, loadLoja]);
 
+  const handleDownloadCartela = async () => {
+    if (!purchasedCardData) return;
+    setIsDownloading(true);
+    try {
+      const card: BingoCardGrid = JSON.parse(purchasedCardData.cardData);
+      const layout: CanvasLayout = JSON.parse(purchasedCardData.layoutData);
+      await exportBingoCardsPDF([card], layout, `cartela-${purchasedCardData.numeroCartela}`, purchasedCardData.buyerData);
+    } catch (err) {
+      console.error('Download error:', err);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
   const handleBuy = (cartela: LojaCartela) => {
     setCheckoutError(null);
     setCompradorNome('');
     setCompradorEmail('');
+    setCompradorEndereco('');
+    setCompradorCidade('');
+    setCompradorTelefone('');
     setBuyingCartela(cartela);
   };
 
@@ -157,6 +212,9 @@ const LojaPublica: React.FC = () => {
         loja_cartela_id: buyingCartela.id,
         comprador_nome: compradorNome.trim(),
         comprador_email: compradorEmail.trim() || undefined,
+        comprador_endereco: compradorEndereco.trim() || undefined,
+        comprador_cidade: compradorCidade.trim() || undefined,
+        comprador_telefone: compradorTelefone.trim() || undefined,
         success_path: `/loja/${userId}`,
         cancel_path: `/loja/${userId}`,
       });
@@ -201,11 +259,25 @@ const LojaPublica: React.FC = () => {
           </div>
         )}
         {paymentResult && (
-          <div className={`mb-6 flex items-center gap-3 p-4 rounded-xl border ${paymentResult.ok ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
-            {paymentResult.ok
-              ? <CheckCircle className="w-5 h-5 flex-shrink-0" />
-              : <XCircle className="w-5 h-5 flex-shrink-0" />}
-            <span className="font-medium">{paymentResult.message}</span>
+          <div className={`mb-6 p-4 rounded-xl border ${paymentResult.ok ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
+            <div className="flex items-center gap-3">
+              {paymentResult.ok
+                ? <CheckCircle className="w-5 h-5 flex-shrink-0" />
+                : <XCircle className="w-5 h-5 flex-shrink-0" />}
+              <span className="font-medium">{paymentResult.message}</span>
+            </div>
+            {paymentResult.ok && purchasedCardData && (
+              <div className="mt-3">
+                <Button
+                  onClick={handleDownloadCartela}
+                  disabled={isDownloading}
+                  className="gap-2 bg-green-600 hover:bg-green-700 text-white"
+                >
+                  {isDownloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                  Baixar minha cartela (PDF)
+                </Button>
+              </div>
+            )}
           </div>
         )}
 
@@ -249,7 +321,7 @@ const LojaPublica: React.FC = () => {
             </DialogTitle>
           </DialogHeader>
           {buyingCartela && (
-            <div className="space-y-4">
+            <div className="space-y-3 max-h-96 overflow-y-auto">
               <p className="text-2xl font-bold text-green-600 text-center">
                 R$ {Number(buyingCartela.preco).toFixed(2).replace('.', ',')}
               </p>
@@ -270,6 +342,42 @@ const LojaPublica: React.FC = () => {
                   placeholder="seu@email.com"
                 />
               </div>
+              {buyerFields.has('buyer_address') && (
+                <div className="space-y-1.5">
+                  <Label>Endereço</Label>
+                  <Input
+                    value={compradorEndereco}
+                    onChange={(e) => setCompradorEndereco(e.target.value)}
+                    placeholder="Rua, número, complemento"
+                  />
+                </div>
+              )}
+              {buyerFields.has('buyer_city') && (
+                <div className="space-y-1.5">
+                  <Label>Cidade</Label>
+                  <Input
+                    value={compradorCidade}
+                    onChange={(e) => setCompradorCidade(e.target.value)}
+                    placeholder="Sua cidade"
+                  />
+                </div>
+              )}
+              {buyerFields.has('buyer_phone') && (
+                <div className="space-y-1.5">
+                  <Label>Telefone</Label>
+                  <Input
+                    type="tel"
+                    value={compradorTelefone}
+                    onChange={(e) => setCompradorTelefone(e.target.value)}
+                    placeholder="(00) 00000-0000"
+                  />
+                </div>
+              )}
+              {(buyerFields.size > 0) && (
+                <p className="text-xs text-blue-600 bg-blue-50 border border-blue-200 rounded px-2 py-1.5">
+                  Seus dados serão impressos na cartela para download após o pagamento.
+                </p>
+              )}
               {checkoutError && (
                 <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
                   {checkoutError}

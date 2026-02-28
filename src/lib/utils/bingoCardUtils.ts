@@ -15,7 +15,7 @@ export interface BingoCardGrid {
 
 export interface CanvasElement {
   id: string;
-  type: 'card_number' | 'bingo_grid' | 'text' | 'barcode';
+  type: 'card_number' | 'bingo_grid' | 'text' | 'barcode' | 'buyer_name' | 'buyer_address' | 'buyer_city' | 'buyer_phone';
   x: number;       // mm from left
   y: number;       // mm from top
   width: number;   // mm
@@ -55,6 +55,23 @@ export interface CanvasLayout {
   background: CanvasBackground;
   elements: CanvasElement[];
 }
+
+// ─── Buyer data ───────────────────────────────────────────────────────────────
+
+export interface BuyerData {
+  nome?: string;
+  endereco?: string;
+  cidade?: string;
+  telefone?: string;
+}
+
+/** Placeholder labels shown in the builder canvas for buyer fields */
+export const BUYER_ELEMENT_LABELS: Record<string, string> = {
+  buyer_name:    '[ Nome ]',
+  buyer_address: '[ Endereço ]',
+  buyer_city:    '[ Cidade ]',
+  buyer_phone:   '[ Telefone ]',
+};
 
 // ─── Default layout ───────────────────────────────────────────────────────────
 
@@ -214,6 +231,7 @@ export async function exportBingoCardsPDF(
   cards: BingoCardGrid[],
   layout: CanvasLayout,
   sorteioNome: string,
+  buyerData?: BuyerData,
 ): Promise<void> {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
@@ -275,6 +293,20 @@ export async function exportBingoCardsPDF(
         const dataUrl = renderBarcodeToDataUrl(barcodeValue, format, showText);
         if (dataUrl) {
           doc.addImage(dataUrl, 'PNG', el.x, el.y, el.width, el.height);
+        }
+      } else if (el.type === 'buyer_name' || el.type === 'buyer_address' || el.type === 'buyer_city' || el.type === 'buyer_phone') {
+        const fieldMap: Record<string, keyof BuyerData> = {
+          buyer_name: 'nome', buyer_address: 'endereco', buyer_city: 'cidade', buyer_phone: 'telefone',
+        };
+        const value = buyerData?.[fieldMap[el.type]] ?? '';
+        if (value) {
+          doc.setTextColor(...hexToRgb(el.color ?? '#000000'));
+          doc.setFontSize(el.fontSize ?? 11);
+          doc.setFont('helvetica', el.fontWeight === 'bold' ? 'bold' : 'normal');
+          const align = (el.textAlign ?? 'left') as 'left' | 'center' | 'right';
+          const tx = align === 'center' ? el.x + el.width / 2
+            : align === 'right' ? el.x + el.width : el.x;
+          doc.text(value, tx, el.y + el.height * 0.72, { align });
         }
       }
     }

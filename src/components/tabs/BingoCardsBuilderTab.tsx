@@ -3,7 +3,7 @@ import JsBarcode from 'jsbarcode';
 import {
   LayoutGrid, Plus, Trash2, Download, RefreshCw, ChevronLeft, ChevronRight,
   Image, Type, AlignLeft, AlignCenter, AlignRight, Bold, Loader2, FileText,
-  Save, List, X, Edit2, Barcode, Copy, ShoppingCart, Store, Link, DollarSign,
+  Save, List, X, Edit2, Barcode, Copy, ShoppingCart, Store, Link, DollarSign, User,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,6 +15,7 @@ import {
   CanvasElement, CanvasLayout, BingoCardGrid,
   DEFAULT_LAYOUT, BINGO_COLS, A4_W_MM, A4_H_MM,
   generateAllBingoCards, exportBingoCardsPDF,
+  BUYER_ELEMENT_LABELS,
 } from '@/lib/utils/bingoCardUtils';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -380,6 +381,19 @@ const BingoCardsBuilderTab: React.FC = () => {
     setSelectedId(id);
   };
 
+  const addBuyerElement = (type: 'buyer_name' | 'buyer_address' | 'buyer_city' | 'buyer_phone') => {
+    const id = `${type}_${Date.now()}`;
+    const el: CanvasElement = {
+      id, type,
+      x: 10, y: 290, width: 190, height: 8,
+      fontSize: 11, fontWeight: 'normal',
+      color: '#111827', backgroundColor: 'transparent',
+      textAlign: 'left',
+    };
+    setLayout((prev) => ({ ...prev, elements: [...prev.elements, el] }));
+    setSelectedId(id);
+  };
+
   const duplicateCardNumber = (sourceId: string) => {
     const source = layout.elements.find(e => e.id === sourceId);
     if (!source) return;
@@ -607,8 +621,10 @@ const BingoCardsBuilderTab: React.FC = () => {
 
   const handleConfirmarVenda = async () => {
     if (!activeLayoutId || !previewCard) return;
-    // Accept both "1.99" and "1,99" — strip thousands separators, normalise decimal
-    const normalised = vendaPreco.trim().replace(/\./g, '').replace(',', '.');
+    // Accept both "1.99" and "1,99". For Brazilian format "1.234,56" → "1234.56"
+    const normalised = vendaPreco.trim().includes(',')
+      ? vendaPreco.trim().replace(/\./g, '').replace(',', '.')   // BR: remove thousands dots, swap decimal comma
+      : vendaPreco.trim();                                         // already dot-decimal
     const preco = parseFloat(normalised);
     if (isNaN(preco) || preco < 0) {
       toast({ title: 'Preço inválido', variant: 'destructive' });
@@ -616,7 +632,7 @@ const BingoCardsBuilderTab: React.FC = () => {
     }
     setIsVendendo(true);
     try {
-      await adicionarCartelaLoja(activeLayoutId, previewCard.cartelaNumero, preco, JSON.stringify(previewCard));
+      await adicionarCartelaLoja(activeLayoutId, previewCard.cartelaNumero, preco, JSON.stringify(previewCard), JSON.stringify(layout));
       toast({ title: `Cartela ${previewCard.cartelaNumero.toString().padStart(3, '0')} disponibilizada para venda!` });
       setShowVenderModal(false);
     } catch (err: any) {
@@ -632,7 +648,9 @@ const BingoCardsBuilderTab: React.FC = () => {
   };
 
   const handleSalvarPrecoEdicao = async (id: string) => {
-    const normalised = editingPrecoValor.trim().replace(/\./g, '').replace(',', '.');
+    const normalised = editingPrecoValor.trim().includes(',')
+      ? editingPrecoValor.trim().replace(/\./g, '').replace(',', '.')
+      : editingPrecoValor.trim();
     const preco = parseFloat(normalised);
     if (isNaN(preco) || preco < 0) {
       toast({ title: 'Preço inválido', variant: 'destructive' });
@@ -787,6 +805,38 @@ const BingoCardsBuilderTab: React.FC = () => {
             <Button size="sm" variant="outline" onClick={addBarcodeElement} className="w-full gap-1 h-7 text-xs">
               <Plus className="w-3 h-3" /> Adicionar Código de Barras
             </Button>
+          </div>
+
+          {/* Buyer fields */}
+          <div className="bg-card border border-border rounded-xl p-3 space-y-2">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Dados do Comprador</p>
+            <p className="text-[10px] text-muted-foreground leading-tight">Campos preenchidos pelo comprador no momento da compra online.</p>
+            {(['buyer_name', 'buyer_address', 'buyer_city', 'buyer_phone'] as const).map((type) => (
+              layout.elements.filter(e => e.type === type).map((e) => (
+                <button
+                  key={e.id}
+                  onClick={() => setSelectedId(e.id)}
+                  className={`w-full text-left px-2 py-1.5 rounded text-sm flex items-center gap-2 transition-colors ${selectedId === e.id ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
+                >
+                  <User className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span className="truncate">{BUYER_ELEMENT_LABELS[type]}</span>
+                </button>
+              ))
+            ))}
+            <div className="grid grid-cols-2 gap-1">
+              {([
+                ['buyer_name', 'Nome'],
+                ['buyer_address', 'Endereço'],
+                ['buyer_city', 'Cidade'],
+                ['buyer_phone', 'Telefone'],
+              ] as const).map(([type, label]) => (
+                !layout.elements.some(e => e.type === type) && (
+                  <Button key={type} size="sm" variant="outline" onClick={() => addBuyerElement(type)} className="gap-1 h-7 text-xs">
+                    <Plus className="w-3 h-3" /> {label}
+                  </Button>
+                )
+              ))}
+            </div>
           </div>
 
           {/* Background */}
@@ -963,6 +1013,26 @@ const BingoCardsBuilderTab: React.FC = () => {
                     <BarcodePreview el={el} cartelaNumero={previewCard?.cartelaNumero ?? 1} />
                   )}
 
+                  {(el.type === 'buyer_name' || el.type === 'buyer_address' || el.type === 'buyer_city' || el.type === 'buyer_phone') && (
+                    <div
+                      style={{
+                        width: '100%', height: '100%',
+                        display: 'flex', alignItems: 'center',
+                        justifyContent: el.textAlign === 'center' ? 'center'
+                          : el.textAlign === 'right' ? 'flex-end' : 'flex-start',
+                        fontSize: el.fontSize,
+                        fontWeight: el.fontWeight === 'bold' ? 'bold' : 'normal',
+                        color: el.color ?? '#9ca3af',
+                        fontStyle: 'italic',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        borderBottom: '1px dashed #9ca3af',
+                      }}
+                    >
+                      {BUYER_ELEMENT_LABELS[el.type]}
+                    </div>
+                  )}
+
                   {/* Resize handles (only on selected) */}
                   {isSelected && (
                     <ResizeHandles
@@ -1001,6 +1071,7 @@ const BingoCardsBuilderTab: React.FC = () => {
                   })()}
                   {selectedEl.type === 'text' && 'Texto'}
                   {selectedEl.type === 'barcode' && 'Código de Barras'}
+                  {(selectedEl.type === 'buyer_name' || selectedEl.type === 'buyer_address' || selectedEl.type === 'buyer_city' || selectedEl.type === 'buyer_phone') && BUYER_ELEMENT_LABELS[selectedEl.type]}
                 </p>
                 <div className="flex items-center gap-1">
                   {selectedEl.type === 'card_number' && (
@@ -1011,6 +1082,8 @@ const BingoCardsBuilderTab: React.FC = () => {
                     </Button>
                   )}
                   {(selectedEl.type === 'text' || selectedEl.type === 'barcode' ||
+                    selectedEl.type === 'buyer_name' || selectedEl.type === 'buyer_address' ||
+                    selectedEl.type === 'buyer_city' || selectedEl.type === 'buyer_phone' ||
                     (selectedEl.type === 'card_number' && selectedEl.id !== 'card_number') ||
                     (selectedEl.type === 'bingo_grid' && layout.elements.filter(e => e.type === 'bingo_grid').length > 1)) && (
                     <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive"
@@ -1056,8 +1129,10 @@ const BingoCardsBuilderTab: React.FC = () => {
                 </PropRow>
               )}
 
-              {/* Font (card_number / text) */}
-              {(selectedEl.type === 'card_number' || selectedEl.type === 'text') && (
+              {/* Font (card_number / text / buyer fields) */}
+              {(selectedEl.type === 'card_number' || selectedEl.type === 'text' ||
+                selectedEl.type === 'buyer_name' || selectedEl.type === 'buyer_address' ||
+                selectedEl.type === 'buyer_city' || selectedEl.type === 'buyer_phone') && (
                 <>
                   <NumberInput label="Tamanho (pt)" value={selectedEl.fontSize ?? 14}
                     onChange={(v) => updateElement(selectedEl.id, { fontSize: v })} min={6} max={72} />
@@ -1420,7 +1495,7 @@ const BingoCardsBuilderTab: React.FC = () => {
                               className="h-7 w-24 text-xs"
                             />
                             <Button size="sm" className="h-7 text-xs" onClick={() => handleSalvarPrecoEdicao(lc.id)}>OK</Button>
-                            <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setEditingPrecoId(null)} aria-label="Cancelar edição">✕</Button>
+                            <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => setEditingPrecoId(null)} aria-label="Cancelar edição"><X className="w-3 h-3" /></Button>
                           </div>
                         ) : (
                           <button

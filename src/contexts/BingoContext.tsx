@@ -98,7 +98,7 @@ interface BingoContextType {
   // CRUD Operations - Loja Pública
   lojaCartelas: LojaCartela[];
   loadMinhaLoja: () => Promise<void>;
-  adicionarCartelaLoja: (cardSetId: string, numeroCartela: number, preco: number, cardData: string) => Promise<LojaCartela>;
+  adicionarCartelaLoja: (cardSetId: string, numeroCartela: number, preco: number, cardData: string, layoutData: string) => Promise<LojaCartela>;
   removerCartelaLoja: (id: string) => Promise<void>;
   atualizarPrecoLojaCartela: (id: string, preco: number) => Promise<void>;
   
@@ -689,8 +689,8 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   }, [callApi]);
 
-  const adicionarCartelaLoja = useCallback(async (cardSetId: string, numeroCartela: number, preco: number, cardData: string): Promise<LojaCartela> => {
-    const result = await callApi('adicionarCartelaLoja', { card_set_id: cardSetId, numero_cartela: numeroCartela, preco, card_data: cardData });
+  const adicionarCartelaLoja = useCallback(async (cardSetId: string, numeroCartela: number, preco: number, cardData: string, layoutData: string): Promise<LojaCartela> => {
+    const result = await callApi('adicionarCartelaLoja', { card_set_id: cardSetId, numero_cartela: numeroCartela, preco, card_data: cardData, layout_data: layoutData });
     if (!result.data) throw new Error(result.error || 'Erro ao disponibilizar cartela.');
     setLojaCartelas(prev => {
       const idx = prev.findIndex(c => c.card_set_id === cardSetId && c.numero_cartela === numeroCartela);
