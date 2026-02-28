@@ -2426,6 +2426,9 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           }
         }
         return res.json({
+          success: true,
+          cartelas: purchasedCartelas,
+          comprador_nome: compradorNomeMulti,
           comprador_endereco: compradorEnderecoMulti,
           comprador_cidade: compradorCidadeMulti,
           comprador_telefone: compradorTelefoneMulti,

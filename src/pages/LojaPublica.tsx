@@ -359,13 +359,16 @@ const LojaPublica: React.FC = () => {
       const card: BingoCardGrid = JSON.parse(purchasedCardData.cardData);
       const layout: CanvasLayout = JSON.parse(purchasedCardData.layoutData);
       const pdfBlob = await exportBingoCardsPDF([card], layout, `cartela-${purchasedCardData.numeroCartela}`, purchasedCardData.buyerData);
-      // Email PDF if buyer email is available
-      const emailDest = compradorInfo?.email || compradorEmail.trim();
+      // Email PDF to logged-in buyer
+      const emailDest = compradorInfo?.email;
       if (emailDest && pdfBlob) {
         const reader = new FileReader();
         reader.onloadend = () => {
-          const base64 = (reader.result as string).split(',')[1];
-          handleEmailPDF(base64, emailDest, purchasedCardData.buyerData.nome || '', String(purchasedCardData.numeroCartela));
+          const result = reader.result as string;
+          const commaIdx = result.indexOf(',');
+          if (commaIdx !== -1) {
+            handleEmailPDF(result.slice(commaIdx + 1), emailDest, purchasedCardData.buyerData.nome || '', String(purchasedCardData.numeroCartela));
+          }
         };
         reader.readAsDataURL(pdfBlob);
       }
@@ -385,13 +388,16 @@ const LojaPublica: React.FC = () => {
       const cards: BingoCardGrid[] = purchasedMultiData.cartelas.map(c => JSON.parse(c.card_data));
       const nums = purchasedMultiData.cartelas.map(c => c.numero_cartela).join('-');
       const pdfBlob = await exportBingoCardsPDF(cards, layout, `cartelas-${nums}`, purchasedMultiData.buyerData);
-      // Email PDF if buyer email is available
-      const emailDest = compradorInfo?.email || cartCompradorEmail.trim();
+      // Email PDF to logged-in buyer
+      const emailDest = compradorInfo?.email;
       if (emailDest && pdfBlob) {
         const reader = new FileReader();
         reader.onloadend = () => {
-          const base64 = (reader.result as string).split(',')[1];
-          handleEmailPDF(base64, emailDest, purchasedMultiData.buyerData.nome || '', nums.replace(/-/g, ', '));
+          const result = reader.result as string;
+          const commaIdx = result.indexOf(',');
+          if (commaIdx !== -1) {
+            handleEmailPDF(result.slice(commaIdx + 1), emailDest, purchasedMultiData.buyerData.nome || '', nums.replace(/-/g, ', '));
+          }
         };
         reader.readAsDataURL(pdfBlob);
       }
