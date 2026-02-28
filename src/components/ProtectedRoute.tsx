@@ -6,9 +6,10 @@ import { Loader2 } from 'lucide-react';
 interface ProtectedRouteProps {
   children: React.ReactNode;
   requireAdmin?: boolean;
+  skipPlanCheck?: boolean;
 }
 
-const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requireAdmin = false }) => {
+const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requireAdmin = false, skipPlanCheck = false }) => {
   const { isAuthenticated, isLoading, user } = useAuth();
 
   if (isLoading) {
@@ -27,7 +28,13 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requireAdmin 
     return <Navigate to="/" replace />;
   }
 
+  // Non-admin users without a plan or lifetime access must subscribe
+  if (!skipPlanCheck && user?.role !== 'admin' && !user?.gratuidade_vitalicia && !user?.plano_id) {
+    return <Navigate to="/planos" replace />;
+  }
+
   return <>{children}</>;
 };
 
 export default ProtectedRoute;
+
