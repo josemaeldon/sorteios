@@ -809,12 +809,17 @@ app.post('/api', checkBasicAuth, async (req, res) => {
       case 'createSorteio': {
         const premiosCreate = data.premios || (data.premio ? [data.premio] : []);
         const premioCreate = premiosCreate[0] || '';
+
+        // Admin can create sorteios on behalf of another user
+        const sorteioOwnerId = (data.authenticated_role === 'admin' && data.target_user_id)
+          ? data.target_user_id
+          : data.authenticated_user_id;
         
         result = await client.query(`
           INSERT INTO sorteios (user_id, nome, data_sorteio, premio, premios, valor_cartela, quantidade_cartelas, status)
           VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8)
           RETURNING *
-        `, [data.authenticated_user_id, data.nome, data.data_sorteio, premioCreate, JSON.stringify(premiosCreate), data.valor_cartela, data.quantidade_cartelas, data.status]);
+        `, [sorteioOwnerId, data.nome, data.data_sorteio, premioCreate, JSON.stringify(premiosCreate), data.valor_cartela, data.quantidade_cartelas, data.status]);
         
         const newSorteioId = result.rows[0].id;
         const quantidadeCartelas = Number(data.quantidade_cartelas || 0);
