@@ -65,6 +65,17 @@ async function initSchema() {
             updated_at TIMESTAMP DEFAULT NOW() ON UPDATE NOW() NOT NULL
           )
         `);
+        // Create cartelas_validadas table (MySQL)
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS cartelas_validadas (
+            id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+            sorteio_id CHAR(36) NOT NULL,
+            numero INT NOT NULL,
+            comprador_nome VARCHAR(255),
+            created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+            UNIQUE KEY uq_validada_sorteio_numero (sorteio_id, numero)
+          )
+        `);
       } else {
         await client.query(`
           CREATE TABLE IF NOT EXISTS public.sorteio_compartilhado (
@@ -89,6 +100,17 @@ async function initSchema() {
             cards_data TEXT NOT NULL,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
+          )
+        `);
+        // Create cartelas_validadas table (PostgreSQL)
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS public.cartelas_validadas (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            sorteio_id UUID NOT NULL REFERENCES public.sorteios(id) ON DELETE CASCADE,
+            numero INT NOT NULL,
+            comprador_nome VARCHAR(255),
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+            UNIQUE(sorteio_id, numero)
           )
         `);
       }
@@ -750,11 +772,66 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         return res.json({ data: [{ success: true, numero: nextNum }] });
       }
 
+      // ================== CARTELAS VALIDADAS ==================
+      case 'getCartelasValidadas': {
+        result = await client.query(
+          'SELECT id, numero, comprador_nome, created_at FROM cartelas_validadas WHERE sorteio_id = $1 ORDER BY created_at ASC',
+          [data.sorteio_id]
+        );
+        return res.json({ data: result.rows });
+      }
+
+      case 'validarCartela': {
+        // data.sorteio_id, data.numero, data.comprador_nome (optional)
+        const numero = Number(data.numero);
+        if (!numero || numero < 1) {
+          return res.status(400).json({ error: 'Número de cartela inválido' });
+        }
+        // Verify cartela exists for this sorteio
+        const cartelaCheck = await client.query(
+          'SELECT numero FROM cartelas WHERE sorteio_id = $1 AND numero = $2',
+          [data.sorteio_id, numero]
+        );
+        if (cartelaCheck.rows.length === 0) {
+          return res.status(404).json({ error: `Cartela ${numero} não encontrada neste sorteio` });
+        }
+        // Upsert validation record
+        if (dbConfig.type === 'mysql') {
+          await client.query(
+            `INSERT INTO cartelas_validadas (id, sorteio_id, numero, comprador_nome) VALUES (UUID(), $1, $2, $3)
+             ON DUPLICATE KEY UPDATE comprador_nome = VALUES(comprador_nome)`,
+            [data.sorteio_id, numero, data.comprador_nome || null]
+          );
+        } else {
+          await client.query(
+            `INSERT INTO cartelas_validadas (sorteio_id, numero, comprador_nome)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (sorteio_id, numero) DO UPDATE SET comprador_nome = EXCLUDED.comprador_nome`,
+            [data.sorteio_id, numero, data.comprador_nome || null]
+          );
+        }
+        return res.json({ data: [{ success: true, numero }] });
+      }
+
+      case 'removerValidacaoCartela': {
+        // data.sorteio_id, data.numero
+        await client.query(
+          'DELETE FROM cartelas_validadas WHERE sorteio_id = $1 AND numero = $2',
+          [data.sorteio_id, Number(data.numero)]
+        );
+        return res.json({ data: [{ success: true }] });
+      }
+
       case 'verificarVencedor': {
         // data.sorteio_id, data.numeros_sorteados: number[]
+        // Only considers validated cartelas (cartelas_validadas table)
         const numerosSet = new Set((data.numeros_sorteados || []).map(Number));
         const cartelasResult = await client.query(
-          `SELECT numero, numeros_grade FROM cartelas WHERE sorteio_id = $1 AND numeros_grade IS NOT NULL AND status = 'vendida' ORDER BY numero`,
+          `SELECT c.numero, c.numeros_grade
+           FROM cartelas c
+           INNER JOIN cartelas_validadas cv ON cv.sorteio_id = c.sorteio_id AND cv.numero = c.numero
+           WHERE c.sorteio_id = $1 AND c.numeros_grade IS NOT NULL
+           ORDER BY c.numero`,
           [data.sorteio_id]
         );
         const vencedoras = [];
