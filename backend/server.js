@@ -2106,7 +2106,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
 
       // ================== LOJA PÚBLICA ==================
       case 'getLojaPublica': {
-        // Public: get user's store by user_id
+        // Public: get user's store by user_id, with pagination
         const ownerResult = await client.query(
           'SELECT id, nome, titulo_sistema FROM usuarios WHERE id = $1 AND ativo = true',
           [data.user_id]
@@ -2115,11 +2115,26 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           return res.status(404).json({ error: 'Loja não encontrada.' });
         }
         const owner = ownerResult.rows[0];
-        const lojaResult = await client.query(
-          'SELECT id, numero_cartela, preco, status, card_data, layout_data FROM loja_cartelas WHERE user_id = $1 AND status = $2 ORDER BY numero_cartela ASC',
+        const PAGE_SIZE = 10;
+        const page = Math.max(1, parseInt(data.page) || 1);
+        const offset = (page - 1) * PAGE_SIZE;
+        const countResult = await client.query(
+          'SELECT COUNT(*) as total FROM loja_cartelas WHERE user_id = $1 AND status = $2',
           [data.user_id, 'disponivel']
         );
-        return res.json({ owner: { nome: owner.nome, titulo_sistema: owner.titulo_sistema }, cartelas: lojaResult.rows });
+        const total = parseInt(countResult.rows[0].total) || 0;
+        const lojaResult = await client.query(
+          'SELECT id, numero_cartela, preco, status, card_data, layout_data FROM loja_cartelas WHERE user_id = $1 AND status = $2 ORDER BY numero_cartela ASC LIMIT $3 OFFSET $4',
+          [data.user_id, 'disponivel', PAGE_SIZE, offset]
+        );
+        return res.json({
+          owner: { nome: owner.nome, titulo_sistema: owner.titulo_sistema },
+          cartelas: lojaResult.rows,
+          total,
+          page,
+          page_size: PAGE_SIZE,
+          total_pages: Math.ceil(total / PAGE_SIZE),
+        });
       }
 
       case 'getMinhaLoja': {
@@ -2645,17 +2660,18 @@ ${numerosCartelas ? `<p><strong>Cartelas:</strong> ${numerosCartelas}</p>` : ''}
           return res.json({ success: true });
         }
         const compRecup = compRecupResult.rows[0];
-        const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+        const resetCode = crypto.randomInt(100000, 1000000).toString();
         const resetExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
         await client.query(
           'UPDATE loja_compradores SET reset_token = $1, reset_token_expires = $2 WHERE id = $3',
           [resetCode, resetExpires, compRecup.id]
         );
+        const safeNome = String(compRecup.nome).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         await sendEmail(client, {
           to: emailRecup,
           subject: 'Código de recuperação de senha',
           text: `Olá, ${compRecup.nome}! Seu código de recuperação de senha é: ${resetCode}. Válido por 15 minutos.`,
-          html: `<p>Olá, <strong>${compRecup.nome}</strong>!</p><p>Seu código de recuperação de senha é:</p><h2 style="letter-spacing:4px">${resetCode}</h2><p>Válido por 15 minutos.</p>`,
+          html: `<p>Olá, <strong>${safeNome}</strong>!</p><p>Seu código de recuperação de senha é:</p><h2 style="letter-spacing:4px">${resetCode}</h2><p>Válido por 15 minutos.</p>`,
         });
         return res.json({ success: true });
       }

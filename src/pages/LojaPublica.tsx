@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { Loader2, ShoppingCart, Ticket, CheckCircle, XCircle, Download, ChevronDown, ChevronUp, X, LogIn, LogOut, UserPlus, History, Eye, EyeOff } from 'lucide-react';
+import { Loader2, ShoppingCart, Ticket, CheckCircle, XCircle, Download, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, X, LogIn, LogOut, UserPlus, History, Eye, EyeOff } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -179,6 +179,12 @@ const LojaPublica: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [owner, setOwner] = useState<{ nome: string; titulo_sistema: string } | null>(null);
   const [cartelas, setCartelas] = useState<LojaCartela[]>([]);
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCartelas, setTotalCartelas] = useState(0);
+  // Cart cache: keeps full LojaCartela data for items added to cart across pages
+  const [cartCache, setCartCache] = useState<Map<string, LojaCartela>>(new Map());
 
   // Payment confirmation state
   const paymentSuccess = searchParams.get('payment') === 'success';
@@ -245,10 +251,10 @@ const LojaPublica: React.FC = () => {
   const [isLoadingHistorico, setIsLoadingHistorico] = useState(false);
   const [isEmailingPDF, setIsEmailingPDF] = useState(false);
 
-  // Derived cart data
+  // Derived cart data — use cartCache so items from other pages are included
   const cartItems = React.useMemo(
-    () => cartelas.filter(c => cartIds.has(c.id)),
-    [cartelas, cartIds]
+    () => Array.from(cartIds).map(id => cartCache.get(id)).filter((c): c is LojaCartela => !!c),
+    [cartCache, cartIds]
   );
   const cartTotal = React.useMemo(
     () => cartItems.reduce((sum, c) => sum + Number(c.preco), 0),
@@ -270,12 +276,16 @@ const LojaPublica: React.FC = () => {
     [buyingCartela]
   );
 
-  const loadLoja = useCallback(async () => {
+  const loadLoja = useCallback(async (page = 1) => {
     if (!userId) return;
+    setIsLoading(true);
     try {
-      const result = await callApi('getLojaPublica', { user_id: userId });
+      const result = await callApi('getLojaPublica', { user_id: userId, page });
       setOwner(result.owner);
       setCartelas(result.cartelas || []);
+      setCurrentPage(result.page || 1);
+      setTotalPages(result.total_pages || 1);
+      setTotalCartelas(result.total || 0);
     } catch (err: any) {
       setError(err.message || 'Loja não encontrada.');
     } finally {
@@ -433,12 +443,14 @@ const LojaPublica: React.FC = () => {
       const next = new Set(prev);
       if (next.has(cartela.id)) {
         next.delete(cartela.id);
+        setCartCache(m => { const n = new Map(m); n.delete(cartela.id); return n; });
       } else {
         if (next.size >= CART_MAX_ITEMS) {
           // Feedback handled via the floating bar limit message; silently ignore
           return prev;
         }
         next.add(cartela.id);
+        setCartCache(m => new Map(m).set(cartela.id, cartela));
       }
       return next;
     });
@@ -707,7 +719,7 @@ const LojaPublica: React.FC = () => {
             <p className="text-xl font-semibold text-gray-700">Loja não encontrada</p>
             <p className="text-gray-500 mt-2">{error}</p>
           </div>
-        ) : cartelas.length === 0 ? (
+        ) : totalCartelas === 0 ? (
           <div className="text-center py-16">
             <Ticket className="w-16 h-16 mx-auto mb-4 text-gray-300" />
             <p className="text-xl font-semibold text-gray-600">Nenhuma cartela disponível</p>
@@ -716,7 +728,7 @@ const LojaPublica: React.FC = () => {
         ) : (
           <>
             <p className="text-center text-gray-600 mb-2 text-lg">
-              {cartelas.length} {cartelas.length === 1 ? 'cartela disponível' : 'cartelas disponíveis'}
+              {totalCartelas} {totalCartelas === 1 ? 'cartela disponível' : 'cartelas disponíveis'}
             </p>
             <p className="text-center text-gray-400 mb-6 text-sm">
               Clique no número da cartela para ver os 25 números. Use o ícone <ShoppingCart className="w-3 h-3 inline" /> para adicionar várias ao carrinho.
@@ -732,6 +744,28 @@ const LojaPublica: React.FC = () => {
                 />
               ))}
             </div>
+            {/* Pagination controls */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-center gap-3 mt-8">
+                <button
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300 text-sm text-gray-600 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  onClick={() => { const p = currentPage - 1; setCurrentPage(p); loadLoja(p); }}
+                  disabled={currentPage <= 1 || isLoading}
+                >
+                  <ChevronLeft className="w-4 h-4" /> Anterior
+                </button>
+                <span className="text-sm text-gray-600">
+                  Página <strong>{currentPage}</strong> de <strong>{totalPages}</strong>
+                </span>
+                <button
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300 text-sm text-gray-600 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  onClick={() => { const p = currentPage + 1; setCurrentPage(p); loadLoja(p); }}
+                  disabled={currentPage >= totalPages || isLoading}
+                >
+                  Próxima <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            )}
           </>
         )}
       </div>
@@ -766,7 +800,7 @@ const LojaPublica: React.FC = () => {
               </Button>
               <button
                 className="text-white/70 hover:text-white flex-shrink-0"
-                onClick={() => setCartIds(new Set())}
+                onClick={() => { setCartIds(new Set()); setCartCache(new Map()); }}
                 title="Limpar carrinho"
               >
                 <X className="w-4 h-4" />
