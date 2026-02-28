@@ -677,47 +677,49 @@ const DrawTab: React.FC = () => {
                 </div>
                 
                 {isFullscreen && (
-                  <div className="mt-8 space-y-6 flex-shrink-0">
-                    <div className="flex justify-center gap-4">
-                      <Button
-                        onClick={drawNumber}
-                        disabled={isDrawing || remainingNumbers.length === 0}
-                        size="lg"
-                        className="gap-2 text-xl px-12 py-8 h-auto"
-                      >
-                        <Shuffle className="w-8 h-8" />
-                        Sortear Próximo
-                      </Button>
-                    </div>
-                    
-                    {drawnNumbers.length > 0 && (
-                      <div className="bg-card rounded-lg p-6">
-                        <div className="flex items-center justify-between mb-4">
-                          <h3 className="text-2xl font-bold">Números Sorteados</h3>
-                          <span className="text-lg text-muted-foreground">
-                            {drawnNumbers.length} / {availableNumbers.length}
-                          </span>
-                        </div>
-                        <div className="flex flex-wrap gap-3 max-h-[200px] overflow-y-auto">
-                          {[...drawnNumbers].sort((a, b) => a - b).map((num) => (
-                            <div
-                              key={num}
-                              className={cn(
-                                "flex items-center justify-center w-20 h-20 rounded-lg font-bold text-2xl border-2 transition-all duration-300",
-                                num === currentNumber && !isDrawing
-                                  ? "bg-primary text-primary-foreground border-primary scale-110"
-                                  : "bg-muted text-foreground border-border"
-                              )}
-                            >
-                              {num}
-                            </div>
-                          ))}
-                        </div>
+                  <div className="mt-8 flex gap-6 flex-shrink-0 items-start">
+                    <div className="flex-1 space-y-6">
+                      <div className="flex justify-center gap-4">
+                        <Button
+                          onClick={drawNumber}
+                          disabled={isDrawing || remainingNumbers.length === 0}
+                          size="lg"
+                          className="gap-2 text-xl px-12 py-8 h-auto"
+                        >
+                          <Shuffle className="w-8 h-8" />
+                          Sortear Próximo
+                        </Button>
                       </div>
-                    )}
+                    
+                      {drawnNumbers.length > 0 && (
+                        <div className="bg-card rounded-lg p-6">
+                          <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-2xl font-bold">Números Sorteados</h3>
+                            <span className="text-lg text-muted-foreground">
+                              {drawnNumbers.length} / {availableNumbers.length}
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap gap-3 max-h-[200px] overflow-y-auto">
+                            {[...drawnNumbers].sort((a, b) => a - b).map((num) => (
+                              <div
+                                key={num}
+                                className={cn(
+                                  "flex items-center justify-center w-20 h-20 rounded-lg font-bold text-2xl border-2 transition-all duration-300",
+                                  num === currentNumber && !isDrawing
+                                    ? "bg-primary text-primary-foreground border-primary scale-110"
+                                    : "bg-muted text-foreground border-border"
+                                )}
+                              >
+                                {num}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
 
                     {topScoringCartelas.length > 0 && (
-                      <div className="bg-card rounded-lg p-6">
+                      <div className="w-96 flex-shrink-0 bg-card rounded-lg p-6">
                         <h3 className="text-2xl font-bold flex items-center gap-2 mb-4">
                           <Trophy className="w-6 h-6 text-yellow-500" />
                           Top 10 Cartelas
@@ -729,9 +731,14 @@ const DrawTab: React.FC = () => {
                               <span className="text-lg font-semibold text-primary w-20">{entry.score} pts</span>
                               <div className="flex flex-wrap gap-2">
                                 {entry.cartelas.map(({ numero, nome }) => (
-                                  <span key={numero} className="px-3 py-1 rounded bg-muted text-foreground text-sm font-mono">
+                                  <button
+                                    key={numero}
+                                    onClick={() => handleCartelaClick(numero, nome)}
+                                    aria-label={`Ver números da cartela ${numero.toString().padStart(3, '0')}${nome ? ` - ${nome}` : ''}`}
+                                    className="px-3 py-1 rounded bg-muted text-foreground text-sm font-mono hover:bg-primary hover:text-primary-foreground transition-colors cursor-pointer"
+                                  >
                                     {numero.toString().padStart(3, '0')}{nome ? ` - ${nome}` : ''}
-                                  </span>
+                                  </button>
                                 ))}
                               </div>
                             </div>
