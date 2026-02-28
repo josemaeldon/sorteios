@@ -62,7 +62,7 @@ app.post('/stripe-webhook', express.raw({ type: 'application/json' }), async (re
       event = JSON.parse(req.body.toString());
     }
 
-    if (event.type === 'checkout.session.completed') {
+    if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.async_payment_succeeded') {
       const session = event.data.object;
       const userId = session.metadata && session.metadata.user_id;
       const planoId = session.metadata && session.metadata.plano_id;
