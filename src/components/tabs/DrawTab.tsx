@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useBingo } from '@/contexts/BingoContext';
-import { RodadaSorteio } from '@/types/bingo';
+import { RodadaSorteio, CartelaValidada } from '@/types/bingo';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -50,7 +50,7 @@ const ANIMATION_INTERVAL_MS = 100;
 const FULLSCREEN_FONT_SIZE_DEFAULT = 300;
 
 const DrawTab: React.FC = () => {
-  const { sorteioAtivo, cartelas } = useBingo();
+  const { sorteioAtivo, cartelas, cartelasValidadas, loadCartelasValidadas } = useBingo();
   const { toast } = useToast();
   
   // Rodadas state
@@ -87,6 +87,7 @@ const DrawTab: React.FC = () => {
   useEffect(() => {
     if (sorteioAtivo) {
       loadRodadas();
+      loadCartelasValidadas();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sorteioAtivo?.id]);
@@ -242,17 +243,29 @@ const DrawTab: React.FC = () => {
     try {
       setSelectedRodada(rodada);
       setShowDrawing(true);
-      
-      // Build available numbers from sold cartelas' grids only
-      const soldCartelas = cartelas.filter(c => c.status === 'vendida' && c.numeros_grade && c.numeros_grade.length > 0);
+
+      // Fetch fresh validated cartelas and use them to build the number pool
+      let freshValidadas: CartelaValidada[] = cartelasValidadas;
+      try {
+        const validadasResult = await callApi('getCartelasValidadas', { sorteio_id: sorteioAtivo!.id });
+        freshValidadas = validadasResult.data || [];
+      } catch (err) {
+        console.error('Error fetching validated cartelas, using cached data:', err);
+      }
+
+      // Build available numbers from validated cartelas' grids only
+      const validadosNums = freshValidadas.map((cv: CartelaValidada) => cv.numero);
+      const validatedWithGrade = cartelas.filter(
+        c => validadosNums.includes(c.numero) && c.numeros_grade && c.numeros_grade.length > 0
+      );
       let poolNumbers: number[];
-      if (soldCartelas.length > 0) {
+      if (validatedWithGrade.length > 0) {
         const allNums = new Set<number>(
-          soldCartelas.flatMap(c => c.numeros_grade!.flatMap(grid => grid.filter(n => n !== 0)))
+          validatedWithGrade.flatMap(c => c.numeros_grade!.flatMap(grid => grid.filter(n => n !== 0)))
         );
         poolNumbers = Array.from(allNums).filter(n => n >= rodada.range_start && n <= rodada.range_end).sort((a, b) => a - b);
       } else {
-        // Fallback to full range if no sold cartelas found
+        // Fallback to full range if no validated cartelas with grids found
         poolNumbers = [];
         for (let i = rodada.range_start; i <= rodada.range_end; i++) {
           poolNumbers.push(i);
@@ -445,14 +458,17 @@ const DrawTab: React.FC = () => {
     loadRodadas();
   };
 
-  // Compute top-5 scoring cartelas: sold cartelas sorted by how many drawn numbers they contain
+  // Compute top-5 scoring cartelas: validated cartelas sorted by how many drawn numbers they contain
   const topScoringCartelas = useMemo(() => {
     if (drawnNumbers.length === 0) return [];
     const drawnSet = new Set(drawnNumbers);
-    const soldWithGrade = cartelas.filter(c => c.status === 'vendida' && c.numeros_grade && c.numeros_grade.length > 0);
-    if (soldWithGrade.length === 0) return [];
+    const validadosNums = new Set(cartelasValidadas.map(cv => cv.numero));
+    const validatedWithGrade = cartelas.filter(
+      c => validadosNums.has(c.numero) && c.numeros_grade && c.numeros_grade.length > 0
+    );
+    if (validatedWithGrade.length === 0) return [];
 
-    const scored = soldWithGrade.map(c => {
+    const scored = validatedWithGrade.map(c => {
       const allNums = c.numeros_grade!.flatMap(g => g.filter(n => n !== 0));
       const score = allNums.filter(n => drawnSet.has(n)).length;
       return { numero: c.numero, score };
@@ -475,7 +491,7 @@ const DrawTab: React.FC = () => {
       }
     }
     return result;
-  }, [drawnNumbers, cartelas]);
+  }, [drawnNumbers, cartelas, cartelasValidadas]);
 
   if (!sorteioAtivo) {
     return (
@@ -534,7 +550,7 @@ const DrawTab: React.FC = () => {
             </div>
             <h2 className="text-3xl font-bold text-foreground">{selectedRodada.nome}</h2>
             <p className="text-muted-foreground mt-1">
-              Faixa: {selectedRodada.range_start} a {selectedRodada.range_end} | Sorteados: {drawnNumbers.length} | Restantes: {remainingNumbers.length}
+              Faixa: {selectedRodada.range_start} a {selectedRodada.range_end} | Cartelas validadas: {cartelasValidadas.length} | Sorteados: {drawnNumbers.length} | Restantes: {remainingNumbers.length}
             </p>
           </div>
           <div className="flex gap-2 flex-wrap">
