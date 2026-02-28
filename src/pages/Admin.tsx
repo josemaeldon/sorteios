@@ -30,6 +30,8 @@ const userSchema = z.object({
   titulo_sistema: z.string().min(1, 'Título do sistema é obrigatório').max(100),
 });
 
+const NO_PLAN_VALUE = 'none';
+
 const planSchema = z.object({
   nome: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres').max(100),
   valor: z.coerce.number().min(0, 'Valor deve ser maior ou igual a zero'),
@@ -210,14 +212,14 @@ const Admin: React.FC = () => {
 
   const handleOpenUserPlanModal = (u: User) => {
     setSelectedUserForPlan(u);
-    setSelectedPlanId(u.plano_id || '');
+    setSelectedPlanId(u.plano_id || NO_PLAN_VALUE);
     setIsUserPlanModalOpen(true);
   };
 
   const handleAssignUserPlan = async () => {
     if (!selectedUserForPlan) return;
     setIsSubmittingUserPlan(true);
-    await assignUserPlan(selectedUserForPlan.id, selectedPlanId || null);
+    await assignUserPlan(selectedUserForPlan.id, selectedPlanId === NO_PLAN_VALUE ? null : selectedPlanId);
     setIsSubmittingUserPlan(false);
     setIsUserPlanModalOpen(false);
     loadUsers();
@@ -1054,7 +1056,7 @@ const Admin: React.FC = () => {
                   <SelectValue placeholder="Sem plano atribuído" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Sem plano</SelectItem>
+                  <SelectItem value={NO_PLAN_VALUE}>Sem plano</SelectItem>
                   {planos.map((p) => (
                     <SelectItem key={p.id} value={p.id}>
                       {p.nome} {Number(p.valor) > 0 ? `— R$ ${Number(p.valor).toFixed(2)}` : '(Gratuito)'}
@@ -1063,7 +1065,7 @@ const Admin: React.FC = () => {
                 </SelectContent>
               </Select>
             </div>
-            {selectedPlanId && (
+            {selectedPlanId && selectedPlanId !== NO_PLAN_VALUE && (
               <p className="text-xs text-muted-foreground">
                 O plano será atribuído a partir de hoje e vencerá todo mês no mesmo dia.
               </p>
