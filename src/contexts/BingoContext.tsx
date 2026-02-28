@@ -48,7 +48,7 @@ interface BingoContextType {
   
   // CRUD Operations - Sorteios
   loadSorteios: () => Promise<void>;
-  addSorteio: (sorteio: Omit<Sorteio, 'id' | 'created_at' | 'updated_at'>) => Promise<void>;
+  addSorteio: (sorteio: Omit<Sorteio, 'id' | 'created_at' | 'updated_at'>, targetUserId?: string) => Promise<void>;
   updateSorteio: (id: string, sorteio: Partial<Sorteio>) => Promise<void>;
   deleteSorteio: (id: string) => Promise<void>;
   
@@ -166,12 +166,12 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   }, [user, callApi, toast]);
 
-  const addSorteio = useCallback(async (sorteio: Omit<Sorteio, 'id' | 'created_at' | 'updated_at'>) => {
+  const addSorteio = useCallback(async (sorteio: Omit<Sorteio, 'id' | 'created_at' | 'updated_at'>, targetUserId?: string) => {
     if (!user) return;
     
     try {
       setIsLoading(true);
-      await callApi('createSorteio', { ...sorteio, user_id: user.id });
+      await callApi('createSorteio', { ...sorteio, user_id: user.id, ...(targetUserId ? { target_user_id: targetUserId } : {}) });
       toast({ title: "Sorteio criado com sucesso!" });
       await loadSorteios();
     } catch (error: any) {

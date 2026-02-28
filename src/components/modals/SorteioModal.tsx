@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useBingo } from '@/contexts/BingoContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { User } from '@/types/auth';
 import { Sorteio } from '@/types/bingo';
 import { gerarId } from '@/lib/utils/formatters';
 import { useToast } from '@/hooks/use-toast';
@@ -30,8 +32,13 @@ interface SorteioModalProps {
 
 const SorteioModal: React.FC<SorteioModalProps> = ({ isOpen, onClose, editingId }) => {
   const { sorteios, addSorteio, updateSorteio } = useBingo();
+  const { user, getAllUsers } = useAuth();
   const { toast } = useToast();
   
+  const isAdmin = user?.role === 'admin';
+  const [usuarios, setUsuarios] = useState<User[]>([]);
+  const [targetUserId, setTargetUserId] = useState('');
+
   const [formData, setFormData] = useState({
     nome: '',
     data_sorteio: '',
@@ -43,6 +50,16 @@ const SorteioModal: React.FC<SorteioModalProps> = ({ isOpen, onClose, editingId 
 
   const [isCreating, setIsCreating] = useState(false);
   const [progress, setProgress] = useState(0);
+
+  // Load active users list for admin and reset targetUserId on close
+  useEffect(() => {
+    if (isOpen && isAdmin) {
+      getAllUsers().then(data => setUsuarios(data.filter(u => u.ativo)));
+    }
+    if (!isOpen) {
+      setTargetUserId('');
+    }
+  }, [isOpen, isAdmin, getAllUsers]);
 
   useEffect(() => {
     if (editingId) {
@@ -180,7 +197,7 @@ const SorteioModal: React.FC<SorteioModalProps> = ({ isOpen, onClose, editingId 
       const progressInterval = simulateProgress(quantidade);
       
       try {
-        await addSorteio(sorteioData);
+        await addSorteio(sorteioData, isAdmin && targetUserId ? targetUserId : undefined);
         clearInterval(progressInterval);
         setProgress(100);
         
@@ -239,6 +256,24 @@ const SorteioModal: React.FC<SorteioModalProps> = ({ isOpen, onClose, editingId 
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {isAdmin && !editingId && (
+            <div className="space-y-2">
+              <Label htmlFor="target_user">Usuário Proprietário *</Label>
+              <Select value={targetUserId} onValueChange={setTargetUserId}>
+                <SelectTrigger id="target_user">
+                  <SelectValue placeholder="Selecione um usuário" />
+                </SelectTrigger>
+                <SelectContent>
+                  {usuarios.map(u => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.nome} ({u.email})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           <div className="space-y-2">
             <Label htmlFor="nome">Nome do Sorteio *</Label>
             <Input
@@ -356,7 +391,7 @@ const SorteioModal: React.FC<SorteioModalProps> = ({ isOpen, onClose, editingId 
           </div>
 
           <div className="flex gap-4 pt-4">
-            <Button type="submit" className="flex-1 gap-2">
+            <Button type="submit" className="flex-1 gap-2" disabled={isAdmin && !editingId && !targetUserId}>
               <Save className="w-4 h-4" />
               {editingId ? 'Salvar Alterações' : 'Criar Sorteio'}
             </Button>

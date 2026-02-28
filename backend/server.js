@@ -698,7 +698,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         return res.json({ success: true });
       }
 
-
+      case 'getAllSorteiosAdmin':
         result = await client.query(`
           SELECT s.*, u.nome as owner_nome, u.email as owner_email
           FROM sorteios s
@@ -788,24 +788,38 @@ app.post('/api', checkBasicAuth, async (req, res) => {
 
       // ================== SORTEIOS ==================
       case 'getSorteios':
-        result = await client.query(
-          `SELECT DISTINCT s.* FROM sorteios s
-           LEFT JOIN sorteio_compartilhado sc ON sc.sorteio_id = s.id
-           WHERE s.user_id = $1 OR sc.user_id = $1
-           ORDER BY s.created_at DESC`,
-          [data.authenticated_user_id]
-        );
+        if (data.authenticated_role === 'admin') {
+          result = await client.query(
+            `SELECT s.*, u.nome as owner_nome, u.email as owner_email
+             FROM sorteios s
+             JOIN usuarios u ON s.user_id = u.id
+             ORDER BY s.created_at DESC`
+          );
+        } else {
+          result = await client.query(
+            `SELECT DISTINCT s.* FROM sorteios s
+             LEFT JOIN sorteio_compartilhado sc ON sc.sorteio_id = s.id
+             WHERE s.user_id = $1 OR sc.user_id = $1
+             ORDER BY s.created_at DESC`,
+            [data.authenticated_user_id]
+          );
+        }
         return res.json({ data: result.rows });
 
       case 'createSorteio': {
         const premiosCreate = data.premios || (data.premio ? [data.premio] : []);
         const premioCreate = premiosCreate[0] || '';
+
+        // Admin can create sorteios on behalf of another user
+        const sorteioOwnerId = (data.authenticated_role === 'admin' && data.target_user_id)
+          ? data.target_user_id
+          : data.authenticated_user_id;
         
         result = await client.query(`
           INSERT INTO sorteios (user_id, nome, data_sorteio, premio, premios, valor_cartela, quantidade_cartelas, status)
           VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8)
           RETURNING *
-        `, [data.authenticated_user_id, data.nome, data.data_sorteio, premioCreate, JSON.stringify(premiosCreate), data.valor_cartela, data.quantidade_cartelas, data.status]);
+        `, [sorteioOwnerId, data.nome, data.data_sorteio, premioCreate, JSON.stringify(premiosCreate), data.valor_cartela, data.quantidade_cartelas, data.status]);
         
         const newSorteioId = result.rows[0].id;
         const quantidadeCartelas = Number(data.quantidade_cartelas || 0);
