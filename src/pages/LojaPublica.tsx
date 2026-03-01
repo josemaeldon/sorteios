@@ -131,6 +131,10 @@ interface CompradorInfo {
   id: string;
   email: string;
   nome: string;
+  cpf?: string;
+  endereco?: string;
+  cidade?: string;
+  telefone?: string;
 }
 
 interface HistoricoItem {
@@ -235,6 +239,10 @@ const LojaPublica: React.FC = () => {
   const [authTab, setAuthTab] = useState<'login' | 'cadastro'>('login');
   const [authNome, setAuthNome] = useState('');
   const [authEmail, setAuthEmail] = useState('');
+  const [authCpf, setAuthCpf] = useState('');
+  const [authEndereco, setAuthEndereco] = useState('');
+  const [authCidade, setAuthCidade] = useState('');
+  const [authTelefone, setAuthTelefone] = useState('');
   const [authSenha, setAuthSenha] = useState('');
   const [authSenhaVis, setAuthSenhaVis] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -325,7 +333,7 @@ const LojaPublica: React.FC = () => {
     if (gateway === 'mp' && mpPaymentId && mpPaymentStatus === 'approved') {
       setConfirmingPayment(true);
       if (checkoutType === 'multi') {
-        callApi('confirmMercadoPagoCheckoutMultiCartela', { payment_id: mpPaymentId })
+        callApi('confirmMercadoPagoCheckoutMultiCartela', { payment_id: mpPaymentId, owner_user_id: userId })
           .then((result) => {
             if (result.success) {
               const count = result.cartelas?.length ?? 0;
@@ -351,7 +359,7 @@ const LojaPublica: React.FC = () => {
           })
           .finally(() => setConfirmingPayment(false));
       } else {
-        callApi('confirmMercadoPagoCheckoutCartela', { payment_id: mpPaymentId })
+        callApi('confirmMercadoPagoCheckoutCartela', { payment_id: mpPaymentId, owner_user_id: userId })
           .then((result) => {
             if (result.success) {
               setPaymentResult({ ok: true, message: `Cartela ${String(result.numero_cartela).padStart(3, '0')} comprada com sucesso! Obrigado${result.comprador_nome ? `, ${result.comprador_nome}` : ''}!` });
@@ -385,7 +393,7 @@ const LojaPublica: React.FC = () => {
     if (!sessionId) return;
     setConfirmingPayment(true);
     if (checkoutType === 'multi') {
-      callApi('confirmStripeCheckoutMultiCartela', { session_id: sessionId })
+      callApi('confirmStripeCheckoutMultiCartela', { session_id: sessionId, owner_user_id: userId })
         .then((result) => {
           if (result.success) {
             const count = result.cartelas?.length ?? 0;
@@ -411,7 +419,7 @@ const LojaPublica: React.FC = () => {
         })
         .finally(() => setConfirmingPayment(false));
     } else {
-      callApi('confirmStripeCheckoutCartela', { session_id: sessionId })
+      callApi('confirmStripeCheckoutCartela', { session_id: sessionId, owner_user_id: userId })
         .then((result) => {
           if (result.success) {
             setPaymentResult({ ok: true, message: `Cartela ${String(result.numero_cartela).padStart(3, '0')} comprada com sucesso! Obrigado${result.comprador_nome ? `, ${result.comprador_nome}` : ''}!` });
@@ -497,12 +505,18 @@ const LojaPublica: React.FC = () => {
   };
 
   const handleBuy = (cartela: LojaCartela) => {
+    if (!compradorInfo) {
+      setAuthTab('login');
+      setAuthError(null);
+      setShowAuthModal(true);
+      return;
+    }
     setCheckoutError(null);
-    setCompradorNome(compradorInfo?.nome || '');
-    setCompradorEmail(compradorInfo?.email || '');
-    setCompradorEndereco('');
-    setCompradorCidade('');
-    setCompradorTelefone('');
+    setCompradorNome(compradorInfo.nome || '');
+    setCompradorEmail(compradorInfo.email || '');
+    setCompradorEndereco(compradorInfo.endereco || '');
+    setCompradorCidade(compradorInfo.cidade || '');
+    setCompradorTelefone(compradorInfo.telefone || '');
     setBuyingCartela(cartela);
   };
 
@@ -601,15 +615,24 @@ const LojaPublica: React.FC = () => {
       setAuthError('Preencha email e senha.');
       return;
     }
-    if (authTab === 'cadastro' && !authNome.trim()) {
-      setAuthError('Informe seu nome.');
-      return;
+    if (authTab === 'cadastro') {
+      if (!authNome.trim()) { setAuthError('Informe seu nome.'); return; }
+      if (!authCpf.trim()) { setAuthError('Informe seu CPF.'); return; }
+      if (!authEndereco.trim()) { setAuthError('Informe seu endereço.'); return; }
+      if (!authCidade.trim()) { setAuthError('Informe sua cidade.'); return; }
+      if (!authTelefone.trim()) { setAuthError('Informe seu telefone.'); return; }
     }
     setIsAuthSubmitting(true);
     try {
       const action = authTab === 'login' ? 'loginComprador' : 'cadastrarComprador';
       const payload: Record<string, string> = { email: authEmail.trim(), senha: authSenha };
-      if (authTab === 'cadastro') payload.nome = authNome.trim();
+      if (authTab === 'cadastro') {
+        payload.nome = authNome.trim();
+        payload.cpf = authCpf.trim();
+        payload.endereco = authEndereco.trim();
+        payload.cidade = authCidade.trim();
+        payload.telefone = authTelefone.trim();
+      }
       const result = await callApi(action, payload);
       if (result.error) { setAuthError(result.error); return; }
       const info: CompradorInfo = result.comprador;
@@ -619,6 +642,7 @@ const LojaPublica: React.FC = () => {
       localStorage.setItem(COMPRADOR_INFO_KEY, JSON.stringify(info));
       setShowAuthModal(false);
       setAuthNome(''); setAuthEmail(''); setAuthSenha('');
+      setAuthCpf(''); setAuthEndereco(''); setAuthCidade(''); setAuthTelefone('');
     } catch (err: any) {
       setAuthError(err.message || 'Erro ao autenticar.');
     } finally {
@@ -857,11 +881,17 @@ const LojaPublica: React.FC = () => {
               <Button
                 className="bg-white text-blue-900 hover:bg-blue-50 rounded-full h-8 px-4 text-sm font-bold flex-shrink-0"
                 onClick={() => {
-                  setCartCompradorNome(compradorInfo?.nome || '');
-                  setCartCompradorEmail(compradorInfo?.email || '');
-                  setCartCompradorEndereco('');
-                  setCartCompradorCidade('');
-                  setCartCompradorTelefone('');
+                  if (!compradorInfo) {
+                    setAuthTab('login');
+                    setAuthError(null);
+                    setShowAuthModal(true);
+                    return;
+                  }
+                  setCartCompradorNome(compradorInfo.nome || '');
+                  setCartCompradorEmail(compradorInfo.email || '');
+                  setCartCompradorEndereco(compradorInfo.endereco || '');
+                  setCartCompradorCidade(compradorInfo.cidade || '');
+                  setCartCompradorTelefone(compradorInfo.telefone || '');
                   setCartCheckoutError(null);
                   setShowCartModal(true);
                 }}
@@ -1063,7 +1093,7 @@ const LojaPublica: React.FC = () => {
 
       {/* Buyer auth modal */}
       <Dialog open={showAuthModal} onOpenChange={(open) => { if (!open) setShowAuthModal(false); }}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-sm max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <UserPlus className="w-5 h-5" />
@@ -1109,8 +1139,24 @@ const LojaPublica: React.FC = () => {
                 <Input value={authNome} onChange={(e) => setAuthNome(e.target.value)} placeholder="Seu nome completo" />
               </div>
               <div className="space-y-1.5">
+                <Label>CPF *</Label>
+                <Input value={authCpf} onChange={(e) => setAuthCpf(e.target.value)} placeholder="000.000.000-00" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Endereço *</Label>
+                <Input value={authEndereco} onChange={(e) => setAuthEndereco(e.target.value)} placeholder="Rua, número, complemento" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Cidade *</Label>
+                <Input value={authCidade} onChange={(e) => setAuthCidade(e.target.value)} placeholder="Sua cidade" />
+              </div>
+              <div className="space-y-1.5">
                 <Label>E-mail *</Label>
                 <Input type="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} placeholder="seu@email.com" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Telefone *</Label>
+                <Input type="tel" value={authTelefone} onChange={(e) => setAuthTelefone(e.target.value)} placeholder="(00) 00000-0000" />
               </div>
               <div className="space-y-1.5">
                 <Label>Senha *</Label>

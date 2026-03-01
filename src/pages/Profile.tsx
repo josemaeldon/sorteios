@@ -10,9 +10,20 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, User, Loader2, Save, Camera, X, Lock, Mail, Type, CreditCard, CheckCircle } from 'lucide-react';
+import { ArrowLeft, User, Loader2, Save, Camera, X, Lock, Mail, Type, CreditCard, CheckCircle, Settings, Users } from 'lucide-react';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
+
+interface LojaComprador {
+  nome: string;
+  email: string;
+  cpf?: string;
+  telefone?: string;
+  cidade?: string;
+  endereco?: string;
+  total_compras: number;
+  ultima_compra: string;
+}
 
 const profileSchema = z.object({
   nome: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres').max(100),
@@ -32,7 +43,7 @@ const passwordSchema = z.object({
 const Profile: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { user, updateProfile, isAuthenticated, getPublicPlanos, createStripeCheckout, refreshUser } = useAuth();
+  const { user, updateProfile, isAuthenticated, getPublicPlanos, createStripeCheckout, refreshUser, getUserConfiguracoes, updateUserConfiguracoes, getLojaCompradores } = useAuth();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -47,7 +58,19 @@ const Profile: React.FC = () => {
   const [checkoutLoadingId, setCheckoutLoadingId] = useState<string | null>(null);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const paymentSuccess = searchParams.get('payment') === 'success';
-  const defaultTab = searchParams.get('tab') === 'assinatura' ? 'assinatura' : 'dados';
+  const defaultTab = searchParams.get('tab') === 'assinatura' ? 'assinatura'
+    : searchParams.get('tab') === 'pagamentos' ? 'pagamentos'
+    : searchParams.get('tab') === 'clientes' ? 'clientes'
+    : 'dados';
+
+  // Payment gateway config state
+  const [gatewayConfig, setGatewayConfig] = useState<Record<string, string>>({});
+  const [isLoadingGateway, setIsLoadingGateway] = useState(false);
+  const [isSavingGateway, setIsSavingGateway] = useState(false);
+
+  // Store clients state
+  const [lojaCompradores, setLojaCompradores] = useState<LojaComprador[]>([]);
+  const [isLoadingCompradores, setIsLoadingCompradores] = useState(false);
 
   // After returning from a successful Stripe payment, refresh the user so the
   // new plano_id is reflected in the local state.
@@ -91,6 +114,29 @@ const Profile: React.FC = () => {
     const data = await getPublicPlanos();
     setPlanos(data);
     setIsLoadingPlanos(false);
+  };
+
+  const loadGatewayConfig = async () => {
+    setIsLoadingGateway(true);
+    const cfg = await getUserConfiguracoes();
+    setGatewayConfig(cfg);
+    setIsLoadingGateway(false);
+  };
+
+  const handleSaveGateway = async () => {
+    setIsSavingGateway(true);
+    const result = await updateUserConfiguracoes(gatewayConfig);
+    setIsSavingGateway(false);
+    if (!result.success) {
+      toast({ title: 'Erro', description: result.error || 'Erro ao salvar configurações.', variant: 'destructive' });
+    }
+  };
+
+  const loadLojaCompradores = async () => {
+    setIsLoadingCompradores(true);
+    const data = await getLojaCompradores();
+    setLojaCompradores(data);
+    setIsLoadingCompradores(false);
   };
 
   const handleCheckout = async (plano: Plan) => {
@@ -275,9 +321,9 @@ const Profile: React.FC = () => {
         </div>
       </header>
 
-      <main className="container mx-auto p-6 max-w-2xl">
+      <main className="container mx-auto p-6 max-w-3xl">
         <Tabs defaultValue={defaultTab}>
-          <TabsList className="mb-6">
+          <TabsList className="mb-6 flex flex-wrap h-auto gap-1">
             <TabsTrigger value="dados" className="flex items-center gap-2">
               <User className="h-4 w-4" />
               Dados Pessoais
@@ -285,6 +331,14 @@ const Profile: React.FC = () => {
             <TabsTrigger value="assinatura" className="flex items-center gap-2" onClick={loadPlanos}>
               <CreditCard className="h-4 w-4" />
               Minha Assinatura
+            </TabsTrigger>
+            <TabsTrigger value="pagamentos" className="flex items-center gap-2" onClick={loadGatewayConfig}>
+              <Settings className="h-4 w-4" />
+              Gateway de Pagamento
+            </TabsTrigger>
+            <TabsTrigger value="clientes" className="flex items-center gap-2" onClick={loadLojaCompradores}>
+              <Users className="h-4 w-4" />
+              Clientes da Loja
             </TabsTrigger>
           </TabsList>
 
@@ -642,6 +696,223 @@ const Profile: React.FC = () => {
                 </div>
               )}
             </div>
+          </TabsContent>
+
+          {/* ========== GATEWAY DE PAGAMENTO ========== */}
+          <TabsContent value="pagamentos" className="space-y-6">
+            {isLoadingGateway ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : (
+              <>
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Settings className="h-5 w-5" />
+                      Gateway de Pagamento
+                    </CardTitle>
+                    <CardDescription>
+                      Configure o gateway de pagamento da sua loja. As configurações são individuais e independentes de outros usuários.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="payment_gateway">Gateway ativo</Label>
+                      <select
+                        id="payment_gateway"
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        value={gatewayConfig['payment_gateway'] || 'stripe'}
+                        onChange={(e) => setGatewayConfig(prev => ({ ...prev, payment_gateway: e.target.value }))}
+                      >
+                        <option value="stripe">Stripe</option>
+                        <option value="mercado_pago">Mercado Pago</option>
+                      </select>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Stripe</CardTitle>
+                    <CardDescription>Chaves da sua conta Stripe para processamento de pagamentos com cartão.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="stripe_secret_key">Chave Secreta (Live)</Label>
+                      <Input
+                        id="stripe_secret_key"
+                        type="password"
+                        value={gatewayConfig['stripe_secret_key'] || ''}
+                        onChange={(e) => setGatewayConfig(prev => ({ ...prev, stripe_secret_key: e.target.value }))}
+                        placeholder="sk_live_..."
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="stripe_webhook_secret">Webhook Secret (opcional)</Label>
+                      <Input
+                        id="stripe_webhook_secret"
+                        type="password"
+                        value={gatewayConfig['stripe_webhook_secret'] || ''}
+                        onChange={(e) => setGatewayConfig(prev => ({ ...prev, stripe_webhook_secret: e.target.value }))}
+                        placeholder="whsec_..."
+                      />
+                    </div>
+                    <Separator />
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        id="stripe_sandbox_mode"
+                        checked={gatewayConfig['stripe_sandbox_mode'] === 'true'}
+                        onChange={(e) => setGatewayConfig(prev => ({ ...prev, stripe_sandbox_mode: e.target.checked ? 'true' : 'false' }))}
+                        className="h-4 w-4"
+                      />
+                      <Label htmlFor="stripe_sandbox_mode">Modo Sandbox (testes)</Label>
+                    </div>
+                    {gatewayConfig['stripe_sandbox_mode'] === 'true' && (
+                      <div className="space-y-2">
+                        <Label htmlFor="stripe_sandbox_secret_key">Chave Secreta (Sandbox)</Label>
+                        <Input
+                          id="stripe_sandbox_secret_key"
+                          type="password"
+                          value={gatewayConfig['stripe_sandbox_secret_key'] || ''}
+                          onChange={(e) => setGatewayConfig(prev => ({ ...prev, stripe_sandbox_secret_key: e.target.value }))}
+                          placeholder="sk_test_..."
+                        />
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Mercado Pago</CardTitle>
+                    <CardDescription>Credenciais da sua conta Mercado Pago.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="mp_access_token">Access Token (Live)</Label>
+                      <Input
+                        id="mp_access_token"
+                        type="password"
+                        value={gatewayConfig['mp_access_token'] || ''}
+                        onChange={(e) => setGatewayConfig(prev => ({ ...prev, mp_access_token: e.target.value }))}
+                        placeholder="APP_USR-..."
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="mp_public_key">Public Key (Live)</Label>
+                      <Input
+                        id="mp_public_key"
+                        value={gatewayConfig['mp_public_key'] || ''}
+                        onChange={(e) => setGatewayConfig(prev => ({ ...prev, mp_public_key: e.target.value }))}
+                        placeholder="APP_USR-..."
+                      />
+                    </div>
+                    <Separator />
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        id="mp_sandbox_mode"
+                        checked={gatewayConfig['mp_sandbox_mode'] === 'true'}
+                        onChange={(e) => setGatewayConfig(prev => ({ ...prev, mp_sandbox_mode: e.target.checked ? 'true' : 'false' }))}
+                        className="h-4 w-4"
+                      />
+                      <Label htmlFor="mp_sandbox_mode">Modo Sandbox (testes)</Label>
+                    </div>
+                    {gatewayConfig['mp_sandbox_mode'] === 'true' && (
+                      <>
+                        <div className="space-y-2">
+                          <Label htmlFor="mp_sandbox_access_token">Access Token (Sandbox)</Label>
+                          <Input
+                            id="mp_sandbox_access_token"
+                            type="password"
+                            value={gatewayConfig['mp_sandbox_access_token'] || ''}
+                            onChange={(e) => setGatewayConfig(prev => ({ ...prev, mp_sandbox_access_token: e.target.value }))}
+                            placeholder="TEST-..."
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="mp_sandbox_public_key">Public Key (Sandbox)</Label>
+                          <Input
+                            id="mp_sandbox_public_key"
+                            value={gatewayConfig['mp_sandbox_public_key'] || ''}
+                            onChange={(e) => setGatewayConfig(prev => ({ ...prev, mp_sandbox_public_key: e.target.value }))}
+                            placeholder="TEST-..."
+                          />
+                        </div>
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <div className="flex justify-end">
+                  <Button onClick={handleSaveGateway} disabled={isSavingGateway}>
+                    {isSavingGateway ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+                    Salvar Configurações
+                  </Button>
+                </div>
+              </>
+            )}
+          </TabsContent>
+
+          {/* ========== CLIENTES DA LOJA ========== */}
+          <TabsContent value="clientes" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Users className="h-5 w-5" />
+                  Clientes da Minha Loja
+                </CardTitle>
+                <CardDescription>
+                  Compradores que adquiriram cartelas na sua loja. Apenas os clientes da sua loja são exibidos.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {isLoadingCompradores ? (
+                  <div className="flex justify-center py-8">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  </div>
+                ) : lojaCompradores.length === 0 ? (
+                  <p className="text-muted-foreground text-sm text-center py-6">
+                    Nenhum cliente encontrado. Os clientes aparecerão aqui após realizarem compras na sua loja.
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b">
+                          <th className="text-left py-2 pr-4 font-medium text-muted-foreground">Nome</th>
+                          <th className="text-left py-2 pr-4 font-medium text-muted-foreground">E-mail</th>
+                          <th className="text-left py-2 pr-4 font-medium text-muted-foreground">CPF</th>
+                          <th className="text-left py-2 pr-4 font-medium text-muted-foreground">Telefone</th>
+                          <th className="text-left py-2 pr-4 font-medium text-muted-foreground">Cidade</th>
+                          <th className="text-left py-2 pr-4 font-medium text-muted-foreground">Compras</th>
+                          <th className="text-left py-2 font-medium text-muted-foreground">Última Compra</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {lojaCompradores.map((c, idx) => (
+                          <tr key={idx} className="border-b last:border-0 hover:bg-muted/30">
+                            <td className="py-2 pr-4">{c.nome || '—'}</td>
+                            <td className="py-2 pr-4">{c.email || '—'}</td>
+                            <td className="py-2 pr-4">{c.cpf || '—'}</td>
+                            <td className="py-2 pr-4">{c.telefone || '—'}</td>
+                            <td className="py-2 pr-4">{c.cidade || '—'}</td>
+                            <td className="py-2 pr-4">
+                              <Badge variant="secondary">{c.total_compras}</Badge>
+                            </td>
+                            <td className="py-2 text-muted-foreground text-xs">
+                              {c.ultima_compra ? new Date(c.ultima_compra).toLocaleDateString('pt-BR') : '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
       </main>
