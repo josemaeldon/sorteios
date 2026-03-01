@@ -1107,37 +1107,31 @@ const LojaPublica: React.FC = () => {
                   placeholder="seu@email.com"
                 />
               </div>
-              {buyerFields.has('buyer_address') && (
-                <div className="space-y-1.5">
-                  <Label>Endereço</Label>
-                  <Input
-                    value={compradorEndereco}
-                    onChange={(e) => setCompradorEndereco(e.target.value)}
-                    placeholder="Rua, número, complemento"
-                  />
-                </div>
-              )}
-              {buyerFields.has('buyer_city') && (
-                <div className="space-y-1.5">
-                  <Label>Cidade</Label>
-                  <Input
-                    value={compradorCidade}
-                    onChange={(e) => setCompradorCidade(e.target.value)}
-                    placeholder="Sua cidade"
-                  />
-                </div>
-              )}
-              {buyerFields.has('buyer_phone') && (
-                <div className="space-y-1.5">
-                  <Label>Telefone</Label>
-                  <Input
-                    type="tel"
-                    value={compradorTelefone}
-                    onChange={(e) => setCompradorTelefone(e.target.value)}
-                    placeholder="(00) 00000-0000"
-                  />
-                </div>
-              )}
+              <div className="space-y-1.5">
+                <Label>Endereço</Label>
+                <Input
+                  value={compradorEndereco}
+                  onChange={(e) => setCompradorEndereco(e.target.value)}
+                  placeholder="Rua, número, complemento"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Cidade</Label>
+                <Input
+                  value={compradorCidade}
+                  onChange={(e) => setCompradorCidade(e.target.value)}
+                  placeholder="Sua cidade"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Telefone</Label>
+                <Input
+                  type="tel"
+                  value={compradorTelefone}
+                  onChange={(e) => setCompradorTelefone(e.target.value)}
+                  placeholder="(00) 00000-0000"
+                />
+              </div>
               {(buyerFields.size > 0) && (
                 <p className="text-xs text-blue-600 bg-blue-50 border border-blue-200 rounded px-2 py-1.5">
                   Seus dados serão impressos na cartela para download após o pagamento.
@@ -1209,37 +1203,31 @@ const LojaPublica: React.FC = () => {
                   placeholder="seu@email.com"
                 />
               </div>
-              {cartBuyerFields.has('buyer_address') && (
-                <div className="space-y-1.5">
-                  <Label>Endereço</Label>
-                  <Input
-                    value={cartCompradorEndereco}
-                    onChange={(e) => setCartCompradorEndereco(e.target.value)}
-                    placeholder="Rua, número, complemento"
-                  />
-                </div>
-              )}
-              {cartBuyerFields.has('buyer_city') && (
-                <div className="space-y-1.5">
-                  <Label>Cidade</Label>
-                  <Input
-                    value={cartCompradorCidade}
-                    onChange={(e) => setCartCompradorCidade(e.target.value)}
-                    placeholder="Sua cidade"
-                  />
-                </div>
-              )}
-              {cartBuyerFields.has('buyer_phone') && (
-                <div className="space-y-1.5">
-                  <Label>Telefone</Label>
-                  <Input
-                    type="tel"
-                    value={cartCompradorTelefone}
-                    onChange={(e) => setCartCompradorTelefone(e.target.value)}
-                    placeholder="(00) 00000-0000"
-                  />
-                </div>
-              )}
+              <div className="space-y-1.5">
+                <Label>Endereço</Label>
+                <Input
+                  value={cartCompradorEndereco}
+                  onChange={(e) => setCartCompradorEndereco(e.target.value)}
+                  placeholder="Rua, número, complemento"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Cidade</Label>
+                <Input
+                  value={cartCompradorCidade}
+                  onChange={(e) => setCartCompradorCidade(e.target.value)}
+                  placeholder="Sua cidade"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Telefone</Label>
+                <Input
+                  type="tel"
+                  value={cartCompradorTelefone}
+                  onChange={(e) => setCartCompradorTelefone(e.target.value)}
+                  placeholder="(00) 00000-0000"
+                />
+              </div>
               {cartBuyerFields.size > 0 && (
                 <p className="text-xs text-blue-600 bg-blue-50 border border-blue-200 rounded px-2 py-1.5">
                   Seus dados serão impressos nas cartelas para download após o pagamento.
