@@ -11,7 +11,13 @@ import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, User, Loader2, Save, Camera, X, Lock, Mail, Type, CreditCard, CheckCircle, Settings, Users, Plus, Pencil, Trash2 } from 'lucide-react';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import {
+  ArrowLeft, User, Loader2, Save, Camera, X, Lock, Mail, Type,
+  CreditCard, CheckCircle, Settings, Users, Plus, Pencil, Trash2,
+  HelpCircle, Dice5, BarChart3, Shuffle, Grid3X3, LayoutGrid,
+  ListTodo, ShoppingCart, PieChart, Store,
+} from 'lucide-react';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -65,6 +71,7 @@ const Profile: React.FC = () => {
   const defaultTab = searchParams.get('tab') === 'assinatura' ? 'assinatura'
     : searchParams.get('tab') === 'pagamentos' ? 'pagamentos'
     : searchParams.get('tab') === 'clientes' ? 'clientes'
+    : searchParams.get('tab') === 'ajuda' ? 'ajuda'
     : 'dados';
 
   // Payment gateway config state
@@ -398,6 +405,10 @@ const Profile: React.FC = () => {
             <TabsTrigger value="clientes" className="flex items-center gap-2" onClick={loadLojaCompradores}>
               <Users className="h-4 w-4" />
               Clientes da Loja
+            </TabsTrigger>
+            <TabsTrigger value="ajuda" className="flex items-center gap-2">
+              <HelpCircle className="h-4 w-4" />
+              Como Usar
             </TabsTrigger>
           </TabsList>
 
@@ -1079,6 +1090,269 @@ const Profile: React.FC = () => {
                     </table>
                   </div>
                 )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* ========== COMO USAR ========== */}
+          <TabsContent value="ajuda" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <HelpCircle className="h-5 w-5" />
+                  Como Usar o Sistema
+                </CardTitle>
+                <CardDescription>
+                  Guia completo com todos os passos para utilizar as funções e recursos da plataforma.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Accordion type="multiple" className="w-full space-y-2" aria-label="Guia de uso do sistema">
+
+                  {/* Sorteios */}
+                  <AccordionItem value="sorteios" className="border rounded-lg px-4">
+                    <AccordionTrigger className="hover:no-underline">
+                      <span className="flex items-center gap-2 font-semibold">
+                        <Dice5 className="h-4 w-4 text-primary" />
+                        1. Sorteios — Gerenciar Eventos
+                      </span>
+                    </AccordionTrigger>
+                    <AccordionContent className="text-sm text-muted-foreground space-y-2 pb-4">
+                      <p>O módulo <strong>Sorteios</strong> é o ponto de partida do sistema. Aqui você cria e gerencia todos os seus eventos de bingo.</p>
+                      <ol className="list-decimal list-inside space-y-1 ml-2">
+                        <li>Acesse a aba <strong>Sorteios</strong> no menu principal.</li>
+                        <li>Clique em <strong>Novo Sorteio</strong> para criar um evento.</li>
+                        <li>Preencha o nome, data e demais informações do sorteio.</li>
+                        <li>Após criar, clique no sorteio para torná-lo <strong>ativo</strong> — as outras abas ficarão disponíveis.</li>
+                        <li>Você pode editar ou excluir sorteios existentes pelos ícones de ação na lista.</li>
+                        <li>Cada sorteio possui um <strong>link público</strong> para compartilhar com os participantes.</li>
+                      </ol>
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  {/* Dashboard */}
+                  <AccordionItem value="dashboard" className="border rounded-lg px-4">
+                    <AccordionTrigger className="hover:no-underline">
+                      <span className="flex items-center gap-2 font-semibold">
+                        <BarChart3 className="h-4 w-4 text-primary" />
+                        2. Dashboard — Visão Geral
+                      </span>
+                    </AccordionTrigger>
+                    <AccordionContent className="text-sm text-muted-foreground space-y-2 pb-4">
+                      <p>O <strong>Dashboard</strong> exibe um resumo financeiro e operacional do sorteio ativo.</p>
+                      <ol className="list-decimal list-inside space-y-1 ml-2">
+                        <li>Selecione um sorteio ativo para habilitar o Dashboard.</li>
+                        <li>Visualize o total de cartelas vendidas, receita gerada e cartelas disponíveis.</li>
+                        <li>Acompanhe o desempenho de cada vendedor e o andamento das vendas em tempo real.</li>
+                        <li>Use as métricas para tomar decisões sobre o evento.</li>
+                      </ol>
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  {/* Sortear */}
+                  <AccordionItem value="sortear" className="border rounded-lg px-4">
+                    <AccordionTrigger className="hover:no-underline">
+                      <span className="flex items-center gap-2 font-semibold">
+                        <Shuffle className="h-4 w-4 text-primary" />
+                        3. Sortear — Realizar o Sorteio ao Vivo
+                      </span>
+                    </AccordionTrigger>
+                    <AccordionContent className="text-sm text-muted-foreground space-y-2 pb-4">
+                      <p>A aba <strong>Sortear</strong> é usada durante a realização do bingo ao vivo.</p>
+                      <ol className="list-decimal list-inside space-y-1 ml-2">
+                        <li>Com um sorteio ativo, acesse a aba <strong>Sortear</strong>.</li>
+                        <li>Clique em <strong>Sortear Número</strong> para gerar um número aleatório.</li>
+                        <li>Os números sorteados ficam registrados na tela e não se repetem.</li>
+                        <li>O sistema verifica automaticamente se alguma cartela completou o bingo.</li>
+                        <li>Você pode reiniciar o sorteio a qualquer momento usando o botão de reset.</li>
+                        <li>Os participantes podem acompanhar os números sorteados em tempo real pela <strong>Loja Pública</strong>.</li>
+                      </ol>
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  {/* Vendedores */}
+                  <AccordionItem value="vendedores" className="border rounded-lg px-4">
+                    <AccordionTrigger className="hover:no-underline">
+                      <span className="flex items-center gap-2 font-semibold">
+                        <Users className="h-4 w-4 text-primary" />
+                        4. Vendedores — Equipe de Vendas
+                      </span>
+                    </AccordionTrigger>
+                    <AccordionContent className="text-sm text-muted-foreground space-y-2 pb-4">
+                      <p>O módulo <strong>Vendedores</strong> permite gerenciar a equipe responsável por vender as cartelas.</p>
+                      <ol className="list-decimal list-inside space-y-1 ml-2">
+                        <li>Acesse a aba <strong>Vendedores</strong> com um sorteio ativo.</li>
+                        <li>Clique em <strong>Novo Vendedor</strong> e preencha nome e informações de contato.</li>
+                        <li>Cada vendedor recebe um link ou código exclusivo para suas vendas.</li>
+                        <li>Acompanhe o desempenho individual de cada vendedor no Dashboard.</li>
+                        <li>Edite ou desative vendedores conforme necessário.</li>
+                      </ol>
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  {/* Cartelas */}
+                  <AccordionItem value="cartelas" className="border rounded-lg px-4">
+                    <AccordionTrigger className="hover:no-underline">
+                      <span className="flex items-center gap-2 font-semibold">
+                        <Grid3X3 className="h-4 w-4 text-primary" />
+                        5. Cartelas — Gerenciar Cartelas
+                      </span>
+                    </AccordionTrigger>
+                    <AccordionContent className="text-sm text-muted-foreground space-y-2 pb-4">
+                      <p>O módulo <strong>Cartelas</strong> centraliza todas as cartelas do sorteio ativo.</p>
+                      <ol className="list-decimal list-inside space-y-1 ml-2">
+                        <li>Acesse a aba <strong>Cartelas</strong> com um sorteio ativo.</li>
+                        <li>Visualize todas as cartelas geradas, com status (disponível, vendida, premiada).</li>
+                        <li>Filtre por status para encontrar cartelas específicas.</li>
+                        <li>Imprima cartelas individuais ou em lote em formato PDF.</li>
+                        <li>Veja os dados do comprador de cada cartela vendida.</li>
+                      </ol>
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  {/* Construtor */}
+                  <AccordionItem value="construtor" className="border rounded-lg px-4">
+                    <AccordionTrigger className="hover:no-underline">
+                      <span className="flex items-center gap-2 font-semibold">
+                        <LayoutGrid className="h-4 w-4 text-primary" />
+                        6. Construtor de Cartelas — Criação Personalizada
+                      </span>
+                    </AccordionTrigger>
+                    <AccordionContent className="text-sm text-muted-foreground space-y-2 pb-4">
+                      <p>O <strong>Construtor de Cartelas</strong> permite criar cartelas de bingo personalizadas para o seu evento.</p>
+                      <ol className="list-decimal list-inside space-y-1 ml-2">
+                        <li>Acesse a aba <strong>Construtor</strong> com um sorteio ativo.</li>
+                        <li>Defina a quantidade de cartelas a serem geradas.</li>
+                        <li>Configure o intervalo de números, tamanho da grade e outras opções.</li>
+                        <li>Clique em <strong>Gerar Cartelas</strong> para criar o lote.</li>
+                        <li>As cartelas geradas ficam disponíveis na aba <strong>Cartelas</strong> e na loja pública.</li>
+                        <li>Exporte as cartelas em PDF para impressão.</li>
+                      </ol>
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  {/* Atribuições */}
+                  <AccordionItem value="atribuicoes" className="border rounded-lg px-4">
+                    <AccordionTrigger className="hover:no-underline">
+                      <span className="flex items-center gap-2 font-semibold">
+                        <ListTodo className="h-4 w-4 text-primary" />
+                        7. Atribuições — Vincular Cartelas a Vendedores
+                      </span>
+                    </AccordionTrigger>
+                    <AccordionContent className="text-sm text-muted-foreground space-y-2 pb-4">
+                      <p>O módulo <strong>Atribuições</strong> permite distribuir cartelas entre os vendedores da equipe.</p>
+                      <ol className="list-decimal list-inside space-y-1 ml-2">
+                        <li>Acesse a aba <strong>Atribuições</strong> com um sorteio ativo.</li>
+                        <li>Selecione um vendedor e a quantidade de cartelas a atribuir.</li>
+                        <li>As cartelas atribuídas ficam vinculadas ao vendedor selecionado.</li>
+                        <li>O vendedor pode então vendê-las através do seu link exclusivo.</li>
+                        <li>Acompanhe quais cartelas foram atribuídas e quais ainda estão disponíveis.</li>
+                      </ol>
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  {/* Vendas */}
+                  <AccordionItem value="vendas" className="border rounded-lg px-4">
+                    <AccordionTrigger className="hover:no-underline">
+                      <span className="flex items-center gap-2 font-semibold">
+                        <ShoppingCart className="h-4 w-4 text-primary" />
+                        8. Vendas — Registro de Vendas
+                      </span>
+                    </AccordionTrigger>
+                    <AccordionContent className="text-sm text-muted-foreground space-y-2 pb-4">
+                      <p>O módulo <strong>Vendas</strong> registra e exibe todas as transações do sorteio ativo.</p>
+                      <ol className="list-decimal list-inside space-y-1 ml-2">
+                        <li>Acesse a aba <strong>Vendas</strong> com um sorteio ativo.</li>
+                        <li>Visualize todas as vendas realizadas com dados do comprador e cartelas adquiridas.</li>
+                        <li>Filtre por vendedor, data ou status de pagamento.</li>
+                        <li>Confirme pagamentos pendentes manualmente quando necessário.</li>
+                        <li>Exporte o relatório de vendas em Excel ou PDF.</li>
+                      </ol>
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  {/* Relatórios */}
+                  <AccordionItem value="relatorios" className="border rounded-lg px-4">
+                    <AccordionTrigger className="hover:no-underline">
+                      <span className="flex items-center gap-2 font-semibold">
+                        <PieChart className="h-4 w-4 text-primary" />
+                        9. Relatórios — Análise de Resultados
+                      </span>
+                    </AccordionTrigger>
+                    <AccordionContent className="text-sm text-muted-foreground space-y-2 pb-4">
+                      <p>O módulo <strong>Relatórios</strong> oferece análises detalhadas sobre o desempenho do sorteio.</p>
+                      <ol className="list-decimal list-inside space-y-1 ml-2">
+                        <li>Acesse a aba <strong>Relatórios</strong> com um sorteio ativo.</li>
+                        <li>Visualize gráficos de vendas por período, vendedor e status.</li>
+                        <li>Acompanhe o funil de conversão: cartelas geradas → atribuídas → vendidas.</li>
+                        <li>Exporte os dados em formato Excel para análise externa.</li>
+                        <li>Use os relatórios para planejar os próximos eventos com base em dados reais.</li>
+                      </ol>
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  {/* Loja Pública */}
+                  <AccordionItem value="loja" className="border rounded-lg px-4">
+                    <AccordionTrigger className="hover:no-underline">
+                      <span className="flex items-center gap-2 font-semibold">
+                        <Store className="h-4 w-4 text-primary" />
+                        10. Loja Pública — Venda Online de Cartelas
+                      </span>
+                    </AccordionTrigger>
+                    <AccordionContent className="text-sm text-muted-foreground space-y-2 pb-4">
+                      <p>A <strong>Loja Pública</strong> é a página onde os participantes podem comprar cartelas diretamente pela internet.</p>
+                      <ol className="list-decimal list-inside space-y-1 ml-2">
+                        <li>O link da loja é gerado automaticamente ao criar um sorteio (ex.: <code className="bg-muted px-1 rounded">/loja/seu-usuario</code>).</li>
+                        <li>Compartilhe o link com os participantes por WhatsApp, redes sociais ou e-mail.</li>
+                        <li>O comprador escolhe a quantidade de cartelas, informa seus dados e realiza o pagamento.</li>
+                        <li>O pagamento é processado pelo <strong>Gateway de Pagamento</strong> configurado no seu perfil.</li>
+                        <li>Após a confirmação, as cartelas são enviadas automaticamente ao comprador.</li>
+                        <li>Durante o sorteio ao vivo, os participantes podem acompanhar os números sorteados na mesma página da loja.</li>
+                      </ol>
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  {/* Perfil */}
+                  <AccordionItem value="perfil" className="border rounded-lg px-4">
+                    <AccordionTrigger className="hover:no-underline">
+                      <span className="flex items-center gap-2 font-semibold">
+                        <User className="h-4 w-4 text-primary" />
+                        11. Perfil — Configurações da Conta
+                      </span>
+                    </AccordionTrigger>
+                    <AccordionContent className="text-sm text-muted-foreground space-y-2 pb-4">
+                      <p>A página de <strong>Perfil</strong> reúne todas as configurações da sua conta e da plataforma.</p>
+                      <ul className="list-disc list-inside space-y-1 ml-2">
+                        <li><strong>Dados Pessoais:</strong> atualize seu nome, e-mail, foto de perfil e o título exibido na loja.</li>
+                        <li><strong>Senha:</strong> altere sua senha de acesso a qualquer momento.</li>
+                        <li><strong>Minha Assinatura:</strong> visualize seu plano atual, recursos disponíveis e faça upgrade.</li>
+                        <li><strong>Gateway de Pagamento:</strong> configure as credenciais do seu processador de pagamento (ex.: Mercado Pago, Stripe) para receber pagamentos na loja.</li>
+                        <li><strong>Clientes da Loja:</strong> gerencie o cadastro dos compradores da sua loja, adicione, edite ou remova clientes.</li>
+                      </ul>
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  {/* Assinatura */}
+                  <AccordionItem value="assinatura-ajuda" className="border rounded-lg px-4">
+                    <AccordionTrigger className="hover:no-underline">
+                      <span className="flex items-center gap-2 font-semibold">
+                        <CreditCard className="h-4 w-4 text-primary" />
+                        12. Planos e Assinatura
+                      </span>
+                    </AccordionTrigger>
+                    <AccordionContent className="text-sm text-muted-foreground space-y-2 pb-4">
+                      <p>O sistema oferece diferentes <strong>planos de assinatura</strong> com limites e recursos variados.</p>
+                      <ol className="list-decimal list-inside space-y-1 ml-2">
+                        <li>Acesse <strong>Perfil → Minha Assinatura</strong> para ver os planos disponíveis.</li>
+                        <li>Cada plano define o número máximo de sorteios, cartelas e vendedores permitidos.</li>
+                        <li>Clique em <strong>Assinar</strong> no plano desejado e siga as instruções de pagamento.</li>
+                        <li>Após a confirmação, o plano é ativado automaticamente na sua conta.</li>
+                        <li>Você pode fazer upgrade a qualquer momento para um plano superior.</li>
+                      </ol>
+                    </AccordionContent>
+                  </AccordionItem>
+
+                </Accordion>
               </CardContent>
             </Card>
           </TabsContent>
