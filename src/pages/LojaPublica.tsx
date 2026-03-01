@@ -180,8 +180,10 @@ const HistoricoDownloadButton: React.FC<{
 };
 
 const LojaPublica: React.FC = () => {
-  const { userId, sorteioSlug: _sorteioSlug, shortId } = useParams<{ userId?: string; sorteioSlug?: string; shortId?: string }>();
+  const { userId, sorteioSlug, shortId } = useParams<{ userId?: string; sorteioSlug?: string; shortId?: string }>();
   const [searchParams] = useSearchParams();
+  // Canonical path for this store — used in payment success/cancel redirects
+  const storePath = shortId && sorteioSlug ? `/loja/${sorteioSlug}/${shortId}` : `/loja/${userId}`;
 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -611,8 +613,8 @@ const LojaPublica: React.FC = () => {
         comprador_endereco: compradorEndereco.trim() || undefined,
         comprador_cidade: compradorCidade.trim() || undefined,
         comprador_telefone: compradorTelefone.trim() || undefined,
-        success_path: `/loja/${userId}`,
-        cancel_path: `/loja/${userId}`,
+        success_path: storePath,
+        cancel_path: storePath,
       });
       if (result.url) {
         window.location.href = result.url;
@@ -643,8 +645,8 @@ const LojaPublica: React.FC = () => {
         comprador_endereco: cartCompradorEndereco.trim() || undefined,
         comprador_cidade: cartCompradorCidade.trim() || undefined,
         comprador_telefone: cartCompradorTelefone.trim() || undefined,
-        success_path: `/loja/${userId}?payment=success&checkout_type=multi`,
-        cancel_path: `/loja/${userId}`,
+        success_path: storePath,
+        cancel_path: storePath,
       });
       if (result.url) {
         window.location.href = result.url;

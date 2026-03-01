@@ -799,7 +799,7 @@ async function getPaymentGateway(dbClient) {
 
 /** Returns per-user Stripe secret key, falling back to global config. */
 async function getUserStripeSecretKey(dbClient, userId) {
-  if (!userId) return getStripeSecretKey(dbClient);
+  if (!userId || userId === 'undefined') return getStripeSecretKey(dbClient);
   const cfgResult = await dbClient.query(
     "SELECT chave, valor FROM user_configuracoes WHERE user_id = $1 AND chave IN ('stripe_secret_key', 'stripe_sandbox_secret_key', 'stripe_sandbox_mode')",
     [userId]
@@ -817,7 +817,7 @@ async function getUserStripeSecretKey(dbClient, userId) {
 
 /** Returns per-user MercadoPago client, falling back to global config. */
 async function getUserMercadoPagoClient(dbClient, userId) {
-  if (!userId) return getMercadoPagoClient(dbClient);
+  if (!userId || userId === 'undefined') return getMercadoPagoClient(dbClient);
   const cfgResult = await dbClient.query(
     "SELECT chave, valor FROM user_configuracoes WHERE user_id = $1 AND chave IN ('mp_access_token', 'mp_sandbox_access_token', 'mp_sandbox_mode', 'mp_public_key')",
     [userId]
@@ -836,7 +836,7 @@ async function getUserMercadoPagoClient(dbClient, userId) {
 
 /** Returns per-user payment gateway, falling back to global config. */
 async function getUserPaymentGateway(dbClient, userId) {
-  if (!userId) return getPaymentGateway(dbClient);
+  if (!userId || userId === 'undefined') return getPaymentGateway(dbClient);
   const cfgResult = await dbClient.query(
     "SELECT valor FROM user_configuracoes WHERE user_id = $1 AND chave = 'payment_gateway'",
     [userId]
@@ -2368,6 +2368,10 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           lojaUserId = sorteioByShortId.rows[0].user_id;
         }
 
+        if (!lojaUserId || lojaUserId === 'undefined') {
+          return res.status(404).json({ error: 'Loja não encontrada.' });
+        }
+
         const ownerResult = await client.query(
           'SELECT id, nome, titulo_sistema FROM usuarios WHERE id = $1 AND ativo = true',
           [lojaUserId]
@@ -2423,16 +2427,22 @@ app.post('/api', checkBasicAuth, async (req, res) => {
       }
 
       case 'getMinhaLoja': {
+        let minhaLojaUserId = data.authenticated_user_id;
+        if (data.authenticated_role === 'admin' && data.sorteio_id) {
+          const ownerRes = await client.query('SELECT user_id FROM sorteios WHERE id = $1', [data.sorteio_id]);
+          if (ownerRes.rows.length > 0) minhaLojaUserId = ownerRes.rows[0].user_id;
+        }
         const minhaLojaResult = await client.query(
           `SELECT lc.id, lc.card_set_id, lc.numero_cartela, lc.preco, lc.status, lc.comprador_nome, lc.card_data, lc.created_at, bcs.nome as card_set_nome
            FROM loja_cartelas lc
            LEFT JOIN bingo_card_sets bcs ON lc.card_set_id = bcs.id
            WHERE lc.user_id = $1
            ORDER BY lc.numero_cartela ASC`,
-          [data.authenticated_user_id]
+          [minhaLojaUserId]
         );
         return res.json({ data: minhaLojaResult.rows });
       }
+
 
       case 'adicionarCartelaLoja': {
         if (!data.card_set_id || !data.numero_cartela || !data.card_data) {
@@ -2441,18 +2451,27 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         const preco = Number(data.preco) >= 0 ? Number(data.preco) : 0;
         const layoutData = data.layout_data || '';
         const vendedorIdLoja = data.vendedor_id || null;
+        // When admin adds a cartela, use the sorteio owner's user_id
+        let lojaUserId = data.authenticated_user_id;
+        if (data.authenticated_role === 'admin') {
+          const ownerLookup = await client.query(
+            'SELECT s.user_id FROM bingo_card_sets bcs JOIN sorteios s ON bcs.sorteio_id = s.id WHERE bcs.id = $1',
+            [data.card_set_id]
+          );
+          if (ownerLookup.rows.length > 0) lojaUserId = ownerLookup.rows[0].user_id;
+        }
         if (dbConfig.type === 'mysql') {
           const insertResult = await client.query(
             `INSERT IGNORE INTO loja_cartelas (id, user_id, card_set_id, numero_cartela, preco, card_data, layout_data, vendedor_id)
              VALUES (UUID(), $1, $2, $3, $4, $5, $6, $7)`,
-            [data.authenticated_user_id, data.card_set_id, data.numero_cartela, preco, data.card_data, layoutData, vendedorIdLoja]
+            [lojaUserId, data.card_set_id, data.numero_cartela, preco, data.card_data, layoutData, vendedorIdLoja]
           );
           if (insertResult.rows.affectedRows === 0) {
             return res.status(409).json({ error: 'Cartela já está na loja.', code: 'DUPLICATE_CARTELA' });
           }
           const inserted = await client.query(
             'SELECT * FROM loja_cartelas WHERE user_id = $1 AND card_set_id = $2 AND numero_cartela = $3',
-            [data.authenticated_user_id, data.card_set_id, data.numero_cartela]
+            [lojaUserId, data.card_set_id, data.numero_cartela]
           );
           return res.json({ data: inserted.rows[0] });
         } else {
@@ -2461,7 +2480,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
              VALUES ($1, $2, $3, $4, $5, $6, $7)
              ON CONFLICT (user_id, card_set_id, numero_cartela) DO NOTHING
              RETURNING *`,
-            [data.authenticated_user_id, data.card_set_id, data.numero_cartela, preco, data.card_data, layoutData, vendedorIdLoja]
+            [lojaUserId, data.card_set_id, data.numero_cartela, preco, data.card_data, layoutData, vendedorIdLoja]
           );
           if (result.rows.length === 0) {
             return res.status(409).json({ error: 'Cartela já está na loja.', code: 'DUPLICATE_CARTELA' });
@@ -2470,30 +2489,50 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         }
       }
 
+
       case 'removerCartelaLoja':
-        await client.query(
-          'DELETE FROM loja_cartelas WHERE id = $1 AND user_id = $2',
-          [data.id, data.authenticated_user_id]
-        );
+        if (data.authenticated_role === 'admin') {
+          await client.query('DELETE FROM loja_cartelas WHERE id = $1', [data.id]);
+        } else {
+          await client.query(
+            'DELETE FROM loja_cartelas WHERE id = $1 AND user_id = $2',
+            [data.id, data.authenticated_user_id]
+          );
+        }
         return res.json({ success: true });
 
       case 'removerMultiplasCartelasLoja': {
         const ids = Array.isArray(data.ids) ? data.ids.filter(Boolean) : [];
         if (ids.length === 0) return res.json({ success: true });
-        const placeholders = ids.map((_, i) => `$${i + 2}`).join(',');
-        await client.query(
-          `DELETE FROM loja_cartelas WHERE user_id = $1 AND id IN (${placeholders})`,
-          [data.authenticated_user_id, ...ids]
-        );
+        const placeholders = ids.map((_, i) => `$${i + 1}`).join(',');
+        if (data.authenticated_role === 'admin') {
+          await client.query(
+            `DELETE FROM loja_cartelas WHERE id IN (${placeholders})`,
+            ids
+          );
+        } else {
+          const placeholdersUser = ids.map((_, i) => `$${i + 2}`).join(',');
+          await client.query(
+            `DELETE FROM loja_cartelas WHERE user_id = $1 AND id IN (${placeholdersUser})`,
+            [data.authenticated_user_id, ...ids]
+          );
+        }
         return res.json({ success: true });
       }
 
       case 'atualizarPrecoLojaCartela': {
         const novoPreco = Number(data.preco) >= 0 ? Number(data.preco) : 0;
-        await client.query(
-          'UPDATE loja_cartelas SET preco = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3',
-          [novoPreco, data.id, data.authenticated_user_id]
-        );
+        if (data.authenticated_role === 'admin') {
+          await client.query(
+            'UPDATE loja_cartelas SET preco = $1, updated_at = NOW() WHERE id = $2',
+            [novoPreco, data.id]
+          );
+        } else {
+          await client.query(
+            'UPDATE loja_cartelas SET preco = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3',
+            [novoPreco, data.id, data.authenticated_user_id]
+          );
+        }
         return res.json({ success: true });
       }
 

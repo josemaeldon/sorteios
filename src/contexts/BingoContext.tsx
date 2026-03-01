@@ -538,12 +538,12 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   // ================== LOJA PÚBLICA ==================
   const loadMinhaLoja = useCallback(async () => {
     try {
-      const result = await callApi('getMinhaLoja', {});
+      const result = await callApi('getMinhaLoja', sorteioAtivo ? { sorteio_id: sorteioAtivo.id } : {});
       setLojaCartelas(result.data || []);
     } catch (error: any) {
       console.error('Error loading loja:', error);
     }
-  }, [callApi]);
+  }, [callApi, sorteioAtivo]);
 
   const adicionarCartelaLoja = useCallback(async (cardSetId: string, numeroCartela: number, preco: number, cardData: string, layoutData: string, vendedorId?: string): Promise<LojaCartela> => {
     const result = await callApi('adicionarCartelaLoja', { card_set_id: cardSetId, numero_cartela: numeroCartela, preco, card_data: cardData, layout_data: layoutData, vendedor_id: vendedorId || null });
