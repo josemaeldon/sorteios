@@ -8,11 +8,13 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
+import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, User, Loader2, Save, Camera, X, Lock, Mail, Type, CreditCard, CheckCircle, Settings, Users } from 'lucide-react';
+import { ArrowLeft, User, Loader2, Save, Camera, X, Lock, Mail, Type, CreditCard, CheckCircle, Settings, Users, Plus, Pencil, Trash2 } from 'lucide-react';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 interface LojaComprador {
   nome: string;
@@ -23,6 +25,8 @@ interface LojaComprador {
   endereco?: string;
   total_compras: number;
   ultima_compra: string;
+  comprador_id?: string;
+  owner_user_id?: string;
 }
 
 const profileSchema = z.object({
@@ -43,7 +47,7 @@ const passwordSchema = z.object({
 const Profile: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { user, updateProfile, isAuthenticated, getPublicPlanos, createStripeCheckout, refreshUser, getUserConfiguracoes, updateUserConfiguracoes, getLojaCompradores } = useAuth();
+  const { user, updateProfile, isAuthenticated, getPublicPlanos, createStripeCheckout, refreshUser, getUserConfiguracoes, updateUserConfiguracoes, getLojaCompradores, createLojaComprador, updateLojaComprador, deleteLojaComprador } = useAuth();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -71,6 +75,12 @@ const Profile: React.FC = () => {
   // Store clients state
   const [lojaCompradores, setLojaCompradores] = useState<LojaComprador[]>([]);
   const [isLoadingCompradores, setIsLoadingCompradores] = useState(false);
+  const [showCompradorDialog, setShowCompradorDialog] = useState(false);
+  const [editingComprador, setEditingComprador] = useState<LojaComprador | null>(null);
+  const [compradorForm, setCompradorForm] = useState({ nome: '', email: '', cpf: '', telefone: '', cidade: '', endereco: '' });
+  const [isSavingComprador, setIsSavingComprador] = useState(false);
+  const [deletingComprador, setDeletingComprador] = useState<LojaComprador | null>(null);
+  const [isDeletingComprador, setIsDeletingComprador] = useState(false);
 
   // After returning from a successful Stripe payment, refresh the user so the
   // new plano_id is reflected in the local state.
@@ -137,6 +147,55 @@ const Profile: React.FC = () => {
     const data = await getLojaCompradores();
     setLojaCompradores(data);
     setIsLoadingCompradores(false);
+  };
+
+  const openAddComprador = () => {
+    setEditingComprador(null);
+    setCompradorForm({ nome: '', email: '', cpf: '', telefone: '', cidade: '', endereco: '' });
+    setShowCompradorDialog(true);
+  };
+
+  const openEditComprador = (c: LojaComprador) => {
+    setEditingComprador(c);
+    setCompradorForm({ nome: c.nome || '', email: c.email || '', cpf: c.cpf || '', telefone: c.telefone || '', cidade: c.cidade || '', endereco: c.endereco || '' });
+    setShowCompradorDialog(true);
+  };
+
+  const handleSaveComprador = async () => {
+    if (!compradorForm.nome.trim() || !compradorForm.email.trim()) {
+      toast({ title: 'Campos obrigatórios', description: 'Nome e e-mail são obrigatórios.', variant: 'destructive' });
+      return;
+    }
+    setIsSavingComprador(true);
+    const payload = {
+      nome: compradorForm.nome.trim(),
+      email: editingComprador ? editingComprador.email : compradorForm.email.trim(),
+      cpf: compradorForm.cpf.trim() || undefined,
+      telefone: compradorForm.telefone.trim() || undefined,
+      cidade: compradorForm.cidade.trim() || undefined,
+      endereco: compradorForm.endereco.trim() || undefined,
+    };
+    const result = editingComprador ? await updateLojaComprador(payload) : await createLojaComprador(payload);
+    setIsSavingComprador(false);
+    if (result.success) {
+      setShowCompradorDialog(false);
+      await loadLojaCompradores();
+    } else {
+      toast({ title: 'Erro', description: result.error || 'Erro ao salvar cliente.', variant: 'destructive' });
+    }
+  };
+
+  const handleDeleteComprador = async () => {
+    if (!deletingComprador) return;
+    setIsDeletingComprador(true);
+    const result = await deleteLojaComprador(deletingComprador.email);
+    setIsDeletingComprador(false);
+    if (result.success) {
+      setDeletingComprador(null);
+      await loadLojaCompradores();
+    } else {
+      toast({ title: 'Erro', description: result.error || 'Erro ao remover cliente.', variant: 'destructive' });
+    }
   };
 
   const handleCheckout = async (plano: Plan) => {
@@ -716,133 +775,223 @@ const Profile: React.FC = () => {
                       Configure o gateway de pagamento da sua loja. As configurações são individuais e independentes de outros usuários.
                     </CardDescription>
                   </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="payment_gateway">Gateway ativo</Label>
-                      <select
-                        id="payment_gateway"
-                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        value={gatewayConfig['payment_gateway'] || 'stripe'}
-                        onChange={(e) => setGatewayConfig(prev => ({ ...prev, payment_gateway: e.target.value }))}
-                      >
-                        <option value="stripe">Stripe</option>
-                        <option value="mercado_pago">Mercado Pago</option>
-                      </select>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Stripe</CardTitle>
-                    <CardDescription>Chaves da sua conta Stripe para processamento de pagamentos com cartão.</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="stripe_secret_key">Chave Secreta (Live)</Label>
-                      <Input
-                        id="stripe_secret_key"
-                        type="password"
-                        value={gatewayConfig['stripe_secret_key'] || ''}
-                        onChange={(e) => setGatewayConfig(prev => ({ ...prev, stripe_secret_key: e.target.value }))}
-                        placeholder="sk_live_..."
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="stripe_webhook_secret">Webhook Secret (opcional)</Label>
-                      <Input
-                        id="stripe_webhook_secret"
-                        type="password"
-                        value={gatewayConfig['stripe_webhook_secret'] || ''}
-                        onChange={(e) => setGatewayConfig(prev => ({ ...prev, stripe_webhook_secret: e.target.value }))}
-                        placeholder="whsec_..."
-                      />
-                    </div>
-                    <Separator />
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="checkbox"
-                        id="stripe_sandbox_mode"
-                        checked={gatewayConfig['stripe_sandbox_mode'] === 'true'}
-                        onChange={(e) => setGatewayConfig(prev => ({ ...prev, stripe_sandbox_mode: e.target.checked ? 'true' : 'false' }))}
-                        className="h-4 w-4"
-                      />
-                      <Label htmlFor="stripe_sandbox_mode">Modo Sandbox (testes)</Label>
-                    </div>
-                    {gatewayConfig['stripe_sandbox_mode'] === 'true' && (
+                  <CardContent>
+                    <div className="space-y-4 max-w-lg">
+                      {/* Gateway selector */}
                       <div className="space-y-2">
-                        <Label htmlFor="stripe_sandbox_secret_key">Chave Secreta (Sandbox)</Label>
-                        <Input
-                          id="stripe_sandbox_secret_key"
-                          type="password"
-                          value={gatewayConfig['stripe_sandbox_secret_key'] || ''}
-                          onChange={(e) => setGatewayConfig(prev => ({ ...prev, stripe_sandbox_secret_key: e.target.value }))}
-                          placeholder="sk_test_..."
-                        />
+                        <Label>Gateway de Pagamento</Label>
+                        <div className="flex gap-3">
+                          <button
+                            type="button"
+                            onClick={() => setGatewayConfig(prev => ({ ...prev, payment_gateway: 'stripe' }))}
+                            className={`flex-1 rounded-lg border-2 px-4 py-3 text-sm font-semibold transition-colors ${(gatewayConfig['payment_gateway'] || 'stripe') === 'stripe' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'}`}
+                          >
+                            Stripe
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setGatewayConfig(prev => ({ ...prev, payment_gateway: 'mercado_pago' }))}
+                            className={`flex-1 rounded-lg border-2 px-4 py-3 text-sm font-semibold transition-colors ${gatewayConfig['payment_gateway'] === 'mercado_pago' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'}`}
+                          >
+                            Mercado Pago
+                          </button>
+                        </div>
                       </div>
-                    )}
-                  </CardContent>
-                </Card>
 
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Mercado Pago</CardTitle>
-                    <CardDescription>Credenciais da sua conta Mercado Pago.</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="mp_access_token">Access Token (Live)</Label>
-                      <Input
-                        id="mp_access_token"
-                        type="password"
-                        value={gatewayConfig['mp_access_token'] || ''}
-                        onChange={(e) => setGatewayConfig(prev => ({ ...prev, mp_access_token: e.target.value }))}
-                        placeholder="APP_USR-..."
-                      />
+                      {(gatewayConfig['payment_gateway'] || 'stripe') === 'stripe' && (
+                        <>
+                          {/* Sandbox mode toggle */}
+                          <div className="flex items-center justify-between rounded-lg border border-orange-200 bg-orange-50 px-4 py-3">
+                            <div>
+                              <p className="font-semibold text-orange-800 text-sm">Modo Sandbox (Testes)</p>
+                              <p className="text-xs text-orange-600 mt-0.5">Ativado: usa chaves de teste (pk_test_ / sk_test_). Desativado: usa chaves de produção (pk_live_ / sk_live_).</p>
+                            </div>
+                            <Switch
+                              checked={gatewayConfig['stripe_sandbox_mode'] === 'true'}
+                              onCheckedChange={(checked) => setGatewayConfig(prev => ({ ...prev, stripe_sandbox_mode: checked ? 'true' : 'false' }))}
+                            />
+                          </div>
+
+                          {/* Live keys */}
+                          <div className={`space-y-4 rounded-lg border p-4 ${gatewayConfig['stripe_sandbox_mode'] === 'true' ? 'border-gray-200 opacity-60' : 'border-green-200 bg-green-50/30'}`}>
+                            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Chaves de Produção (Live)</p>
+                            <div className="space-y-2">
+                              <Label htmlFor="stripe_public_key">Chave Pública (Publishable Key)</Label>
+                              <Input
+                                id="stripe_public_key"
+                                value={gatewayConfig['stripe_public_key'] || ''}
+                                onChange={(e) => setGatewayConfig(prev => ({ ...prev, stripe_public_key: e.target.value }))}
+                                placeholder="pk_live_..."
+                              />
+                              <p className="text-xs text-muted-foreground">Chave pública para uso no frontend (começa com pk_live_)</p>
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="stripe_secret_key">Chave Secreta (Secret Key)</Label>
+                              <Input
+                                id="stripe_secret_key"
+                                type="password"
+                                value={gatewayConfig['stripe_secret_key'] || ''}
+                                onChange={(e) => setGatewayConfig(prev => ({ ...prev, stripe_secret_key: e.target.value }))}
+                                placeholder="sk_live_..."
+                              />
+                              <p className="text-xs text-muted-foreground">Chave secreta para uso no backend (começa com sk_live_). Mantenha em segredo.</p>
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="stripe_webhook_secret">Webhook Secret (Produção)</Label>
+                              <Input
+                                id="stripe_webhook_secret"
+                                type="password"
+                                value={gatewayConfig['stripe_webhook_secret'] || ''}
+                                onChange={(e) => setGatewayConfig(prev => ({ ...prev, stripe_webhook_secret: e.target.value }))}
+                                placeholder="whsec_..."
+                              />
+                              <p className="text-xs text-muted-foreground">Segredo do webhook Stripe para verificação de assinaturas (começa com whsec_).</p>
+                            </div>
+                          </div>
+
+                          {/* Sandbox keys */}
+                          <div className={`space-y-4 rounded-lg border p-4 ${gatewayConfig['stripe_sandbox_mode'] === 'true' ? 'border-orange-200 bg-orange-50/30' : 'border-gray-200 opacity-60'}`}>
+                            <p className="text-xs font-semibold uppercase tracking-wide text-orange-600">Chaves de Sandbox (Testes)</p>
+                            <div className="space-y-2">
+                              <Label htmlFor="stripe_sandbox_public_key">Chave Pública Sandbox</Label>
+                              <Input
+                                id="stripe_sandbox_public_key"
+                                value={gatewayConfig['stripe_sandbox_public_key'] || ''}
+                                onChange={(e) => setGatewayConfig(prev => ({ ...prev, stripe_sandbox_public_key: e.target.value }))}
+                                placeholder="pk_test_..."
+                              />
+                              <p className="text-xs text-muted-foreground">Chave pública de teste (começa com pk_test_)</p>
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="stripe_sandbox_secret_key">Chave Secreta Sandbox</Label>
+                              <Input
+                                id="stripe_sandbox_secret_key"
+                                type="password"
+                                value={gatewayConfig['stripe_sandbox_secret_key'] || ''}
+                                onChange={(e) => setGatewayConfig(prev => ({ ...prev, stripe_sandbox_secret_key: e.target.value }))}
+                                placeholder="sk_test_..."
+                              />
+                              <p className="text-xs text-muted-foreground">Chave secreta de teste (começa com sk_test_). Mantenha em segredo.</p>
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="stripe_sandbox_webhook_secret">Webhook Secret (Sandbox)</Label>
+                              <Input
+                                id="stripe_sandbox_webhook_secret"
+                                type="password"
+                                value={gatewayConfig['stripe_sandbox_webhook_secret'] || ''}
+                                onChange={(e) => setGatewayConfig(prev => ({ ...prev, stripe_sandbox_webhook_secret: e.target.value }))}
+                                placeholder="whsec_..."
+                              />
+                              <p className="text-xs text-muted-foreground">Segredo do webhook de teste (começa com whsec_).</p>
+                            </div>
+                          </div>
+                        </>
+                      )}
+
+                      {gatewayConfig['payment_gateway'] === 'mercado_pago' && (
+                        <>
+                          {/* MP Sandbox mode toggle */}
+                          <div className="flex items-center justify-between rounded-lg border border-orange-200 bg-orange-50 px-4 py-3">
+                            <div>
+                              <p className="font-semibold text-orange-800 text-sm">Modo Sandbox (Testes)</p>
+                              <p className="text-xs text-orange-600 mt-0.5">Ativado: usa o Access Token de teste. Desativado: usa o Access Token de produção.</p>
+                            </div>
+                            <Switch
+                              checked={gatewayConfig['mp_sandbox_mode'] === 'true'}
+                              onCheckedChange={(checked) => setGatewayConfig(prev => ({ ...prev, mp_sandbox_mode: checked ? 'true' : 'false' }))}
+                            />
+                          </div>
+
+                          {/* MP Production token */}
+                          <div className={`space-y-4 rounded-lg border p-4 ${gatewayConfig['mp_sandbox_mode'] === 'true' ? 'border-gray-200 opacity-60' : 'border-green-200 bg-green-50/30'}`}>
+                            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Produção</p>
+                            <div className="space-y-2">
+                              <Label htmlFor="mp_public_key">Chave Pública (Public Key)</Label>
+                              <Input
+                                id="mp_public_key"
+                                type="password"
+                                value={gatewayConfig['mp_public_key'] || ''}
+                                onChange={(e) => setGatewayConfig(prev => ({ ...prev, mp_public_key: e.target.value }))}
+                                placeholder="APP_USR-..."
+                              />
+                              <p className="text-xs text-muted-foreground">Chave pública de produção obtida no painel do Mercado Pago.</p>
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="mp_access_token">Access Token (Produção)</Label>
+                              <Input
+                                id="mp_access_token"
+                                type="password"
+                                value={gatewayConfig['mp_access_token'] || ''}
+                                onChange={(e) => setGatewayConfig(prev => ({ ...prev, mp_access_token: e.target.value }))}
+                                placeholder="APP_USR-..."
+                              />
+                              <p className="text-xs text-muted-foreground">Access Token de produção obtido no painel do Mercado Pago (começa com APP_USR-).</p>
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="mp_client_id">Client ID (Produção)</Label>
+                              <Input
+                                id="mp_client_id"
+                                type="password"
+                                value={gatewayConfig['mp_client_id'] || ''}
+                                onChange={(e) => setGatewayConfig(prev => ({ ...prev, mp_client_id: e.target.value }))}
+                                placeholder="Client ID da aplicação"
+                              />
+                              <p className="text-xs text-muted-foreground">Client ID da aplicação no painel do Mercado Pago.</p>
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="mp_client_secret">Client Secret (Produção)</Label>
+                              <Input
+                                id="mp_client_secret"
+                                type="password"
+                                value={gatewayConfig['mp_client_secret'] || ''}
+                                onChange={(e) => setGatewayConfig(prev => ({ ...prev, mp_client_secret: e.target.value }))}
+                                placeholder="Client Secret da aplicação"
+                              />
+                              <p className="text-xs text-muted-foreground">Client Secret da aplicação no painel do Mercado Pago.</p>
+                            </div>
+                          </div>
+
+                          {/* MP Sandbox token */}
+                          <div className={`space-y-4 rounded-lg border p-4 ${gatewayConfig['mp_sandbox_mode'] === 'true' ? 'border-orange-200 bg-orange-50/30' : 'border-gray-200 opacity-60'}`}>
+                            <p className="text-xs font-semibold uppercase tracking-wide text-orange-600">Sandbox (Testes)</p>
+                            <div className="space-y-2">
+                              <Label htmlFor="mp_sandbox_public_key">Chave Pública (Sandbox)</Label>
+                              <Input
+                                id="mp_sandbox_public_key"
+                                type="password"
+                                value={gatewayConfig['mp_sandbox_public_key'] || ''}
+                                onChange={(e) => setGatewayConfig(prev => ({ ...prev, mp_sandbox_public_key: e.target.value }))}
+                                placeholder="TEST-..."
+                              />
+                              <p className="text-xs text-muted-foreground">Chave pública de teste obtida no painel do Mercado Pago.</p>
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="mp_sandbox_access_token">Access Token (Sandbox)</Label>
+                              <Input
+                                id="mp_sandbox_access_token"
+                                type="password"
+                                value={gatewayConfig['mp_sandbox_access_token'] || ''}
+                                onChange={(e) => setGatewayConfig(prev => ({ ...prev, mp_sandbox_access_token: e.target.value }))}
+                                placeholder="TEST-..."
+                              />
+                              <p className="text-xs text-muted-foreground">Access Token de teste obtido no painel do Mercado Pago (começa com TEST-).</p>
+                            </div>
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label htmlFor="mp_webhook_secret">Webhook Secret</Label>
+                            <Input
+                              id="mp_webhook_secret"
+                              type="password"
+                              value={gatewayConfig['mp_webhook_secret'] || ''}
+                              onChange={(e) => setGatewayConfig(prev => ({ ...prev, mp_webhook_secret: e.target.value }))}
+                              placeholder="Segredo configurado no painel do Mercado Pago"
+                            />
+                            <p className="text-xs text-muted-foreground">Segredo para verificação de assinatura dos webhooks. Configure no painel do Mercado Pago em Webhooks.</p>
+                          </div>
+                        </>
+                      )}
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="mp_public_key">Public Key (Live)</Label>
-                      <Input
-                        id="mp_public_key"
-                        value={gatewayConfig['mp_public_key'] || ''}
-                        onChange={(e) => setGatewayConfig(prev => ({ ...prev, mp_public_key: e.target.value }))}
-                        placeholder="APP_USR-..."
-                      />
-                    </div>
-                    <Separator />
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="checkbox"
-                        id="mp_sandbox_mode"
-                        checked={gatewayConfig['mp_sandbox_mode'] === 'true'}
-                        onChange={(e) => setGatewayConfig(prev => ({ ...prev, mp_sandbox_mode: e.target.checked ? 'true' : 'false' }))}
-                        className="h-4 w-4"
-                      />
-                      <Label htmlFor="mp_sandbox_mode">Modo Sandbox (testes)</Label>
-                    </div>
-                    {gatewayConfig['mp_sandbox_mode'] === 'true' && (
-                      <>
-                        <div className="space-y-2">
-                          <Label htmlFor="mp_sandbox_access_token">Access Token (Sandbox)</Label>
-                          <Input
-                            id="mp_sandbox_access_token"
-                            type="password"
-                            value={gatewayConfig['mp_sandbox_access_token'] || ''}
-                            onChange={(e) => setGatewayConfig(prev => ({ ...prev, mp_sandbox_access_token: e.target.value }))}
-                            placeholder="TEST-..."
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="mp_sandbox_public_key">Public Key (Sandbox)</Label>
-                          <Input
-                            id="mp_sandbox_public_key"
-                            value={gatewayConfig['mp_sandbox_public_key'] || ''}
-                            onChange={(e) => setGatewayConfig(prev => ({ ...prev, mp_sandbox_public_key: e.target.value }))}
-                            placeholder="TEST-..."
-                          />
-                        </div>
-                      </>
-                    )}
                   </CardContent>
                 </Card>
 
@@ -860,13 +1009,21 @@ const Profile: React.FC = () => {
           <TabsContent value="clientes" className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Users className="h-5 w-5" />
-                  Clientes da Minha Loja
-                </CardTitle>
-                <CardDescription>
-                  Compradores que adquiriram cartelas na sua loja. Apenas os clientes da sua loja são exibidos.
-                </CardDescription>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <Users className="h-5 w-5" />
+                      Clientes da Minha Loja
+                    </CardTitle>
+                    <CardDescription>
+                      Gerencie os clientes da sua loja. Você pode adicionar, editar ou remover cadastros.
+                    </CardDescription>
+                  </div>
+                  <Button onClick={openAddComprador} size="sm" className="flex items-center gap-2">
+                    <Plus className="h-4 w-4" />
+                    Novo Cliente
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 {isLoadingCompradores ? (
@@ -875,7 +1032,7 @@ const Profile: React.FC = () => {
                   </div>
                 ) : lojaCompradores.length === 0 ? (
                   <p className="text-muted-foreground text-sm text-center py-6">
-                    Nenhum cliente encontrado. Os clientes aparecerão aqui após realizarem compras na sua loja.
+                    Nenhum cliente encontrado. Os clientes aparecerão aqui após realizarem compras na sua loja ou você pode adicioná-los manualmente.
                   </p>
                 ) : (
                   <div className="overflow-x-auto">
@@ -888,7 +1045,8 @@ const Profile: React.FC = () => {
                           <th className="text-left py-2 pr-4 font-medium text-muted-foreground">Telefone</th>
                           <th className="text-left py-2 pr-4 font-medium text-muted-foreground">Cidade</th>
                           <th className="text-left py-2 pr-4 font-medium text-muted-foreground">Compras</th>
-                          <th className="text-left py-2 font-medium text-muted-foreground">Última Compra</th>
+                          <th className="text-left py-2 pr-4 font-medium text-muted-foreground">Última Compra</th>
+                          <th className="text-left py-2 font-medium text-muted-foreground">Ações</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -902,8 +1060,18 @@ const Profile: React.FC = () => {
                             <td className="py-2 pr-4">
                               <Badge variant="secondary">{c.total_compras}</Badge>
                             </td>
-                            <td className="py-2 text-muted-foreground text-xs">
+                            <td className="py-2 pr-4 text-muted-foreground text-xs">
                               {c.ultima_compra ? new Date(c.ultima_compra).toLocaleDateString('pt-BR') : '—'}
+                            </td>
+                            <td className="py-2">
+                              <div className="flex items-center gap-1">
+                                <Button variant="ghost" size="sm" onClick={() => openEditComprador(c)} className="h-7 w-7 p-0">
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button variant="ghost" size="sm" onClick={() => setDeletingComprador(c)} className="h-7 w-7 p-0 text-destructive hover:text-destructive">
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
                             </td>
                           </tr>
                         ))}
@@ -916,6 +1084,70 @@ const Profile: React.FC = () => {
           </TabsContent>
         </Tabs>
       </main>
+
+      {/* Add/Edit Customer Dialog */}
+      <Dialog open={showCompradorDialog} onOpenChange={setShowCompradorDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editingComprador ? 'Editar Cliente' : 'Novo Cliente'}</DialogTitle>
+            <DialogDescription>
+              {editingComprador ? 'Atualize os dados do cliente.' : 'Preencha os dados para cadastrar um novo cliente.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label htmlFor="c_nome">Nome *</Label>
+              <Input id="c_nome" value={compradorForm.nome} onChange={(e) => setCompradorForm(prev => ({ ...prev, nome: e.target.value }))} placeholder="Nome completo" />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="c_email">E-mail *</Label>
+              <Input id="c_email" type="email" value={compradorForm.email} onChange={(e) => setCompradorForm(prev => ({ ...prev, email: e.target.value }))} placeholder="email@exemplo.com" disabled={!!editingComprador} />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="c_cpf">CPF</Label>
+              <Input id="c_cpf" value={compradorForm.cpf} onChange={(e) => setCompradorForm(prev => ({ ...prev, cpf: e.target.value }))} placeholder="000.000.000-00" />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="c_telefone">Telefone</Label>
+              <Input id="c_telefone" value={compradorForm.telefone} onChange={(e) => setCompradorForm(prev => ({ ...prev, telefone: e.target.value }))} placeholder="(00) 00000-0000" />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="c_cidade">Cidade</Label>
+              <Input id="c_cidade" value={compradorForm.cidade} onChange={(e) => setCompradorForm(prev => ({ ...prev, cidade: e.target.value }))} placeholder="Cidade" />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="c_endereco">Endereço</Label>
+              <Input id="c_endereco" value={compradorForm.endereco} onChange={(e) => setCompradorForm(prev => ({ ...prev, endereco: e.target.value }))} placeholder="Rua, número, bairro" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCompradorDialog(false)} disabled={isSavingComprador}>Cancelar</Button>
+            <Button onClick={handleSaveComprador} disabled={isSavingComprador}>
+              {isSavingComprador ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+              {editingComprador ? 'Salvar Alterações' : 'Cadastrar Cliente'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!deletingComprador} onOpenChange={(open) => { if (!open) setDeletingComprador(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Remover Cliente</DialogTitle>
+            <DialogDescription>
+              Tem certeza que deseja remover <strong>{deletingComprador?.nome}</strong> ({deletingComprador?.email}) da sua lista de clientes? Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeletingComprador(null)} disabled={isDeletingComprador}>Cancelar</Button>
+            <Button variant="destructive" onClick={handleDeleteComprador} disabled={isDeletingComprador}>
+              {isDeletingComprador ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Trash2 className="h-4 w-4 mr-2" />}
+              Remover
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
