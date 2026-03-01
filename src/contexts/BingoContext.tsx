@@ -535,6 +535,47 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   }, [sorteioAtivo, callApi]);
 
+  // ================== LOJA PÚBLICA ==================
+  const loadMinhaLoja = useCallback(async () => {
+    try {
+      const result = await callApi('getMinhaLoja', {});
+      setLojaCartelas(result.data || []);
+    } catch (error: any) {
+      console.error('Error loading loja:', error);
+    }
+  }, [callApi]);
+
+  const adicionarCartelaLoja = useCallback(async (cardSetId: string, numeroCartela: number, preco: number, cardData: string, layoutData: string, vendedorId?: string): Promise<LojaCartela> => {
+    const result = await callApi('adicionarCartelaLoja', { card_set_id: cardSetId, numero_cartela: numeroCartela, preco, card_data: cardData, layout_data: layoutData, vendedor_id: vendedorId || null });
+    if (!result.data) throw new Error(result.error || 'Erro ao disponibilizar cartela.');
+    setLojaCartelas(prev => {
+      const idx = prev.findIndex(c => c.card_set_id === cardSetId && c.numero_cartela === numeroCartela);
+      if (idx >= 0) {
+        const updated = [...prev];
+        updated[idx] = result.data;
+        return updated;
+      }
+      return [...prev, result.data];
+    });
+    return result.data;
+  }, [callApi]);
+
+  const removerCartelaLoja = useCallback(async (id: string) => {
+    await callApi('removerCartelaLoja', { id });
+    setLojaCartelas(prev => prev.filter(c => c.id !== id));
+  }, [callApi]);
+
+  const removerMultiplasCartelasLoja = useCallback(async (ids: string[]) => {
+    if (ids.length === 0) return;
+    await callApi('removerMultiplasCartelasLoja', { ids });
+    setLojaCartelas(prev => prev.filter(c => !ids.includes(c.id)));
+  }, [callApi]);
+
+  const atualizarPrecoLojaCartela = useCallback(async (id: string, preco: number) => {
+    await callApi('atualizarPrecoLojaCartela', { id, preco });
+    setLojaCartelas(prev => prev.map(c => c.id === id ? { ...c, preco } : c));
+  }, [callApi]);
+
   const addVenda = useCallback(async (venda: Omit<Venda, 'id' | 'created_at' | 'updated_at'>) => {
     if (!sorteioAtivo) return;
     
@@ -680,47 +721,6 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       toast({ title: 'Erro ao remover lote', description: error.message, variant: 'destructive' });
     }
   }, [sorteioAtivo, callApi, toast, loadCartelasValidadas]);
-
-  // ================== LOJA PÚBLICA ==================
-  const loadMinhaLoja = useCallback(async () => {
-    try {
-      const result = await callApi('getMinhaLoja', {});
-      setLojaCartelas(result.data || []);
-    } catch (error: any) {
-      console.error('Error loading loja:', error);
-    }
-  }, [callApi]);
-
-  const adicionarCartelaLoja = useCallback(async (cardSetId: string, numeroCartela: number, preco: number, cardData: string, layoutData: string, vendedorId?: string): Promise<LojaCartela> => {
-    const result = await callApi('adicionarCartelaLoja', { card_set_id: cardSetId, numero_cartela: numeroCartela, preco, card_data: cardData, layout_data: layoutData, vendedor_id: vendedorId || null });
-    if (!result.data) throw new Error(result.error || 'Erro ao disponibilizar cartela.');
-    setLojaCartelas(prev => {
-      const idx = prev.findIndex(c => c.card_set_id === cardSetId && c.numero_cartela === numeroCartela);
-      if (idx >= 0) {
-        const updated = [...prev];
-        updated[idx] = result.data;
-        return updated;
-      }
-      return [...prev, result.data];
-    });
-    return result.data;
-  }, [callApi]);
-
-  const removerCartelaLoja = useCallback(async (id: string) => {
-    await callApi('removerCartelaLoja', { id });
-    setLojaCartelas(prev => prev.filter(c => c.id !== id));
-  }, [callApi]);
-
-  const removerMultiplasCartelasLoja = useCallback(async (ids: string[]) => {
-    if (ids.length === 0) return;
-    await callApi('removerMultiplasCartelasLoja', { ids });
-    setLojaCartelas(prev => prev.filter(c => !ids.includes(c.id)));
-  }, [callApi]);
-
-  const atualizarPrecoLojaCartela = useCallback(async (id: string, preco: number) => {
-    await callApi('atualizarPrecoLojaCartela', { id, preco });
-    setLojaCartelas(prev => prev.map(c => c.id === id ? { ...c, preco } : c));
-  }, [callApi]);
 
   // ================== REFRESH & SET SORTEIO ATIVO ==================
   const refreshData = useCallback(async () => {
