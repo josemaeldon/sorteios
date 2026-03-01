@@ -521,7 +521,7 @@ async function initSchema() {
         await client.query(`
           CREATE TABLE IF NOT EXISTS loja_compradores (
             id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
-            email VARCHAR(255) NOT NULL UNIQUE,
+            email VARCHAR(255) NOT NULL,
             senha_hash VARCHAR(255) NOT NULL,
             nome VARCHAR(255) NOT NULL,
             cpf VARCHAR(20) DEFAULT NULL,
@@ -550,6 +550,17 @@ async function initSchema() {
             if (!e.message || !e.message.includes('Duplicate column')) {
               console.warn('loja_compradores migration warning:', e.message);
             }
+          }
+        }
+        // Migrate loja_compradores unique constraint: email -> (email, owner_user_id) (MySQL)
+        try {
+          await client.query('ALTER TABLE loja_compradores DROP INDEX email');
+        } catch (e) { /* index may not exist */ }
+        try {
+          await client.query('CREATE UNIQUE INDEX loja_compradores_email_owner_key ON loja_compradores (email, owner_user_id)');
+        } catch (e) {
+          if (!e.message || !e.message.includes('Duplicate key name')) {
+            console.warn('loja_compradores index migration warning:', e.message);
           }
         }
         // Create user_configuracoes table (MySQL)
@@ -666,7 +677,7 @@ async function initSchema() {
         await client.query(`
           CREATE TABLE IF NOT EXISTS public.loja_compradores (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            email VARCHAR(255) NOT NULL UNIQUE,
+            email VARCHAR(255) NOT NULL,
             senha_hash VARCHAR(255) NOT NULL,
             nome VARCHAR(255) NOT NULL,
             cpf VARCHAR(20) DEFAULT NULL,
@@ -688,6 +699,17 @@ async function initSchema() {
         await client.query(`ALTER TABLE loja_compradores ADD COLUMN IF NOT EXISTS telefone VARCHAR(50) DEFAULT NULL`);
         await client.query(`ALTER TABLE loja_compradores ADD COLUMN IF NOT EXISTS owner_user_id UUID DEFAULT NULL`);
         await client.query(`ALTER TABLE loja_compradores ADD COLUMN IF NOT EXISTS avatar_url TEXT DEFAULT NULL`);
+        // Migrate loja_compradores unique constraint: email -> (email, owner_user_id) (PostgreSQL)
+        await client.query(`ALTER TABLE loja_compradores DROP CONSTRAINT IF EXISTS loja_compradores_email_key`);
+        await client.query(`
+          DO $$ BEGIN
+            IF NOT EXISTS (
+              SELECT 1 FROM pg_constraint WHERE conname = 'loja_compradores_email_owner_key'
+            ) THEN
+              ALTER TABLE loja_compradores ADD CONSTRAINT loja_compradores_email_owner_key UNIQUE (email, owner_user_id);
+            END IF;
+          END $$
+        `);
         // Create user_configuracoes table (PostgreSQL)
         await client.query(`
           CREATE TABLE IF NOT EXISTS public.user_configuracoes (
@@ -3268,11 +3290,15 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         const compHash = await hashPassword(data.senha);
         let newComp;
         if (dbConfig.type === 'mysql') {
+          const newCompId = crypto.randomUUID();
           await client.query(
-            'INSERT INTO loja_compradores (id, email, senha_hash, nome, cpf, endereco, cidade, telefone, owner_user_id) VALUES (UUID(), $1, $2, $3, $4, $5, $6, $7, $8)',
-            [data.email.toLowerCase().trim(), compHash, nomeComp, cpfComp, enderecoComp, cidadeComp, telefoneComp, data.owner_user_id || null]
+            'INSERT INTO loja_compradores (id, email, senha_hash, nome, cpf, endereco, cidade, telefone, owner_user_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
+            [newCompId, data.email.toLowerCase().trim(), compHash, nomeComp, cpfComp, enderecoComp, cidadeComp, telefoneComp, data.owner_user_id || null]
           );
-          const inserted = await client.query('SELECT id, email, nome, cpf, endereco, cidade, telefone, created_at FROM loja_compradores WHERE email = $1', [data.email.toLowerCase().trim()]);
+          const inserted = await client.query(
+            'SELECT id, email, nome, cpf, endereco, cidade, telefone, created_at FROM loja_compradores WHERE id = $1',
+            [newCompId]
+          );
           newComp = inserted.rows[0];
         } else {
           const inserted = await client.query(
