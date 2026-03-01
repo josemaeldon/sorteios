@@ -2348,18 +2348,14 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         const layoutData = data.layout_data || '';
         const vendedorIdLoja = data.vendedor_id || null;
         if (dbConfig.type === 'mysql') {
-          const existingLoja = await client.query(
-            'SELECT id FROM loja_cartelas WHERE user_id = $1 AND card_set_id = $2 AND numero_cartela = $3',
-            [data.authenticated_user_id, data.card_set_id, data.numero_cartela]
-          );
-          if (existingLoja.rows.length > 0) {
-            return res.status(409).json({ error: 'Cartela já está na loja.' });
-          }
-          await client.query(
-            `INSERT INTO loja_cartelas (id, user_id, card_set_id, numero_cartela, preco, card_data, layout_data, vendedor_id)
+          const insertResult = await client.query(
+            `INSERT IGNORE INTO loja_cartelas (id, user_id, card_set_id, numero_cartela, preco, card_data, layout_data, vendedor_id)
              VALUES (UUID(), $1, $2, $3, $4, $5, $6, $7)`,
             [data.authenticated_user_id, data.card_set_id, data.numero_cartela, preco, data.card_data, layoutData, vendedorIdLoja]
           );
+          if (insertResult.rows.affectedRows === 0) {
+            return res.status(409).json({ error: 'Cartela já está na loja.', code: 'DUPLICATE_CARTELA' });
+          }
           const inserted = await client.query(
             'SELECT * FROM loja_cartelas WHERE user_id = $1 AND card_set_id = $2 AND numero_cartela = $3',
             [data.authenticated_user_id, data.card_set_id, data.numero_cartela]
@@ -2374,7 +2370,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
             [data.authenticated_user_id, data.card_set_id, data.numero_cartela, preco, data.card_data, layoutData, vendedorIdLoja]
           );
           if (result.rows.length === 0) {
-            return res.status(409).json({ error: 'Cartela já está na loja.' });
+            return res.status(409).json({ error: 'Cartela já está na loja.', code: 'DUPLICATE_CARTELA' });
           }
           return res.json({ data: result.rows[0] });
         }

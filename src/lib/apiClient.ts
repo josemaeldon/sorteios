@@ -83,7 +83,9 @@ export const callApi = async (action: string, data: Record<string, any> = {}): P
       throw new Error('Não autorizado. Faça login novamente.');
     }
     const errorData = await response.json().catch(() => ({ error: 'Erro desconhecido' }));
-    throw new Error(errorData.error || `HTTP ${response.status}`);
+    const err = new Error(errorData.error || `HTTP ${response.status}`);
+    if (errorData.code) (err as any).code = errorData.code;
+    throw err;
   }
   
   return response.json();

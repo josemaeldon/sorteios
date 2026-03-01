@@ -706,7 +706,7 @@ const BingoCardsBuilderTab: React.FC = () => {
           await adicionarCartelaLoja(activeLayoutId, card.cartelaNumero, preco, JSON.stringify(card), JSON.stringify(layout));
           added++;
         } catch (cardErr: any) {
-          if (cardErr.message?.includes('já está na loja')) {
+          if (cardErr.code === 'DUPLICATE_CARTELA') {
             skipped++;
           } else {
             throw cardErr;
@@ -766,7 +766,7 @@ const BingoCardsBuilderTab: React.FC = () => {
           await adicionarCartelaLoja(activeLayoutId, c.numero, preco, JSON.stringify(cardGrid), JSON.stringify(layout), vendedorLojaId);
           added++;
         } catch (cardErr: any) {
-          if (cardErr.message?.includes('já está na loja')) {
+          if (cardErr.code === 'DUPLICATE_CARTELA') {
             skipped++;
           } else {
             throw cardErr;
