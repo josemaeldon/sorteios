@@ -543,6 +543,7 @@ async function initSchema() {
           'ALTER TABLE loja_compradores ADD COLUMN cidade VARCHAR(100) DEFAULT NULL',
           'ALTER TABLE loja_compradores ADD COLUMN telefone VARCHAR(50) DEFAULT NULL',
           'ALTER TABLE loja_compradores ADD COLUMN owner_user_id CHAR(36) DEFAULT NULL',
+          'ALTER TABLE loja_compradores ADD COLUMN avatar_url LONGTEXT DEFAULT NULL',
         ];
         for (const sql of compradoresExtraCols) {
           try { await client.query(sql); } catch (e) {
@@ -686,6 +687,7 @@ async function initSchema() {
         await client.query(`ALTER TABLE loja_compradores ADD COLUMN IF NOT EXISTS cidade VARCHAR(100) DEFAULT NULL`);
         await client.query(`ALTER TABLE loja_compradores ADD COLUMN IF NOT EXISTS telefone VARCHAR(50) DEFAULT NULL`);
         await client.query(`ALTER TABLE loja_compradores ADD COLUMN IF NOT EXISTS owner_user_id UUID DEFAULT NULL`);
+        await client.query(`ALTER TABLE loja_compradores ADD COLUMN IF NOT EXISTS avatar_url TEXT DEFAULT NULL`);
         // Create user_configuracoes table (PostgreSQL)
         await client.query(`
           CREATE TABLE IF NOT EXISTS public.user_configuracoes (
@@ -989,7 +991,7 @@ function checkBasicAuth(req, res, next) {
 
 // JWT Auth middleware
 async function checkAuth(req, action) {
-  const publicActions = ['checkFirstAccess', 'setupAdmin', 'login', 'publicRegister', 'getPublicPlanos', 'getLojaPublica', 'createStripeCheckoutCartela', 'confirmStripeCheckoutCartela', 'createStripeCheckoutMultiCartela', 'confirmStripeCheckoutMultiCartela', 'createMercadoPagoCheckoutCartela', 'confirmMercadoPagoCheckoutCartela', 'createMercadoPagoCheckoutMultiCartela', 'confirmMercadoPagoCheckoutMultiCartela', 'cadastrarComprador', 'loginComprador', 'getHistoricoComprador', 'emailCartelasPDF', 'solicitarRecuperacaoSenha', 'resetarSenha'];
+  const publicActions = ['checkFirstAccess', 'setupAdmin', 'login', 'publicRegister', 'getPublicPlanos', 'getLojaPublica', 'createStripeCheckoutCartela', 'confirmStripeCheckoutCartela', 'createStripeCheckoutMultiCartela', 'confirmStripeCheckoutMultiCartela', 'createMercadoPagoCheckoutCartela', 'confirmMercadoPagoCheckoutCartela', 'createMercadoPagoCheckoutMultiCartela', 'confirmMercadoPagoCheckoutMultiCartela', 'cadastrarComprador', 'loginComprador', 'getHistoricoComprador', 'emailCartelasPDF', 'solicitarRecuperacaoSenha', 'resetarSenha', 'atualizarComprador', 'deletarComprador'];
   const adminActions = [
     // User management
     'getUsers', 'createUser', 'updateUser', 'deleteUser', 'approveUser', 'rejectUser',
@@ -3138,7 +3140,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           newComp = inserted.rows[0];
         }
         const compToken = await createJwt({ comprador_id: newComp.id, role: 'comprador', email: newComp.email });
-        return res.json({ comprador: { id: newComp.id, email: newComp.email, nome: newComp.nome, cpf: newComp.cpf, endereco: newComp.endereco, cidade: newComp.cidade, telefone: newComp.telefone }, token: compToken });
+        return res.json({ comprador: { id: newComp.id, email: newComp.email, nome: newComp.nome, cpf: newComp.cpf, endereco: newComp.endereco, cidade: newComp.cidade, telefone: newComp.telefone, avatar_url: null }, token: compToken });
       }
 
       case 'loginComprador': {
@@ -3155,7 +3157,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           return res.status(401).json({ error: 'Credenciais inválidas.' });
         }
         const compLoginToken = await createJwt({ comprador_id: foundComp.id, role: 'comprador', email: foundComp.email });
-        return res.json({ comprador: { id: foundComp.id, email: foundComp.email, nome: foundComp.nome, cpf: foundComp.cpf || '', endereco: foundComp.endereco || '', cidade: foundComp.cidade || '', telefone: foundComp.telefone || '' }, token: compLoginToken });
+        return res.json({ comprador: { id: foundComp.id, email: foundComp.email, nome: foundComp.nome, cpf: foundComp.cpf || '', endereco: foundComp.endereco || '', cidade: foundComp.cidade || '', telefone: foundComp.telefone || '', avatar_url: foundComp.avatar_url || null }, token: compLoginToken });
       }
 
       case 'getHistoricoComprador': {
@@ -3251,6 +3253,47 @@ ${numerosCartelas ? `<p><strong>Cartelas:</strong> ${numerosCartelas}</p>` : ''}
           'UPDATE loja_compradores SET senha_hash = $1, reset_token = NULL, reset_token_expires = NULL WHERE id = $2',
           [newHash, compResetResult.rows[0].id]
         );
+        return res.json({ success: true });
+      }
+
+      case 'atualizarComprador': {
+        if (!data.token) return res.status(401).json({ error: 'Token não informado.' });
+        const updUser = await verifyJwt(data.token);
+        if (!updUser || updUser.role !== 'comprador') return res.status(401).json({ error: 'Token inválido.' });
+        const updComp = await client.query('SELECT id FROM loja_compradores WHERE id = $1', [updUser.comprador_id]);
+        if (updComp.rows.length === 0) return res.status(404).json({ error: 'Comprador não encontrado.' });
+        const compId = updComp.rows[0].id;
+        const nomeUpd = (data.nome || '').trim();
+        if (!nomeUpd) return res.status(400).json({ error: 'O nome é obrigatório.' });
+        if (data.avatar_url && data.avatar_url.length > 2 * 1024 * 1024 * 1.4) {
+          // base64 is ~1.37x the original file size; 2MB * 1.4 ≈ 2.8M chars
+          return res.status(400).json({ error: 'A imagem de perfil é muito grande (máximo 2MB).' });
+        }
+        // Optional password change
+        if (data.nova_senha) {
+          if (!data.senha_atual) return res.status(400).json({ error: 'Senha atual é obrigatória para alterar a senha.' });
+          if (data.nova_senha.length < 6) return res.status(400).json({ error: 'A nova senha deve ter pelo menos 6 caracteres.' });
+          const compWithHash = await client.query('SELECT senha_hash FROM loja_compradores WHERE id = $1', [compId]);
+          const passOk = await verifyPassword(data.senha_atual, compWithHash.rows[0].senha_hash);
+          if (!passOk) return res.status(400).json({ error: 'Senha atual incorreta.' });
+          const newHash = await hashPassword(data.nova_senha);
+          await client.query('UPDATE loja_compradores SET senha_hash = $1, updated_at = NOW() WHERE id = $2', [newHash, compId]);
+        }
+        await client.query(
+          'UPDATE loja_compradores SET nome = $1, cpf = $2, endereco = $3, cidade = $4, telefone = $5, avatar_url = $6, updated_at = NOW() WHERE id = $7',
+          [nomeUpd, data.cpf || null, data.endereco || null, data.cidade || null, data.telefone || null, data.avatar_url || null, compId]
+        );
+        const updResult = await client.query('SELECT id, email, nome, cpf, endereco, cidade, telefone, avatar_url FROM loja_compradores WHERE id = $1', [compId]);
+        return res.json({ comprador: updResult.rows[0] });
+      }
+
+      case 'deletarComprador': {
+        if (!data.token) return res.status(401).json({ error: 'Token não informado.' });
+        const delUser = await verifyJwt(data.token);
+        if (!delUser || delUser.role !== 'comprador') return res.status(401).json({ error: 'Token inválido.' });
+        const delComp = await client.query('SELECT id FROM loja_compradores WHERE id = $1', [delUser.comprador_id]);
+        if (delComp.rows.length === 0) return res.status(404).json({ error: 'Comprador não encontrado.' });
+        await client.query('DELETE FROM loja_compradores WHERE id = $1', [delComp.rows[0].id]);
         return res.json({ success: true });
       }
 
