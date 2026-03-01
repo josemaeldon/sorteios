@@ -147,6 +147,9 @@ interface HistoricoItem {
   card_data: string;
   layout_data: string;
   comprador_nome?: string;
+  comprador_endereco?: string;
+  comprador_cidade?: string;
+  comprador_telefone?: string;
   store_nome: string;
   store_titulo?: string;
   sorteio_nome?: string;
@@ -1432,7 +1435,15 @@ const LojaPublica: React.FC = () => {
                     <p className="text-green-600 font-bold">
                       {Number(item.preco) > 0 ? `R$ ${Number(item.preco).toFixed(2).replace('.', ',')}` : 'Grátis'}
                     </p>
-                    <HistoricoDownloadButton item={item} buyerData={{ nome: compradorInfo?.nome || '', endereco: '', cidade: '', telefone: '' }} />
+                    <HistoricoDownloadButton
+                      item={item}
+                      buyerData={{
+                        nome: item.comprador_nome || compradorInfo?.nome || '',
+                        endereco: item.comprador_endereco || compradorInfo?.endereco || '',
+                        cidade: item.comprador_cidade || compradorInfo?.cidade || '',
+                        telefone: item.comprador_telefone || compradorInfo?.telefone || '',
+                      }}
+                    />
                   </div>
                 </div>
               ))}

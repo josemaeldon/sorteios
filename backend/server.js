@@ -3308,7 +3308,8 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         if (!histUser || histUser.role !== 'comprador') return res.status(401).json({ error: 'Token inválido.' });
         const historico = await client.query(`
           SELECT lc.id, lc.numero_cartela, lc.preco, lc.status, lc.card_data, lc.layout_data,
-                 lc.comprador_nome, lc.created_at, lc.updated_at,
+                 lc.comprador_nome, lc.comprador_endereco, lc.comprador_cidade, lc.comprador_telefone,
+                 lc.created_at, lc.updated_at,
                  u.nome as store_nome, u.titulo_sistema as store_titulo,
                  s.nome as sorteio_nome, s.data_sorteio
           FROM loja_cartelas lc
