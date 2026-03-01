@@ -41,7 +41,7 @@ const planSchema = z.object({
 
 const Admin: React.FC = () => {
   const navigate = useNavigate();
-  const { user, getAllUsers, createUser, updateUser, deleteUser, approveUser, rejectUser, isAuthenticated, getAllSorteiosAdmin, getSorteioUsers, assignSorteioToUser, removeUserFromSorteio, getPlanos, createPlano, updatePlano, deletePlano, assignUserPlan, grantLifetimeAccess, getConfiguracoes, updateConfiguracoes } = useAuth();
+  const { user, getAllUsers, createUser, updateUser, deleteUser, approveUser, rejectUser, isAuthenticated, getAllSorteiosAdmin, getSorteioUsers, assignSorteioToUser, removeUserFromSorteio, changeSorteioOwner, getPlanos, createPlano, updatePlano, deletePlano, assignUserPlan, grantLifetimeAccess, getConfiguracoes, updateConfiguracoes } = useAuth();
   
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -60,6 +60,7 @@ const Admin: React.FC = () => {
   const [sorteioOwnerId, setSorteioOwnerId] = useState<string>('');
   const [isLoadingAssign, setIsLoadingAssign] = useState(false);
   const [assignUserId, setAssignUserId] = useState<string>('');
+  const [changeOwnerUserId, setChangeOwnerUserId] = useState<string>('');
   
   // Plans state
   const [planos, setPlanos] = useState<Plan[]>([]);
@@ -494,6 +495,18 @@ const Admin: React.FC = () => {
     const { data, owner_id } = await getSorteioUsers(selectedSorteio.id);
     setSorteioUsers(data);
     setSorteioOwnerId(owner_id);
+    setIsLoadingAssign(false);
+  };
+
+  const handleChangeOwner = async () => {
+    if (!selectedSorteio || !changeOwnerUserId) return;
+    setIsLoadingAssign(true);
+    await changeSorteioOwner(selectedSorteio.id, changeOwnerUserId);
+    const { data, owner_id } = await getSorteioUsers(selectedSorteio.id);
+    setSorteioUsers(data);
+    setSorteioOwnerId(owner_id);
+    setChangeOwnerUserId('');
+    loadSorteios();
     setIsLoadingAssign(false);
   };
 
@@ -1494,6 +1507,28 @@ const Admin: React.FC = () => {
                   ))}
                 </div>
               )}
+            </div>
+
+            {/* Change owner */}
+            <div className="space-y-2 border-t pt-4">
+              <Label>Alterar proprietário</Label>
+              <div className="flex gap-2">
+                <Select value={changeOwnerUserId} onValueChange={setChangeOwnerUserId} disabled={isLoadingAssign}>
+                  <SelectTrigger className="flex-1">
+                    <SelectValue placeholder="Selecione o novo proprietário..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {users.filter(u => u.id !== sorteioOwnerId).map((u) => (
+                      <SelectItem key={u.id} value={u.id}>
+                        {u.nome} ({u.email})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button onClick={handleChangeOwner} disabled={!changeOwnerUserId || isLoadingAssign} size="icon" variant="outline">
+                  {isLoadingAssign ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
+                </Button>
+              </div>
             </div>
           </div>
 

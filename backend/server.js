@@ -1018,7 +1018,7 @@ async function checkAuth(req, action) {
     // User management
     'getUsers', 'createUser', 'updateUser', 'deleteUser', 'approveUser', 'rejectUser',
     // Sorteio management
-    'getAllSorteiosAdmin', 'assignSorteioToUser', 'removeUserFromSorteio', 'getSorteioUsers',
+    'getAllSorteiosAdmin', 'assignSorteioToUser', 'removeUserFromSorteio', 'getSorteioUsers', 'changeSorteioOwner',
     // Plan management
     'getPlanos', 'createPlano', 'updatePlano', 'deletePlano', 'assignUserPlan', 'grantLifetimeAccess',
     // Configuration
@@ -1292,6 +1292,22 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           [data.sorteio_id, data.user_id]
         );
         return res.json({ success: true });
+
+      case 'changeSorteioOwner': {
+        const newOwnerId = data.new_owner_id;
+        const sorteioId = data.sorteio_id;
+        if (!newOwnerId || !sorteioId) return res.status(400).json({ error: 'Parâmetros obrigatórios ausentes' });
+        await client.query(
+          'UPDATE sorteios SET user_id = $1, updated_at = NOW() WHERE id = $2',
+          [newOwnerId, sorteioId]
+        );
+        // Remove new owner from shared list if present (they are now the owner)
+        await client.query(
+          'DELETE FROM sorteio_compartilhado WHERE sorteio_id = $1 AND user_id = $2',
+          [sorteioId, newOwnerId]
+        );
+        return res.json({ success: true });
+      }
 
       case 'getMyProfile': {
         const myProfileResult = await client.query(
@@ -3243,27 +3259,29 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         if (!nomeComp || !cpfComp || !enderecoComp || !cidadeComp || !telefoneComp) {
           return res.status(400).json({ error: 'Nome, E-mail, CPF, Endereço, Cidade, Telefone e senha são obrigatórios.' });
         }
-        const emailCheckComp = await client.query('SELECT id FROM loja_compradores WHERE email = $1', [data.email.toLowerCase().trim()]);
+        const emailCheckComp = data.owner_user_id
+          ? await client.query('SELECT id FROM loja_compradores WHERE email = $1 AND owner_user_id = $2', [data.email.toLowerCase().trim(), data.owner_user_id])
+          : await client.query('SELECT id FROM loja_compradores WHERE email = $1', [data.email.toLowerCase().trim()]);
         if (emailCheckComp.rows.length > 0) {
-          return res.status(400).json({ error: 'Este email já está cadastrado.' });
+          return res.status(400).json({ error: 'Este email já está cadastrado nesta loja.' });
         }
         const compHash = await hashPassword(data.senha);
         let newComp;
         if (dbConfig.type === 'mysql') {
           await client.query(
-            'INSERT INTO loja_compradores (id, email, senha_hash, nome, cpf, endereco, cidade, telefone) VALUES (UUID(), $1, $2, $3, $4, $5, $6, $7)',
-            [data.email.toLowerCase().trim(), compHash, nomeComp, cpfComp, enderecoComp, cidadeComp, telefoneComp]
+            'INSERT INTO loja_compradores (id, email, senha_hash, nome, cpf, endereco, cidade, telefone, owner_user_id) VALUES (UUID(), $1, $2, $3, $4, $5, $6, $7, $8)',
+            [data.email.toLowerCase().trim(), compHash, nomeComp, cpfComp, enderecoComp, cidadeComp, telefoneComp, data.owner_user_id || null]
           );
           const inserted = await client.query('SELECT id, email, nome, cpf, endereco, cidade, telefone, created_at FROM loja_compradores WHERE email = $1', [data.email.toLowerCase().trim()]);
           newComp = inserted.rows[0];
         } else {
           const inserted = await client.query(
-            'INSERT INTO loja_compradores (email, senha_hash, nome, cpf, endereco, cidade, telefone) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, email, nome, cpf, endereco, cidade, telefone, created_at',
-            [data.email.toLowerCase().trim(), compHash, nomeComp, cpfComp, enderecoComp, cidadeComp, telefoneComp]
+            'INSERT INTO loja_compradores (email, senha_hash, nome, cpf, endereco, cidade, telefone, owner_user_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, email, nome, cpf, endereco, cidade, telefone, created_at',
+            [data.email.toLowerCase().trim(), compHash, nomeComp, cpfComp, enderecoComp, cidadeComp, telefoneComp, data.owner_user_id || null]
           );
           newComp = inserted.rows[0];
         }
-        const compToken = await createJwt({ comprador_id: newComp.id, role: 'comprador', email: newComp.email });
+        const compToken = await createJwt({ comprador_id: newComp.id, role: 'comprador', email: newComp.email, owner_user_id: data.owner_user_id || null });
         return res.json({ comprador: { id: newComp.id, email: newComp.email, nome: newComp.nome, cpf: newComp.cpf, endereco: newComp.endereco, cidade: newComp.cidade, telefone: newComp.telefone, avatar_url: null }, token: compToken });
       }
 
@@ -3271,7 +3289,9 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         if (!data.email || !data.senha) {
           return res.status(400).json({ error: 'Email e senha são obrigatórios.' });
         }
-        const compResult = await client.query('SELECT * FROM loja_compradores WHERE email = $1', [data.email.toLowerCase().trim()]);
+        const compResult = data.owner_user_id
+          ? await client.query('SELECT * FROM loja_compradores WHERE email = $1 AND owner_user_id = $2', [data.email.toLowerCase().trim(), data.owner_user_id])
+          : await client.query('SELECT * FROM loja_compradores WHERE email = $1', [data.email.toLowerCase().trim()]);
         if (compResult.rows.length === 0) {
           return res.status(401).json({ error: 'Credenciais inválidas.' });
         }
@@ -3280,7 +3300,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         if (!compPassValid) {
           return res.status(401).json({ error: 'Credenciais inválidas.' });
         }
-        const compLoginToken = await createJwt({ comprador_id: foundComp.id, role: 'comprador', email: foundComp.email });
+        const compLoginToken = await createJwt({ comprador_id: foundComp.id, role: 'comprador', email: foundComp.email, owner_user_id: foundComp.owner_user_id || null });
         return res.json({ comprador: { id: foundComp.id, email: foundComp.email, nome: foundComp.nome, cpf: foundComp.cpf || '', endereco: foundComp.endereco || '', cidade: foundComp.cidade || '', telefone: foundComp.telefone || '', avatar_url: foundComp.avatar_url || null }, token: compLoginToken });
       }
 
@@ -3290,18 +3310,20 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         if (!histToken) return res.status(401).json({ error: 'Token não informado.' });
         const histUser = await verifyJwt(histToken);
         if (!histUser || histUser.role !== 'comprador') return res.status(401).json({ error: 'Token inválido.' });
-        const historico = await client.query(`
+        const historicSql = `
           SELECT lc.id, lc.numero_cartela, lc.preco, lc.status, lc.card_data, lc.layout_data,
-                 lc.comprador_nome, lc.created_at, lc.updated_at,
+                 lc.comprador_nome, lc.comprador_endereco, lc.comprador_cidade, lc.comprador_telefone,
+                 lc.created_at, lc.updated_at,
                  u.nome as store_nome, u.titulo_sistema as store_titulo,
                  s.nome as sorteio_nome, s.data_sorteio
           FROM loja_cartelas lc
           JOIN usuarios u ON lc.user_id = u.id
           JOIN bingo_card_sets bcs ON lc.card_set_id = bcs.id
           JOIN sorteios s ON bcs.sorteio_id = s.id
-          WHERE LOWER(lc.comprador_email) = LOWER($1) AND lc.status = 'vendida'
-          ORDER BY lc.updated_at DESC
-        `, [histUser.email]);
+          WHERE LOWER(lc.comprador_email) = LOWER($1) AND lc.status = 'vendida'`;
+        const historico = histUser.owner_user_id
+          ? await client.query(historicSql + ' AND lc.user_id = $2 ORDER BY lc.updated_at DESC', [histUser.email, histUser.owner_user_id])
+          : await client.query(historicSql + ' ORDER BY lc.updated_at DESC', [histUser.email]);
         return res.json({ data: historico.rows });
       }
 
@@ -3335,7 +3357,9 @@ ${numerosCartelas ? `<p><strong>Cartelas:</strong> ${numerosCartelas}</p>` : ''}
           return res.status(400).json({ error: 'Email é obrigatório.' });
         }
         const emailRecup = data.email.toLowerCase().trim();
-        const compRecupResult = await client.query('SELECT id, nome FROM loja_compradores WHERE email = $1', [emailRecup]);
+        const compRecupResult = data.owner_user_id
+          ? await client.query('SELECT id, nome FROM loja_compradores WHERE email = $1 AND owner_user_id = $2', [emailRecup, data.owner_user_id])
+          : await client.query('SELECT id, nome FROM loja_compradores WHERE email = $1', [emailRecup]);
         // Always return success to avoid user enumeration
         if (compRecupResult.rows.length === 0) {
           return res.json({ success: true });
@@ -3365,10 +3389,15 @@ ${numerosCartelas ? `<p><strong>Cartelas:</strong> ${numerosCartelas}</p>` : ''}
           return res.status(400).json({ error: 'A senha deve ter pelo menos 6 caracteres.' });
         }
         const emailReset = data.email.toLowerCase().trim();
-        const compResetResult = await client.query(
-          'SELECT id FROM loja_compradores WHERE email = $1 AND reset_token = $2 AND reset_token_expires > NOW()',
-          [emailReset, data.codigo]
-        );
+        const compResetResult = data.owner_user_id
+          ? await client.query(
+              'SELECT id FROM loja_compradores WHERE email = $1 AND reset_token = $2 AND reset_token_expires > NOW() AND owner_user_id = $3',
+              [emailReset, data.codigo, data.owner_user_id]
+            )
+          : await client.query(
+              'SELECT id FROM loja_compradores WHERE email = $1 AND reset_token = $2 AND reset_token_expires > NOW()',
+              [emailReset, data.codigo]
+            );
         if (compResetResult.rows.length === 0) {
           return res.status(400).json({ error: 'Código inválido ou expirado.' });
         }
