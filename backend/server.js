@@ -2348,10 +2348,16 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         const layoutData = data.layout_data || '';
         const vendedorIdLoja = data.vendedor_id || null;
         if (dbConfig.type === 'mysql') {
-          result = await client.query(
+          const existingLoja = await client.query(
+            'SELECT id FROM loja_cartelas WHERE user_id = $1 AND card_set_id = $2 AND numero_cartela = $3',
+            [data.authenticated_user_id, data.card_set_id, data.numero_cartela]
+          );
+          if (existingLoja.rows.length > 0) {
+            return res.status(409).json({ error: 'Cartela já está na loja.' });
+          }
+          await client.query(
             `INSERT INTO loja_cartelas (id, user_id, card_set_id, numero_cartela, preco, card_data, layout_data, vendedor_id)
-             VALUES (UUID(), $1, $2, $3, $4, $5, $6, $7)
-             ON DUPLICATE KEY UPDATE preco = VALUES(preco), card_data = VALUES(card_data), layout_data = VALUES(layout_data), vendedor_id = VALUES(vendedor_id), updated_at = NOW()`,
+             VALUES (UUID(), $1, $2, $3, $4, $5, $6, $7)`,
             [data.authenticated_user_id, data.card_set_id, data.numero_cartela, preco, data.card_data, layoutData, vendedorIdLoja]
           );
           const inserted = await client.query(
@@ -2363,10 +2369,13 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           result = await client.query(
             `INSERT INTO loja_cartelas (user_id, card_set_id, numero_cartela, preco, card_data, layout_data, vendedor_id)
              VALUES ($1, $2, $3, $4, $5, $6, $7)
-             ON CONFLICT (user_id, card_set_id, numero_cartela) DO UPDATE SET preco = EXCLUDED.preco, card_data = EXCLUDED.card_data, layout_data = EXCLUDED.layout_data, vendedor_id = EXCLUDED.vendedor_id, updated_at = NOW()
+             ON CONFLICT (user_id, card_set_id, numero_cartela) DO NOTHING
              RETURNING *`,
             [data.authenticated_user_id, data.card_set_id, data.numero_cartela, preco, data.card_data, layoutData, vendedorIdLoja]
           );
+          if (result.rows.length === 0) {
+            return res.status(409).json({ error: 'Cartela já está na loja.' });
+          }
           return res.json({ data: result.rows[0] });
         }
       }

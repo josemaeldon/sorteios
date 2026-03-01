@@ -699,13 +699,25 @@ const BingoCardsBuilderTab: React.FC = () => {
     setIsBulkVendendo(true);
     setBulkProgress(0);
     let added = 0;
+    let skipped = 0;
     try {
       for (const card of targetCards) {
-        await adicionarCartelaLoja(activeLayoutId, card.cartelaNumero, preco, JSON.stringify(card), JSON.stringify(layout));
-        added++;
-        setBulkProgress(Math.round((added / targetCards.length) * 100));
+        try {
+          await adicionarCartelaLoja(activeLayoutId, card.cartelaNumero, preco, JSON.stringify(card), JSON.stringify(layout));
+          added++;
+        } catch (cardErr: any) {
+          if (cardErr.message?.includes('já está na loja')) {
+            skipped++;
+          } else {
+            throw cardErr;
+          }
+        }
+        setBulkProgress(Math.round((added + skipped) / targetCards.length * 100));
       }
-      toast({ title: `${added} cartela${added !== 1 ? 's' : ''} disponibilizada${added !== 1 ? 's' : ''} para venda!` });
+      const msg = skipped > 0
+        ? `${added} cartela${added !== 1 ? 's' : ''} adicionada${added !== 1 ? 's' : ''}, ${skipped} já estava${skipped !== 1 ? 'm' : ''} na loja.`
+        : `${added} cartela${added !== 1 ? 's' : ''} disponibilizada${added !== 1 ? 's' : ''} para venda!`;
+      toast({ title: msg });
       setShowBulkVenderModal(false);
     } catch (err: any) {
       toast({ title: err.message || 'Erro ao disponibilizar cartelas', variant: 'destructive' });
@@ -742,6 +754,7 @@ const BingoCardsBuilderTab: React.FC = () => {
     setIsVendedorLojaVendendo(true);
     setVendedorLojaProgress(0);
     let added = 0;
+    let skipped = 0;
     try {
       for (const c of vendorCartelas) {
         // Convert numeros_grade (flat arrays per prize) to BingoCardGrid.grids (5x5 per prize)
@@ -749,11 +762,22 @@ const BingoCardsBuilderTab: React.FC = () => {
           Array.from({ length: 5 }, (_, row) => flat.slice(row * 5, row * 5 + 5))
         );
         const cardGrid: BingoCardGrid = { cartelaNumero: c.numero, grids };
-        await adicionarCartelaLoja(activeLayoutId, c.numero, preco, JSON.stringify(cardGrid), JSON.stringify(layout), vendedorLojaId);
-        added++;
-        setVendedorLojaProgress(Math.round((added / vendorCartelas.length) * 100));
+        try {
+          await adicionarCartelaLoja(activeLayoutId, c.numero, preco, JSON.stringify(cardGrid), JSON.stringify(layout), vendedorLojaId);
+          added++;
+        } catch (cardErr: any) {
+          if (cardErr.message?.includes('já está na loja')) {
+            skipped++;
+          } else {
+            throw cardErr;
+          }
+        }
+        setVendedorLojaProgress(Math.round((added + skipped) / vendorCartelas.length * 100));
       }
-      toast({ title: `${added} cartela${added !== 1 ? 's' : ''} do vendedor disponibilizada${added !== 1 ? 's' : ''} para venda!` });
+      const msg = skipped > 0
+        ? `${added} cartela${added !== 1 ? 's' : ''} do vendedor adicionada${added !== 1 ? 's' : ''}, ${skipped} já estava${skipped !== 1 ? 'm' : ''} na loja.`
+        : `${added} cartela${added !== 1 ? 's' : ''} do vendedor disponibilizada${added !== 1 ? 's' : ''} para venda!`;
+      toast({ title: msg });
       setShowVendedorLojaModal(false);
     } catch (err: any) {
       toast({ title: err.message || 'Erro ao disponibilizar cartelas', variant: 'destructive' });
