@@ -87,7 +87,11 @@ const Admin: React.FC = () => {
   const [stripeSandboxSecretKey, setStripeSandboxSecretKey] = useState('');
   const [stripeSandboxWebhookSecret, setStripeSandboxWebhookSecret] = useState('');
   // Mercado Pago state
+  const [mpPublicKey, setMpPublicKey] = useState('');
   const [mpAccessToken, setMpAccessToken] = useState('');
+  const [mpClientId, setMpClientId] = useState('');
+  const [mpClientSecret, setMpClientSecret] = useState('');
+  const [mpSandboxPublicKey, setMpSandboxPublicKey] = useState('');
   const [mpSandboxAccessToken, setMpSandboxAccessToken] = useState('');
   const [mpSandboxMode, setMpSandboxMode] = useState(false);
   const [mpWebhookSecret, setMpWebhookSecret] = useState('');
@@ -174,7 +178,11 @@ const Admin: React.FC = () => {
     setStripeSandboxPublicKey(config['stripe_sandbox_public_key'] || '');
     setStripeSandboxSecretKey(config['stripe_sandbox_secret_key'] || '');
     setStripeSandboxWebhookSecret(config['stripe_sandbox_webhook_secret'] || '');
+    setMpPublicKey(config['mp_public_key'] || '');
     setMpAccessToken(config['mp_access_token'] || '');
+    setMpClientId(config['mp_client_id'] || '');
+    setMpClientSecret(config['mp_client_secret'] || '');
+    setMpSandboxPublicKey(config['mp_sandbox_public_key'] || '');
     setMpSandboxAccessToken(config['mp_sandbox_access_token'] || '');
     setMpSandboxMode(config['mp_sandbox_mode'] === 'true');
     setMpWebhookSecret(config['mp_webhook_secret'] || '');
@@ -207,7 +215,11 @@ const Admin: React.FC = () => {
       stripe_sandbox_public_key: stripeSandboxPublicKey,
       stripe_sandbox_secret_key: stripeSandboxSecretKey,
       stripe_sandbox_webhook_secret: stripeSandboxWebhookSecret,
+      mp_public_key: mpPublicKey,
       mp_access_token: mpAccessToken,
+      mp_client_id: mpClientId,
+      mp_client_secret: mpClientSecret,
+      mp_sandbox_public_key: mpSandboxPublicKey,
       mp_sandbox_access_token: mpSandboxAccessToken,
       mp_sandbox_mode: mpSandboxMode ? 'true' : 'false',
       mp_webhook_secret: mpWebhookSecret,
@@ -1013,6 +1025,18 @@ const Admin: React.FC = () => {
                         <div className={`space-y-4 rounded-lg border p-4 ${mpSandboxMode ? 'border-gray-200 opacity-60' : 'border-green-200 bg-green-50/30'}`}>
                           <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Produção</p>
                           <div className="space-y-2">
+                            <Label htmlFor="mp_public_key">Chave Pública (Public Key)</Label>
+                            <Input
+                              id="mp_public_key"
+                              type="password"
+                              value={mpPublicKey}
+                              onChange={(e) => setMpPublicKey(e.target.value)}
+                              placeholder="APP_USR-..."
+                              disabled={isSavingConfig}
+                            />
+                            <p className="text-xs text-muted-foreground">Chave pública de produção obtida no painel do Mercado Pago.</p>
+                          </div>
+                          <div className="space-y-2">
                             <Label htmlFor="mp_access_token">Access Token (Produção)</Label>
                             <Input
                               id="mp_access_token"
@@ -1024,11 +1048,47 @@ const Admin: React.FC = () => {
                             />
                             <p className="text-xs text-muted-foreground">Access Token de produção obtido no painel do Mercado Pago (começa com APP_USR-).</p>
                           </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="mp_client_id">Client ID (Produção)</Label>
+                            <Input
+                              id="mp_client_id"
+                              type="password"
+                              value={mpClientId}
+                              onChange={(e) => setMpClientId(e.target.value)}
+                              placeholder="Client ID da aplicação"
+                              disabled={isSavingConfig}
+                            />
+                            <p className="text-xs text-muted-foreground">Client ID da aplicação no painel do Mercado Pago.</p>
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="mp_client_secret">Client Secret (Produção)</Label>
+                            <Input
+                              id="mp_client_secret"
+                              type="password"
+                              value={mpClientSecret}
+                              onChange={(e) => setMpClientSecret(e.target.value)}
+                              placeholder="Client Secret da aplicação"
+                              disabled={isSavingConfig}
+                            />
+                            <p className="text-xs text-muted-foreground">Client Secret da aplicação no painel do Mercado Pago.</p>
+                          </div>
                         </div>
 
                         {/* MP Sandbox token */}
                         <div className={`space-y-4 rounded-lg border p-4 ${mpSandboxMode ? 'border-orange-200 bg-orange-50/30' : 'border-gray-200 opacity-60'}`}>
                           <p className="text-xs font-semibold uppercase tracking-wide text-orange-600">Sandbox (Testes)</p>
+                          <div className="space-y-2">
+                            <Label htmlFor="mp_sandbox_public_key">Chave Pública (Sandbox)</Label>
+                            <Input
+                              id="mp_sandbox_public_key"
+                              type="password"
+                              value={mpSandboxPublicKey}
+                              onChange={(e) => setMpSandboxPublicKey(e.target.value)}
+                              placeholder="TEST-..."
+                              disabled={isSavingConfig}
+                            />
+                            <p className="text-xs text-muted-foreground">Chave pública de teste obtida no painel do Mercado Pago.</p>
+                          </div>
                           <div className="space-y-2">
                             <Label htmlFor="mp_sandbox_access_token">Access Token (Sandbox)</Label>
                             <Input
