@@ -3,6 +3,7 @@ const cors = require('cors');
 const DatabaseAdapter = require('./db-adapter');
 const crypto = require('crypto');
 const Stripe = require('stripe');
+const { MercadoPagoConfig, Preference, Payment } = require('mercadopago');
 
 let nodemailer;
 try { nodemailer = require('nodemailer'); } catch (e) { nodemailer = null; }
@@ -269,6 +270,82 @@ app.post('/stripe-webhook', express.raw({ type: 'application/json' }), async (re
     res.json({ received: true });
   } catch (err) {
     console.error('Stripe webhook error:', err.message);
+    res.status(500).send('Internal error');
+  }
+});
+
+// MercadoPago webhook (IPN / notifications)
+app.post('/mp-webhook', express.json(), async (req, res) => {
+  try {
+    const { type, data } = req.body || {};
+    if (type !== 'payment' || !data?.id) {
+      return res.sendStatus(200);
+    }
+    const paymentId = String(data.id);
+
+    const mpConfigClient = await dbAdapter.getConnection();
+    try {
+      const mpCfg = await getMercadoPagoClient(mpConfigClient);
+      if (!mpCfg) return res.sendStatus(200);
+
+      // Verify webhook signature (HMAC-SHA256) if secret is configured
+      const signatureHeader = req.headers['x-signature'];
+      const requestId = req.headers['x-request-id'];
+      if (signatureHeader) {
+        const webhookSecretResult = await mpConfigClient.query(
+          "SELECT valor FROM configuracoes WHERE chave = 'mp_webhook_secret'"
+        );
+        const webhookSecret = webhookSecretResult.rows[0]?.valor || '';
+        if (webhookSecret) {
+          const parts = String(signatureHeader).split(',');
+          const tsPart = parts.find(p => p.startsWith('ts='));
+          const v1Part = parts.find(p => p.startsWith('v1='));
+          if (!tsPart || !v1Part) {
+            return res.status(400).send('Invalid signature format');
+          }
+          const ts = tsPart.slice(3);
+          const v1 = v1Part.slice(3);
+          const manifest = `id:${paymentId};request-id:${requestId || ''};ts:${ts};`;
+          const expected = crypto.createHmac('sha256', webhookSecret).update(manifest).digest('hex');
+          if (expected !== v1) {
+            return res.status(401).send('Signature mismatch');
+          }
+        }
+      }
+
+      const paymentApi = new Payment(mpCfg.client);
+      const paymentData = await paymentApi.get({ id: paymentId });
+      if (paymentData.status !== 'approved') return res.sendStatus(200);
+      const meta = paymentData.metadata || {};
+      const cartelaId = meta.loja_cartela_id;
+      const cartelaIds = meta.loja_cartela_ids ? String(meta.loja_cartela_ids).split(',').filter(Boolean) : null;
+      const compradorNome = meta.comprador_nome || '';
+      const compradorEmail = paymentData.payer?.email || meta.comprador_email || '';
+      const compradorEndereco = meta.comprador_endereco || '';
+      const compradorCidade = meta.comprador_cidade || '';
+      const compradorTelefone = meta.comprador_telefone || '';
+
+      if (cartelaIds && cartelaIds.length > 0) {
+        // Multi-cartela purchase
+        for (const lcId of cartelaIds) {
+          await mpConfigClient.query(
+            'UPDATE loja_cartelas SET status = $1, comprador_nome = $2, comprador_email = $3, comprador_endereco = $4, comprador_cidade = $5, comprador_telefone = $6, updated_at = NOW() WHERE id = $7 AND status = $8',
+            ['vendida', compradorNome, compradorEmail, compradorEndereco, compradorCidade, compradorTelefone, lcId, 'disponivel']
+          );
+        }
+      } else if (cartelaId) {
+        // Single cartela purchase
+        await mpConfigClient.query(
+          'UPDATE loja_cartelas SET status = $1, comprador_nome = $2, comprador_email = $3, comprador_endereco = $4, comprador_cidade = $5, comprador_telefone = $6, updated_at = NOW() WHERE id = $7 AND status = $8',
+          ['vendida', compradorNome, compradorEmail, compradorEndereco, compradorCidade, compradorTelefone, cartelaId, 'disponivel']
+        );
+      }
+    } finally {
+      mpConfigClient.release();
+    }
+    res.sendStatus(200);
+  } catch (err) {
+    console.error('MercadoPago webhook error:', err.message);
     res.status(500).send('Internal error');
   }
 });
@@ -633,6 +710,28 @@ async function getStripeWebhookSecret(dbClient) {
   return cfg['stripe_webhook_secret'] || '';
 }
 
+/** Returns a configured MercadoPagoConfig client based on sandbox mode.
+ *  Uses mp_sandbox_access_token when mp_sandbox_mode is 'true'. */
+async function getMercadoPagoClient(dbClient) {
+  const cfgResult = await dbClient.query(
+    "SELECT chave, valor FROM configuracoes WHERE chave IN ('mp_access_token', 'mp_sandbox_access_token', 'mp_sandbox_mode')"
+  );
+  const cfg = {};
+  cfgResult.rows.forEach(r => { cfg[r.chave] = r.valor || ''; });
+  const sandboxMode = cfg['mp_sandbox_mode'] === 'true';
+  const accessToken = sandboxMode ? cfg['mp_sandbox_access_token'] : cfg['mp_access_token'];
+  if (!accessToken) return null;
+  return { client: new MercadoPagoConfig({ accessToken }), sandboxMode };
+}
+
+/** Returns the configured payment gateway ('stripe' or 'mercado_pago'). Defaults to 'stripe'. */
+async function getPaymentGateway(dbClient) {
+  const cfgResult = await dbClient.query(
+    "SELECT valor FROM configuracoes WHERE chave = 'payment_gateway'"
+  );
+  return cfgResult.rows.length > 0 ? (cfgResult.rows[0].valor || 'stripe') : 'stripe';
+}
+
 async function hashPassword(password) {
   const hash = crypto.createHash('sha256');
   hash.update(password + 'bingo_salt_2024');
@@ -799,7 +898,7 @@ function checkBasicAuth(req, res, next) {
 
 // JWT Auth middleware
 async function checkAuth(req, action) {
-  const publicActions = ['checkFirstAccess', 'setupAdmin', 'login', 'publicRegister', 'getPublicPlanos', 'getLojaPublica', 'createStripeCheckoutCartela', 'confirmStripeCheckoutCartela', 'createStripeCheckoutMultiCartela', 'confirmStripeCheckoutMultiCartela', 'cadastrarComprador', 'loginComprador', 'getHistoricoComprador', 'emailCartelasPDF', 'solicitarRecuperacaoSenha', 'resetarSenha'];
+  const publicActions = ['checkFirstAccess', 'setupAdmin', 'login', 'publicRegister', 'getPublicPlanos', 'getLojaPublica', 'createStripeCheckoutCartela', 'confirmStripeCheckoutCartela', 'createStripeCheckoutMultiCartela', 'confirmStripeCheckoutMultiCartela', 'createMercadoPagoCheckoutCartela', 'confirmMercadoPagoCheckoutCartela', 'createMercadoPagoCheckoutMultiCartela', 'confirmMercadoPagoCheckoutMultiCartela', 'cadastrarComprador', 'loginComprador', 'getHistoricoComprador', 'emailCartelasPDF', 'solicitarRecuperacaoSenha', 'resetarSenha'];
   const adminActions = [
     // User management
     'getUsers', 'createUser', 'updateUser', 'deleteUser', 'approveUser', 'rejectUser',
@@ -2134,6 +2233,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           page,
           page_size: PAGE_SIZE,
           total_pages: Math.ceil(total / PAGE_SIZE),
+          payment_gateway: await getPaymentGateway(client),
         });
       }
 
@@ -2558,6 +2658,343 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           comprador_endereco: compradorEnderecoMulti,
           comprador_cidade: compradorCidadeMulti,
           comprador_telefone: compradorTelefoneMulti,
+        });
+      }
+
+      case 'createMercadoPagoCheckoutCartela': {
+        if (!data.loja_cartela_id) {
+          return res.status(400).json({ error: 'Cartela não especificada.' });
+        }
+        const mpCfgCartela = await getMercadoPagoClient(client);
+        if (!mpCfgCartela) {
+          return res.status(400).json({ error: 'Mercado Pago não configurado. Contate o vendedor.' });
+        }
+        const mpLojaCartelaResult = await client.query(
+          'SELECT lc.*, u.nome as owner_nome FROM loja_cartelas lc JOIN usuarios u ON lc.user_id = u.id WHERE lc.id = $1 AND lc.status = $2',
+          [data.loja_cartela_id, 'disponivel']
+        );
+        if (mpLojaCartelaResult.rows.length === 0) {
+          return res.status(404).json({ error: 'Cartela não disponível para compra.' });
+        }
+        const mpLojaCartela = mpLojaCartelaResult.rows[0];
+        if (Number(mpLojaCartela.preco) <= 0) {
+          return res.status(400).json({ error: 'Cartela sem preço definido.' });
+        }
+        const mpBaseUrl = (process.env.APP_URL || '').replace(/\/$/, '') || `${req.protocol}://${req.get('host')}`;
+        const isValidMpPath = (p) => typeof p === 'string' && /^\/[a-zA-Z0-9/_?=&-]*$/.test(p) && !p.includes('//') && !p.includes('..');
+        const mpSuccessPath = isValidMpPath(data.success_path) ? data.success_path : `/loja/${mpLojaCartela.user_id}`;
+        const mpCancelPath = isValidMpPath(data.cancel_path) ? data.cancel_path : `/loja/${mpLojaCartela.user_id}`;
+        const mpNotificationUrl = `${mpBaseUrl}/mp-webhook`;
+        const preferenceApi = new Preference(mpCfgCartela.client);
+        const mpPref = await preferenceApi.create({
+          body: {
+            items: [{
+              id: mpLojaCartela.id,
+              title: `Cartela ${String(mpLojaCartela.numero_cartela).padStart(3, '0')} — ${mpLojaCartela.owner_nome}`,
+              quantity: 1,
+              unit_price: Number(mpLojaCartela.preco),
+              currency_id: 'BRL',
+            }],
+            payer: data.comprador_email ? { email: data.comprador_email, name: data.comprador_nome || undefined } : undefined,
+            back_urls: {
+              success: `${mpBaseUrl}${mpSuccessPath}${mpSuccessPath.includes('?') ? '&' : '?'}payment=success&gateway=mp`,
+              failure: `${mpBaseUrl}${mpCancelPath}`,
+              pending: `${mpBaseUrl}${mpCancelPath}`,
+            },
+            auto_return: 'approved',
+            external_reference: mpLojaCartela.id,
+            notification_url: mpNotificationUrl,
+            metadata: {
+              type: 'cartela_loja',
+              loja_cartela_id: mpLojaCartela.id,
+              comprador_nome: data.comprador_nome || '',
+              comprador_email: data.comprador_email || '',
+              comprador_endereco: data.comprador_endereco || '',
+              comprador_cidade: data.comprador_cidade || '',
+              comprador_telefone: data.comprador_telefone || '',
+            },
+          },
+        });
+        const mpUrl = mpCfgCartela.sandboxMode ? mpPref.sandbox_init_point : mpPref.init_point;
+        return res.json({ url: mpUrl, preference_id: mpPref.id });
+      }
+
+      case 'confirmMercadoPagoCheckoutCartela': {
+        if (!data.payment_id) {
+          return res.status(400).json({ error: 'Payment ID não informado.' });
+        }
+        const mpCfgConfirm = await getMercadoPagoClient(client);
+        if (!mpCfgConfirm) {
+          return res.status(400).json({ error: 'Mercado Pago não configurado.' });
+        }
+        const paymentApiConfirm = new Payment(mpCfgConfirm.client);
+        const mpPayment = await paymentApiConfirm.get({ id: data.payment_id });
+        if (mpPayment.status !== 'approved') {
+          return res.status(402).json({ error: 'Pagamento não aprovado.' });
+        }
+        const mpMeta = mpPayment.metadata || {};
+        const mpCartelaId = mpMeta.loja_cartela_id || mpPayment.external_reference;
+        if (!mpCartelaId) {
+          return res.status(400).json({ error: 'Referência da cartela não encontrada.' });
+        }
+        const mpCartelaConfirmResult = await client.query(
+          'SELECT lc.*, bcs.sorteio_id FROM loja_cartelas lc JOIN bingo_card_sets bcs ON lc.card_set_id = bcs.id WHERE lc.id = $1',
+          [mpCartelaId]
+        );
+        if (mpCartelaConfirmResult.rows.length === 0) {
+          return res.status(404).json({ error: 'Cartela não encontrada.' });
+        }
+        const mpCartelaConfirm = mpCartelaConfirmResult.rows[0];
+        const mpCompradorNome = mpMeta.comprador_nome || '';
+        const mpCompradorEmail = mpMeta.comprador_email || mpPayment.payer?.email || '';
+        const mpCompradorEndereco = mpMeta.comprador_endereco || '';
+        const mpCompradorCidade = mpMeta.comprador_cidade || '';
+        const mpCompradorTelefone = mpMeta.comprador_telefone || '';
+        await client.query(
+          'UPDATE loja_cartelas SET status = $1, comprador_nome = $2, comprador_email = $3, comprador_endereco = $4, comprador_cidade = $5, comprador_telefone = $6, updated_at = NOW() WHERE id = $7',
+          ['vendida', mpCompradorNome, mpCompradorEmail, mpCompradorEndereco, mpCompradorCidade, mpCompradorTelefone, mpCartelaConfirm.id]
+        );
+        if (mpCartelaConfirm.sorteio_id) {
+          await client.query(
+            'UPDATE cartelas SET status = $1, comprador_nome = $2, updated_at = NOW() WHERE sorteio_id = $3 AND numero = $4',
+            ['vendida', mpCompradorNome, mpCartelaConfirm.sorteio_id, mpCartelaConfirm.numero_cartela]
+          );
+          await client.query(
+            `UPDATE atribuicao_cartelas SET status = 'vendida' WHERE numero_cartela = $1 AND atribuicao_id IN (SELECT id FROM atribuicoes WHERE sorteio_id = $2)`,
+            [mpCartelaConfirm.numero_cartela, mpCartelaConfirm.sorteio_id]
+          );
+          if (dbConfig.type === 'mysql') {
+            await client.query(
+              `INSERT INTO cartelas_validadas (id, sorteio_id, numero, comprador_nome) VALUES (UUID(), $1, $2, $3)
+               ON DUPLICATE KEY UPDATE comprador_nome = VALUES(comprador_nome)`,
+              [mpCartelaConfirm.sorteio_id, mpCartelaConfirm.numero_cartela, mpCompradorNome || null]
+            );
+          } else {
+            await client.query(
+              `INSERT INTO cartelas_validadas (sorteio_id, numero, comprador_nome)
+               VALUES ($1, $2, $3)
+               ON CONFLICT (sorteio_id, numero) DO UPDATE SET comprador_nome = EXCLUDED.comprador_nome`,
+              [mpCartelaConfirm.sorteio_id, mpCartelaConfirm.numero_cartela, mpCompradorNome || null]
+            );
+          }
+          const mpVendaExist = await client.query(
+            'SELECT id FROM vendas WHERE stripe_session_id = $1 LIMIT 1',
+            [`mp_${data.payment_id}`]
+          );
+          if (mpVendaExist.rows.length === 0) {
+            let mpVendaId;
+            if (dbConfig.type === 'mysql') {
+              await client.query(
+                `INSERT INTO vendas (id, sorteio_id, vendedor_id, cliente_nome, cliente_telefone, numeros_cartelas, valor_total, valor_pago, status, stripe_session_id, data_venda)
+                 VALUES (UUID(), $1, $2, $3, $4, $5, $6, $7, 'concluida', $8, NOW())`,
+                [mpCartelaConfirm.sorteio_id, mpCartelaConfirm.vendedor_id || null, mpCompradorNome || 'Comprador Online', mpCompradorTelefone || null, String(mpCartelaConfirm.numero_cartela), mpCartelaConfirm.preco, mpCartelaConfirm.preco, `mp_${data.payment_id}`]
+              );
+              const lastVendaMP = await client.query('SELECT id FROM vendas ORDER BY created_at DESC LIMIT 1');
+              mpVendaId = lastVendaMP.rows[0]?.id;
+            } else {
+              const mpVendaResult = await client.query(
+                `INSERT INTO vendas (sorteio_id, vendedor_id, cliente_nome, cliente_telefone, numeros_cartelas, valor_total, valor_pago, status, stripe_session_id, data_venda)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, 'concluida', $8, NOW()) RETURNING id`,
+                [mpCartelaConfirm.sorteio_id, mpCartelaConfirm.vendedor_id || null, mpCompradorNome || 'Comprador Online', mpCompradorTelefone || null, String(mpCartelaConfirm.numero_cartela), mpCartelaConfirm.preco, mpCartelaConfirm.preco, `mp_${data.payment_id}`]
+              );
+              mpVendaId = mpVendaResult.rows[0]?.id;
+            }
+            if (mpVendaId) {
+              await client.query(
+                'INSERT INTO pagamentos (venda_id, forma_pagamento, valor, data_pagamento) VALUES ($1, $2, $3, NOW())',
+                [mpVendaId, 'mercado_pago', mpCartelaConfirm.preco]
+              );
+            }
+          }
+        }
+        return res.json({
+          success: true,
+          numero_cartela: mpCartelaConfirm.numero_cartela,
+          comprador_nome: mpCompradorNome,
+          comprador_endereco: mpCompradorEndereco,
+          comprador_cidade: mpCompradorCidade,
+          comprador_telefone: mpCompradorTelefone,
+          card_data: mpCartelaConfirm.card_data,
+          layout_data: mpCartelaConfirm.layout_data,
+        });
+      }
+
+      case 'createMercadoPagoCheckoutMultiCartela': {
+        const mpMultiIds = Array.isArray(data.loja_cartela_ids) ? data.loja_cartela_ids.filter(Boolean) : [];
+        if (mpMultiIds.length === 0) {
+          return res.status(400).json({ error: 'Nenhuma cartela selecionada.' });
+        }
+        if (mpMultiIds.length > 20) {
+          return res.status(400).json({ error: 'Selecione no máximo 20 cartelas por pedido.' });
+        }
+        const mpCfgMulti = await getMercadoPagoClient(client);
+        if (!mpCfgMulti) {
+          return res.status(400).json({ error: 'Mercado Pago não configurado. Contate o vendedor.' });
+        }
+        const mpMultiPlaceholders = mpMultiIds.map((_, i) => `$${i + 1}`).join(',');
+        const mpMultiCartelasResult = await client.query(
+          `SELECT lc.*, u.nome as owner_nome FROM loja_cartelas lc JOIN usuarios u ON lc.user_id = u.id WHERE lc.id IN (${mpMultiPlaceholders}) AND lc.status = 'disponivel'`,
+          mpMultiIds
+        );
+        if (mpMultiCartelasResult.rows.length === 0) {
+          return res.status(404).json({ error: 'Nenhuma cartela disponível para compra.' });
+        }
+        if (mpMultiCartelasResult.rows.length !== mpMultiIds.length) {
+          return res.status(400).json({ error: 'Uma ou mais cartelas não estão disponíveis para compra.' });
+        }
+        const mpMultiCartelas = mpMultiCartelasResult.rows;
+        const mpBaseUrlMulti = (process.env.APP_URL || '').replace(/\/$/, '') || `${req.protocol}://${req.get('host')}`;
+        const isValidMpPathMulti = (p) => typeof p === 'string' && /^\/[a-zA-Z0-9/_?=&-]*$/.test(p) && !p.includes('//') && !p.includes('..');
+        const mpSuccessPathMulti = isValidMpPathMulti(data.success_path) ? data.success_path : `/loja/${mpMultiCartelas[0].user_id}`;
+        const mpCancelPathMulti = isValidMpPathMulti(data.cancel_path) ? data.cancel_path : `/loja/${mpMultiCartelas[0].user_id}`;
+        const mpNotificationUrlMulti = `${mpBaseUrlMulti}/mp-webhook`;
+        const mpLineItems = mpMultiCartelas.map(lc => ({
+          id: lc.id,
+          title: `Cartela ${String(lc.numero_cartela).padStart(3, '0')} — ${lc.owner_nome}`,
+          quantity: 1,
+          unit_price: Number(lc.preco),
+          currency_id: 'BRL',
+        }));
+        const preferenceApiMulti = new Preference(mpCfgMulti.client);
+        const mpPrefMulti = await preferenceApiMulti.create({
+          body: {
+            items: mpLineItems,
+            payer: data.comprador_email ? { email: data.comprador_email, name: data.comprador_nome || undefined } : undefined,
+            back_urls: {
+              success: `${mpBaseUrlMulti}${mpSuccessPathMulti}${mpSuccessPathMulti.includes('?') ? '&' : '?'}payment=success&gateway=mp&checkout_type=multi`,
+              failure: `${mpBaseUrlMulti}${mpCancelPathMulti}`,
+              pending: `${mpBaseUrlMulti}${mpCancelPathMulti}`,
+            },
+            auto_return: 'approved',
+            external_reference: mpMultiIds.join(','),
+            notification_url: mpNotificationUrlMulti,
+            metadata: {
+              type: 'cartela_loja_multi',
+              loja_cartela_ids: mpMultiIds.join(','),
+              comprador_nome: data.comprador_nome || '',
+              comprador_email: data.comprador_email || '',
+              comprador_endereco: data.comprador_endereco || '',
+              comprador_cidade: data.comprador_cidade || '',
+              comprador_telefone: data.comprador_telefone || '',
+            },
+          },
+        });
+        const mpUrlMulti = mpCfgMulti.sandboxMode ? mpPrefMulti.sandbox_init_point : mpPrefMulti.init_point;
+        return res.json({ url: mpUrlMulti, preference_id: mpPrefMulti.id });
+      }
+
+      case 'confirmMercadoPagoCheckoutMultiCartela': {
+        if (!data.payment_id) {
+          return res.status(400).json({ error: 'Payment ID não informado.' });
+        }
+        const mpCfgConfirmMulti = await getMercadoPagoClient(client);
+        if (!mpCfgConfirmMulti) {
+          return res.status(400).json({ error: 'Mercado Pago não configurado.' });
+        }
+        const paymentApiMulti = new Payment(mpCfgConfirmMulti.client);
+        const mpPaymentMulti = await paymentApiMulti.get({ id: data.payment_id });
+        if (mpPaymentMulti.status !== 'approved') {
+          return res.status(402).json({ error: 'Pagamento não aprovado.' });
+        }
+        const mpMetaMulti = mpPaymentMulti.metadata || {};
+        const rawIds = mpMetaMulti.loja_cartela_ids || mpPaymentMulti.external_reference || '';
+        const allMpIds = rawIds.split(',').filter(Boolean);
+        if (allMpIds.length === 0) {
+          return res.status(400).json({ error: 'Sessão inválida: cartelas não encontradas.' });
+        }
+        const mpCompradorNomeMulti = mpMetaMulti.comprador_nome || '';
+        const mpCompradorEmailMulti = mpMetaMulti.comprador_email || mpPaymentMulti.payer?.email || '';
+        const mpCompradorEnderecoMulti = mpMetaMulti.comprador_endereco || '';
+        const mpCompradorCidadeMulti = mpMetaMulti.comprador_cidade || '';
+        const mpCompradorTelefoneMulti = mpMetaMulti.comprador_telefone || '';
+        const mpPurchasedCartelas = [];
+        for (const lcId of allMpIds) {
+          const mpLcResult = await client.query(
+            'SELECT lc.*, bcs.sorteio_id FROM loja_cartelas lc JOIN bingo_card_sets bcs ON lc.card_set_id = bcs.id WHERE lc.id = $1',
+            [lcId]
+          );
+          if (mpLcResult.rows.length === 0) continue;
+          const mpLc = mpLcResult.rows[0];
+          await client.query(
+            'UPDATE loja_cartelas SET status = $1, comprador_nome = $2, comprador_email = $3, comprador_endereco = $4, comprador_cidade = $5, comprador_telefone = $6, updated_at = NOW() WHERE id = $7',
+            ['vendida', mpCompradorNomeMulti, mpCompradorEmailMulti, mpCompradorEnderecoMulti, mpCompradorCidadeMulti, mpCompradorTelefoneMulti, mpLc.id]
+          );
+          if (mpLc.sorteio_id) {
+            await client.query(
+              'UPDATE cartelas SET status = $1, comprador_nome = $2, updated_at = NOW() WHERE sorteio_id = $3 AND numero = $4',
+              ['vendida', mpCompradorNomeMulti, mpLc.sorteio_id, mpLc.numero_cartela]
+            );
+            await client.query(
+              `UPDATE atribuicao_cartelas SET status = 'vendida' WHERE numero_cartela = $1 AND atribuicao_id IN (SELECT id FROM atribuicoes WHERE sorteio_id = $2)`,
+              [mpLc.numero_cartela, mpLc.sorteio_id]
+            );
+            if (dbConfig.type === 'mysql') {
+              await client.query(
+                `INSERT INTO cartelas_validadas (id, sorteio_id, numero, comprador_nome) VALUES (UUID(), $1, $2, $3)
+                 ON DUPLICATE KEY UPDATE comprador_nome = VALUES(comprador_nome)`,
+                [mpLc.sorteio_id, mpLc.numero_cartela, mpCompradorNomeMulti || null]
+              );
+            } else {
+              await client.query(
+                `INSERT INTO cartelas_validadas (sorteio_id, numero, comprador_nome)
+                 VALUES ($1, $2, $3)
+                 ON CONFLICT (sorteio_id, numero) DO UPDATE SET comprador_nome = EXCLUDED.comprador_nome`,
+                [mpLc.sorteio_id, mpLc.numero_cartela, mpCompradorNomeMulti || null]
+              );
+            }
+          }
+          mpPurchasedCartelas.push({
+            numero_cartela: mpLc.numero_cartela,
+            card_data: mpLc.card_data,
+            layout_data: mpLc.layout_data,
+            sorteio_id: mpLc.sorteio_id,
+            vendedor_id: mpLc.vendedor_id,
+            preco: mpLc.preco,
+          });
+        }
+        if (mpPurchasedCartelas.length > 0) {
+          const firstMpPc = mpPurchasedCartelas[0];
+          if (firstMpPc.sorteio_id) {
+            const mpVendaExistMulti = await client.query(
+              'SELECT id FROM vendas WHERE stripe_session_id = $1 LIMIT 1',
+              [`mp_${data.payment_id}`]
+            );
+            if (mpVendaExistMulti.rows.length === 0) {
+              const mpNumerosVendidos = mpPurchasedCartelas.map(c => c.numero_cartela).join(',');
+              const mpTotalPreco = mpPurchasedCartelas.reduce((s, c) => s + parseFloat(c.preco || 0), 0);
+              let mpVendaIdMulti;
+              if (dbConfig.type === 'mysql') {
+                await client.query(
+                  `INSERT INTO vendas (id, sorteio_id, vendedor_id, cliente_nome, cliente_telefone, numeros_cartelas, valor_total, valor_pago, status, stripe_session_id, data_venda)
+                   VALUES (UUID(), $1, $2, $3, $4, $5, $6, $7, 'concluida', $8, NOW())`,
+                  [firstMpPc.sorteio_id, firstMpPc.vendedor_id || null, mpCompradorNomeMulti || 'Comprador Online', mpCompradorTelefoneMulti || null, mpNumerosVendidos, mpTotalPreco, mpTotalPreco, `mp_${data.payment_id}`]
+                );
+                const lastVendaMPM = await client.query('SELECT id FROM vendas ORDER BY created_at DESC LIMIT 1');
+                mpVendaIdMulti = lastVendaMPM.rows[0]?.id;
+              } else {
+                const mpVendaMultiResult = await client.query(
+                  `INSERT INTO vendas (sorteio_id, vendedor_id, cliente_nome, cliente_telefone, numeros_cartelas, valor_total, valor_pago, status, stripe_session_id, data_venda)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, 'concluida', $8, NOW()) RETURNING id`,
+                  [firstMpPc.sorteio_id, firstMpPc.vendedor_id || null, mpCompradorNomeMulti || 'Comprador Online', mpCompradorTelefoneMulti || null, mpNumerosVendidos, mpTotalPreco, mpTotalPreco, `mp_${data.payment_id}`]
+                );
+                mpVendaIdMulti = mpVendaMultiResult.rows[0]?.id;
+              }
+              if (mpVendaIdMulti) {
+                await client.query(
+                  'INSERT INTO pagamentos (venda_id, forma_pagamento, valor, data_pagamento) VALUES ($1, $2, $3, NOW())',
+                  [mpVendaIdMulti, 'mercado_pago', mpTotalPreco]
+                );
+              }
+            }
+          }
+        }
+        return res.json({
+          success: true,
+          cartelas: mpPurchasedCartelas.map(c => ({ numero_cartela: c.numero_cartela, card_data: c.card_data, layout_data: c.layout_data })),
+          comprador_nome: mpCompradorNomeMulti,
+          comprador_endereco: mpCompradorEnderecoMulti,
+          comprador_cidade: mpCompradorCidadeMulti,
+          comprador_telefone: mpCompradorTelefoneMulti,
         });
       }
 

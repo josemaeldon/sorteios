@@ -179,6 +179,7 @@ const LojaPublica: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [owner, setOwner] = useState<{ nome: string; titulo_sistema: string } | null>(null);
   const [cartelas, setCartelas] = useState<LojaCartela[]>([]);
+  const [paymentGateway, setPaymentGateway] = useState<'stripe' | 'mercado_pago'>('stripe');
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -189,6 +190,9 @@ const LojaPublica: React.FC = () => {
   // Payment confirmation state
   const paymentSuccess = searchParams.get('payment') === 'success';
   const sessionId = searchParams.get('session_id');
+  const mpPaymentId = searchParams.get('payment_id');
+  const mpPaymentStatus = searchParams.get('status');
+  const gateway = searchParams.get('gateway'); // 'mp' for Mercado Pago
   const checkoutType = searchParams.get('checkout_type'); // 'multi' for multi-cart
   const [confirmingPayment, setConfirmingPayment] = useState(false);
   const [paymentResult, setPaymentResult] = useState<{ ok: boolean; message: string } | null>(null);
@@ -286,6 +290,7 @@ const LojaPublica: React.FC = () => {
       setCurrentPage(result.page || 1);
       setTotalPages(result.total_pages || 1);
       setTotalCartelas(result.total || 0);
+      if (result.payment_gateway) setPaymentGateway(result.payment_gateway);
     } catch (err: any) {
       setError(err.message || 'Loja não encontrada.');
     } finally {
@@ -312,9 +317,72 @@ const LojaPublica: React.FC = () => {
     }
   }, []);
 
-  // Confirm payment after Stripe redirect
+  // Confirm payment after redirect (Stripe or Mercado Pago)
   useEffect(() => {
-    if (!paymentSuccess || !sessionId) return;
+    if (!paymentSuccess) return;
+
+    // Mercado Pago redirect: includes payment_id and status query params
+    if (gateway === 'mp' && mpPaymentId && mpPaymentStatus === 'approved') {
+      setConfirmingPayment(true);
+      if (checkoutType === 'multi') {
+        callApi('confirmMercadoPagoCheckoutMultiCartela', { payment_id: mpPaymentId })
+          .then((result) => {
+            if (result.success) {
+              const count = result.cartelas?.length ?? 0;
+              setPaymentResult({ ok: true, message: `${count} ${count === 1 ? 'cartela comprada' : 'cartelas compradas'} com sucesso! Obrigado${result.comprador_nome ? `, ${result.comprador_nome}` : ''}!` });
+              if (result.cartelas?.length) {
+                setPurchasedMultiData({
+                  cartelas: result.cartelas,
+                  buyerData: {
+                    nome: result.comprador_nome || '',
+                    endereco: result.comprador_endereco || '',
+                    cidade: result.comprador_cidade || '',
+                    telefone: result.comprador_telefone || '',
+                  },
+                });
+              }
+              loadLoja();
+            } else {
+              setPaymentResult({ ok: false, message: result.error || 'Não foi possível confirmar o pagamento.' });
+            }
+          })
+          .catch((err) => {
+            setPaymentResult({ ok: false, message: err.message || 'Erro ao confirmar pagamento.' });
+          })
+          .finally(() => setConfirmingPayment(false));
+      } else {
+        callApi('confirmMercadoPagoCheckoutCartela', { payment_id: mpPaymentId })
+          .then((result) => {
+            if (result.success) {
+              setPaymentResult({ ok: true, message: `Cartela ${String(result.numero_cartela).padStart(3, '0')} comprada com sucesso! Obrigado${result.comprador_nome ? `, ${result.comprador_nome}` : ''}!` });
+              if (result.card_data && result.layout_data) {
+                setPurchasedCardData({
+                  cardData: result.card_data,
+                  layoutData: result.layout_data,
+                  numeroCartela: result.numero_cartela,
+                  buyerData: {
+                    nome: result.comprador_nome || '',
+                    endereco: result.comprador_endereco || '',
+                    cidade: result.comprador_cidade || '',
+                    telefone: result.comprador_telefone || '',
+                  },
+                });
+              }
+              loadLoja();
+            } else {
+              setPaymentResult({ ok: false, message: result.error || 'Não foi possível confirmar o pagamento.' });
+            }
+          })
+          .catch((err) => {
+            setPaymentResult({ ok: false, message: err.message || 'Erro ao confirmar pagamento.' });
+          })
+          .finally(() => setConfirmingPayment(false));
+      }
+      return;
+    }
+
+    // Stripe redirect: includes session_id query param
+    if (!sessionId) return;
     setConfirmingPayment(true);
     if (checkoutType === 'multi') {
       callApi('confirmStripeCheckoutMultiCartela', { session_id: sessionId })
@@ -370,7 +438,7 @@ const LojaPublica: React.FC = () => {
         })
         .finally(() => setConfirmingPayment(false));
     }
-  }, [paymentSuccess, sessionId, checkoutType, loadLoja]);
+  }, [paymentSuccess, sessionId, mpPaymentId, mpPaymentStatus, gateway, checkoutType, loadLoja]);
 
   const handleDownloadCartela = async () => {
     if (!purchasedCardData) return;
@@ -465,7 +533,8 @@ const LojaPublica: React.FC = () => {
     setIsCheckingOut(true);
     setCheckoutError(null);
     try {
-      const result = await callApi('createStripeCheckoutCartela', {
+      const action = paymentGateway === 'mercado_pago' ? 'createMercadoPagoCheckoutCartela' : 'createStripeCheckoutCartela';
+      const result = await callApi(action, {
         loja_cartela_id: buyingCartela.id,
         comprador_nome: compradorNome.trim(),
         comprador_email: compradorEmail.trim() || undefined,
@@ -496,7 +565,8 @@ const LojaPublica: React.FC = () => {
     setIsCartCheckingOut(true);
     setCartCheckoutError(null);
     try {
-      const result = await callApi('createStripeCheckoutMultiCartela', {
+      const multiAction = paymentGateway === 'mercado_pago' ? 'createMercadoPagoCheckoutMultiCartela' : 'createStripeCheckoutMultiCartela';
+      const result = await callApi(multiAction, {
         loja_cartela_ids: cartItems.map(c => c.id),
         comprador_nome: cartCompradorNome.trim(),
         comprador_email: cartCompradorEmail.trim() || undefined,
