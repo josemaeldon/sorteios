@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { Loader2, ShoppingCart, Ticket, CheckCircle, XCircle, Download, ChevronDown, ChevronUp, X, LogIn, LogOut, UserPlus, History, Eye, EyeOff, Calendar } from 'lucide-react';
+import { Loader2, ShoppingCart, Ticket, CheckCircle, XCircle, Download, ChevronDown, ChevronUp, X, LogIn, LogOut, UserPlus, History, Eye, EyeOff, Calendar, UserCog, Trash2, Camera } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,6 +11,7 @@ import { BingoCardGrid, CanvasLayout, BINGO_COLS, exportBingoCardsPDF, BuyerData
 import { LojaCartela } from '@/types/bingo';
 
 const CART_MAX_ITEMS = 20;
+const MAX_AVATAR_SIZE_BYTES = 2 * 1024 * 1024; // 2 MB
 
 const COMPRADOR_TOKEN_KEY = 'loja_comprador_token';
 const COMPRADOR_INFO_KEY = 'loja_comprador_info';
@@ -135,6 +136,7 @@ interface CompradorInfo {
   endereco?: string;
   cidade?: string;
   telefone?: string;
+  avatar_url?: string | null;
 }
 
 interface HistoricoItem {
@@ -267,6 +269,24 @@ const LojaPublica: React.FC = () => {
   const [historico, setHistorico] = useState<HistoricoItem[]>([]);
   const [isLoadingHistorico, setIsLoadingHistorico] = useState(false);
   const [isEmailingPDF, setIsEmailingPDF] = useState(false);
+
+  // Edit profile state
+  const [showEditProfileModal, setShowEditProfileModal] = useState(false);
+  const [editNome, setEditNome] = useState('');
+  const [editCpf, setEditCpf] = useState('');
+  const [editEndereco, setEditEndereco] = useState('');
+  const [editCidade, setEditCidade] = useState('');
+  const [editTelefone, setEditTelefone] = useState('');
+  const [editAvatarUrl, setEditAvatarUrl] = useState<string>('');
+  const [editSenhaAtual, setEditSenhaAtual] = useState('');
+  const [editNovaSenha, setEditNovaSenha] = useState('');
+  const [editNovaSenhaVis, setEditNovaSenhaVis] = useState(false);
+  const [editSenhaAtualVis, setEditSenhaAtualVis] = useState(false);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [editProfileError, setEditProfileError] = useState<string | null>(null);
+  const [showDeleteAccountConfirm, setShowDeleteAccountConfirm] = useState(false);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
 
   // Derived cart data — use cartCache so items from other pages are included
   const cartItems = React.useMemo(
@@ -750,6 +770,87 @@ const LojaPublica: React.FC = () => {
     }
   };
 
+  const handleOpenEditProfile = () => {
+    if (!compradorInfo) return;
+    setEditNome(compradorInfo.nome || '');
+    setEditCpf(compradorInfo.cpf || '');
+    setEditEndereco(compradorInfo.endereco || '');
+    setEditCidade(compradorInfo.cidade || '');
+    setEditTelefone(compradorInfo.telefone || '');
+    setEditAvatarUrl(compradorInfo.avatar_url || '');
+    setEditSenhaAtual('');
+    setEditNovaSenha('');
+    setEditProfileError(null);
+    setShowDeleteAccountConfirm(false);
+    setShowEditProfileModal(true);
+  };
+
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setEditProfileError('Por favor, selecione uma imagem válida.');
+      return;
+    }
+    if (file.size > MAX_AVATAR_SIZE_BYTES) {
+      setEditProfileError('A imagem deve ter no máximo 2MB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setEditAvatarUrl(reader.result as string);
+      setEditProfileError(null);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSaveProfile = async () => {
+    if (!compradorToken || !compradorInfo) return;
+    if (!editNome.trim()) { setEditProfileError('O nome é obrigatório.'); return; }
+    setIsSavingProfile(true);
+    setEditProfileError(null);
+    try {
+      const payload: Record<string, string | null> = {
+        token: compradorToken,
+        nome: editNome.trim(),
+        cpf: editCpf.trim() || null,
+        endereco: editEndereco.trim() || null,
+        cidade: editCidade.trim() || null,
+        telefone: editTelefone.trim() || null,
+        avatar_url: editAvatarUrl || null,
+      };
+      if (editNovaSenha) {
+        payload.senha_atual = editSenhaAtual;
+        payload.nova_senha = editNovaSenha;
+      }
+      const result = await callApi('atualizarComprador', payload);
+      if (result.error) { setEditProfileError(result.error); return; }
+      const updatedInfo: CompradorInfo = { ...compradorInfo, ...result.comprador };
+      setCompradorInfo(updatedInfo);
+      localStorage.setItem(COMPRADOR_INFO_KEY, JSON.stringify(updatedInfo));
+      setShowEditProfileModal(false);
+    } catch (err: any) {
+      setEditProfileError(err.message || 'Erro ao salvar perfil.');
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!compradorToken) return;
+    setIsDeletingAccount(true);
+    try {
+      await callApi('deletarComprador', { token: compradorToken });
+      handleLogoutComprador();
+      setShowEditProfileModal(false);
+    } catch (err: any) {
+      setEditProfileError(err.message || 'Erro ao excluir conta.');
+    } finally {
+      setIsDeletingAccount(false);
+      setShowDeleteAccountConfirm(false);
+    }
+  };
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
@@ -765,15 +866,29 @@ const LojaPublica: React.FC = () => {
             <h1 className="text-3xl font-bold">{owner.titulo_sistema || owner.nome}</h1>
             <p className="text-blue-200 mt-1 text-lg">Compre sua cartela de bingo online</p>
             {/* Buyer auth buttons */}
-            <div className="flex justify-center gap-2 mt-4">
+            <div className="flex justify-center gap-2 mt-4 flex-wrap">
               {compradorInfo ? (
                 <>
+                  {compradorInfo.avatar_url && (
+                    <img
+                      src={compradorInfo.avatar_url}
+                      alt={compradorInfo.nome}
+                      className="w-8 h-8 rounded-full object-cover border-2 border-white/50 self-center"
+                    />
+                  )}
                   <button
                     className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white text-sm font-medium rounded-full px-4 py-1.5 transition-colors"
                     onClick={() => { handleLoadHistorico(); setShowHistoricoModal(true); }}
                   >
                     <History className="w-4 h-4" />
                     Minhas Cartelas
+                  </button>
+                  <button
+                    className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white text-sm font-medium rounded-full px-4 py-1.5 transition-colors"
+                    onClick={handleOpenEditProfile}
+                  >
+                    <UserCog className="w-4 h-4" />
+                    Meu Perfil
                   </button>
                   <button
                     className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 text-white/80 hover:text-white text-sm rounded-full px-3 py-1.5 transition-colors"
@@ -1329,6 +1444,155 @@ const LojaPublica: React.FC = () => {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowHistoricoModal(false)}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit profile modal */}
+      <Dialog open={showEditProfileModal} onOpenChange={(open) => { if (!open) { setShowEditProfileModal(false); setShowDeleteAccountConfirm(false); } }}>
+        <DialogContent className="max-w-sm max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserCog className="w-5 h-5" />
+              Meu Perfil
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* Avatar */}
+            <div className="flex flex-col items-center gap-2">
+              <div className="relative">
+                {editAvatarUrl ? (
+                  <img src={editAvatarUrl} alt="Foto de perfil" className="w-20 h-20 rounded-full object-cover border-2 border-gray-200" />
+                ) : (
+                  <div className="w-20 h-20 rounded-full bg-blue-100 flex items-center justify-center border-2 border-gray-200">
+                    <span className="text-blue-700 font-bold text-2xl">
+                      {editNome ? editNome.charAt(0).toUpperCase() : '?'}
+                    </span>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className="absolute bottom-0 right-0 bg-blue-600 hover:bg-blue-700 text-white rounded-full p-1.5 shadow"
+                  onClick={() => avatarInputRef.current?.click()}
+                  title="Alterar foto"
+                >
+                  <Camera className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              {editAvatarUrl && (
+                <button
+                  type="button"
+                  className="text-xs text-red-500 hover:underline"
+                  onClick={() => setEditAvatarUrl('')}
+                >
+                  Remover foto
+                </button>
+              )}
+              <input
+                ref={avatarInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleAvatarChange}
+              />
+            </div>
+            {/* Profile fields */}
+            <div className="space-y-1.5">
+              <Label>Nome *</Label>
+              <Input value={editNome} onChange={(e) => setEditNome(e.target.value)} placeholder="Seu nome completo" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>CPF</Label>
+              <Input value={editCpf} onChange={(e) => setEditCpf(e.target.value)} placeholder="000.000.000-00" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Endereço</Label>
+              <Input value={editEndereco} onChange={(e) => setEditEndereco(e.target.value)} placeholder="Rua, número, complemento" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Cidade</Label>
+              <Input value={editCidade} onChange={(e) => setEditCidade(e.target.value)} placeholder="Sua cidade" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Telefone</Label>
+              <Input type="tel" value={editTelefone} onChange={(e) => setEditTelefone(e.target.value)} placeholder="(00) 00000-0000" />
+            </div>
+            {/* Password change */}
+            <div className="border-t border-gray-100 pt-3 space-y-2">
+              <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Alterar senha (opcional)</p>
+              <div className="space-y-1.5">
+                <Label>Senha atual</Label>
+                <div className="relative">
+                  <Input
+                    type={editSenhaAtualVis ? 'text' : 'password'}
+                    value={editSenhaAtual}
+                    onChange={(e) => setEditSenhaAtual(e.target.value)}
+                    placeholder="Senha atual"
+                    className="pr-10"
+                  />
+                  <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" onClick={() => setEditSenhaAtualVis(v => !v)}>
+                    {editSenhaAtualVis ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Nova senha</Label>
+                <div className="relative">
+                  <Input
+                    type={editNovaSenhaVis ? 'text' : 'password'}
+                    value={editNovaSenha}
+                    onChange={(e) => setEditNovaSenha(e.target.value)}
+                    placeholder="Mínimo 6 caracteres"
+                    className="pr-10"
+                  />
+                  <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" onClick={() => setEditNovaSenhaVis(v => !v)}>
+                    {editNovaSenhaVis ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+            </div>
+            {editProfileError && (
+              <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{editProfileError}</p>
+            )}
+            {/* Delete account */}
+            <div className="border-t border-gray-100 pt-3">
+              {!showDeleteAccountConfirm ? (
+                <button
+                  type="button"
+                  className="text-sm text-red-500 hover:text-red-700 flex items-center gap-1.5"
+                  onClick={() => setShowDeleteAccountConfirm(true)}
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Excluir minha conta
+                </button>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-sm text-red-600 font-medium">Tem certeza? Esta ação não pode ser desfeita.</p>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={handleDeleteAccount}
+                      disabled={isDeletingAccount}
+                      className="gap-1.5"
+                    >
+                      {isDeletingAccount ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                      Confirmar exclusão
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setShowDeleteAccountConfirm(false)}>
+                      Cancelar
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowEditProfileModal(false)}>Cancelar</Button>
+            <Button onClick={handleSaveProfile} disabled={isSavingProfile} className="gap-2">
+              {isSavingProfile ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              Salvar
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
