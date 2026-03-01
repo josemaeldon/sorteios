@@ -2314,7 +2314,14 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         );
         const total = parseInt(countResult.rows[0].total) || 0;
         const lojaResult = await client.query(
-          'SELECT id, numero_cartela, preco, status, card_data, layout_data FROM loja_cartelas WHERE user_id = $1 AND status = $2 ORDER BY numero_cartela ASC LIMIT $3 OFFSET $4',
+          `SELECT lc.id, lc.numero_cartela, lc.preco, lc.status, lc.card_data, lc.layout_data,
+                  bcs.sorteio_id, s.nome as sorteio_nome, s.data_sorteio
+           FROM loja_cartelas lc
+           JOIN bingo_card_sets bcs ON lc.card_set_id = bcs.id
+           JOIN sorteios s ON bcs.sorteio_id = s.id
+           WHERE lc.user_id = $1 AND lc.status = $2
+           ORDER BY s.data_sorteio DESC, s.nome ASC, lc.numero_cartela ASC
+           LIMIT $3 OFFSET $4`,
           [data.user_id, 'disponivel', PAGE_SIZE, offset]
         );
         return res.json({
@@ -3160,9 +3167,12 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         const historico = await client.query(`
           SELECT lc.id, lc.numero_cartela, lc.preco, lc.status, lc.card_data, lc.layout_data,
                  lc.comprador_nome, lc.created_at, lc.updated_at,
-                 u.nome as store_nome, u.titulo_sistema as store_titulo
+                 u.nome as store_nome, u.titulo_sistema as store_titulo,
+                 s.nome as sorteio_nome, s.data_sorteio
           FROM loja_cartelas lc
           JOIN usuarios u ON lc.user_id = u.id
+          JOIN bingo_card_sets bcs ON lc.card_set_id = bcs.id
+          JOIN sorteios s ON bcs.sorteio_id = s.id
           WHERE LOWER(lc.comprador_email) = LOWER($1) AND lc.status = 'vendida'
           ORDER BY lc.updated_at DESC
         `, [histUser.email]);
