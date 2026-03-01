@@ -3267,15 +3267,15 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         let newComp;
         if (dbConfig.type === 'mysql') {
           await client.query(
-            'INSERT INTO loja_compradores (id, email, senha_hash, nome, cpf, endereco, cidade, telefone) VALUES (UUID(), $1, $2, $3, $4, $5, $6, $7)',
-            [data.email.toLowerCase().trim(), compHash, nomeComp, cpfComp, enderecoComp, cidadeComp, telefoneComp]
+            'INSERT INTO loja_compradores (id, email, senha_hash, nome, cpf, endereco, cidade, telefone, owner_user_id) VALUES (UUID(), $1, $2, $3, $4, $5, $6, $7, $8)',
+            [data.email.toLowerCase().trim(), compHash, nomeComp, cpfComp, enderecoComp, cidadeComp, telefoneComp, data.owner_user_id || null]
           );
           const inserted = await client.query('SELECT id, email, nome, cpf, endereco, cidade, telefone, created_at FROM loja_compradores WHERE email = $1', [data.email.toLowerCase().trim()]);
           newComp = inserted.rows[0];
         } else {
           const inserted = await client.query(
-            'INSERT INTO loja_compradores (email, senha_hash, nome, cpf, endereco, cidade, telefone) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, email, nome, cpf, endereco, cidade, telefone, created_at',
-            [data.email.toLowerCase().trim(), compHash, nomeComp, cpfComp, enderecoComp, cidadeComp, telefoneComp]
+            'INSERT INTO loja_compradores (email, senha_hash, nome, cpf, endereco, cidade, telefone, owner_user_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, email, nome, cpf, endereco, cidade, telefone, created_at',
+            [data.email.toLowerCase().trim(), compHash, nomeComp, cpfComp, enderecoComp, cidadeComp, telefoneComp, data.owner_user_id || null]
           );
           newComp = inserted.rows[0];
         }

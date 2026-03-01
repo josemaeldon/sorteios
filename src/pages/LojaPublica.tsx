@@ -693,6 +693,7 @@ const LojaPublica: React.FC = () => {
         payload.endereco = authEndereco.trim();
         payload.cidade = authCidade.trim();
         payload.telefone = authTelefone.trim();
+        if (ownerUserIdRef.current) payload.owner_user_id = ownerUserIdRef.current;
       }
       const result = await callApi(action, payload);
       if (result.error) { setAuthError(result.error); return; }
