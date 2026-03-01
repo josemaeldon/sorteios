@@ -1018,7 +1018,7 @@ async function checkAuth(req, action) {
     // User management
     'getUsers', 'createUser', 'updateUser', 'deleteUser', 'approveUser', 'rejectUser',
     // Sorteio management
-    'getAllSorteiosAdmin', 'assignSorteioToUser', 'removeUserFromSorteio', 'getSorteioUsers',
+    'getAllSorteiosAdmin', 'assignSorteioToUser', 'removeUserFromSorteio', 'getSorteioUsers', 'changeSorteioOwner',
     // Plan management
     'getPlanos', 'createPlano', 'updatePlano', 'deletePlano', 'assignUserPlan', 'grantLifetimeAccess',
     // Configuration
@@ -1292,6 +1292,22 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           [data.sorteio_id, data.user_id]
         );
         return res.json({ success: true });
+
+      case 'changeSorteioOwner': {
+        const newOwnerId = data.new_owner_id;
+        const sorteioId = data.sorteio_id;
+        if (!newOwnerId || !sorteioId) return res.status(400).json({ error: 'Parâmetros obrigatórios ausentes' });
+        await client.query(
+          'UPDATE sorteios SET user_id = $1, updated_at = NOW() WHERE id = $2',
+          [newOwnerId, sorteioId]
+        );
+        // Remove new owner from shared list if present (they are now the owner)
+        await client.query(
+          'DELETE FROM sorteio_compartilhado WHERE sorteio_id = $1 AND user_id = $2',
+          [sorteioId, newOwnerId]
+        );
+        return res.json({ success: true });
+      }
 
       case 'getMyProfile': {
         const myProfileResult = await client.query(

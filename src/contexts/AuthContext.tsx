@@ -21,6 +21,7 @@ interface AuthContextType extends AuthState {
   getSorteioUsers: (sorteioId: string) => Promise<{ data: User[]; owner_id: string }>;
   assignSorteioToUser: (sorteioId: string, userId: string) => Promise<{ success: boolean; error?: string }>;
   removeUserFromSorteio: (sorteioId: string, userId: string) => Promise<{ success: boolean; error?: string }>;
+  changeSorteioOwner: (sorteioId: string, newOwnerId: string) => Promise<{ success: boolean; error?: string }>;
   getPublicPlanos: () => Promise<Plan[]>;
   getPlanos: () => Promise<Plan[]>;
   createPlano: (data: { nome: string; valor: number; descricao?: string; stripe_price_id?: string }) => Promise<{ success: boolean; error?: string }>;
@@ -349,6 +350,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [user]);
 
+  const changeSorteioOwner = useCallback(async (sorteioId: string, newOwnerId: string) => {
+    if (user?.role !== 'admin') return { success: false, error: 'Apenas administradores' };
+    try {
+      await callApi('changeSorteioOwner', { sorteio_id: sorteioId, new_owner_id: newOwnerId });
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message || 'Erro ao alterar proprietário' };
+    }
+  }, [user]);
+
   const getPublicPlanos = useCallback(async (): Promise<Plan[]> => {
     try {
       const result = await callApi('getPublicPlanos');
@@ -604,6 +615,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     getSorteioUsers,
     assignSorteioToUser,
     removeUserFromSorteio,
+    changeSorteioOwner,
     getPublicPlanos,
     getPlanos,
     createPlano,
