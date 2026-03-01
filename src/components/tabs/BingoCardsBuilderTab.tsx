@@ -1116,6 +1116,7 @@ const BingoCardsBuilderTab: React.FC = () => {
                       ? el.backgroundColor : undefined,
                   }}
                   onPointerDown={(e) => handleElementPointerDown(e, el.id)}
+                  onClick={(e) => e.stopPropagation()}
                 >
                   {/* Content */}
                   {el.type === 'card_number' && (
