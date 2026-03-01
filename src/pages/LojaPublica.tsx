@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { Loader2, ShoppingCart, Ticket, CheckCircle, XCircle, Download, ChevronDown, ChevronUp, X, LogIn, LogOut, UserPlus, History, Eye, EyeOff } from 'lucide-react';
+import { Loader2, ShoppingCart, Ticket, CheckCircle, XCircle, Download, ChevronDown, ChevronUp, X, LogIn, LogOut, UserPlus, History, Eye, EyeOff, Calendar } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -147,6 +147,8 @@ interface HistoricoItem {
   comprador_nome?: string;
   store_nome: string;
   store_titulo?: string;
+  sorteio_nome?: string;
+  data_sorteio?: string;
   updated_at: string;
 }
 
@@ -855,17 +857,49 @@ const LojaPublica: React.FC = () => {
             <p className="text-center text-gray-400 mb-6 text-sm">
               Clique no número da cartela para ver os 25 números. Use o ícone <ShoppingCart className="w-3 h-3 inline" /> para adicionar várias ao carrinho.
             </p>
-            <div className="grid gap-5 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-              {cartelas.map((c) => (
-                <CartelaCard
-                  key={c.id}
-                  cartela={c}
-                  onBuy={handleBuy}
-                  inCart={cartIds.has(c.id)}
-                  onToggleCart={handleToggleCart}
-                />
-              ))}
-            </div>
+            {/* Group cartelas by sorteio */}
+            {(() => {
+              const groups: { sorteio_id: string; sorteio_nome: string; data_sorteio?: string; cartelas: LojaCartela[] }[] = [];
+              const groupMap = new Map<string, number>();
+              for (const c of cartelas) {
+                const key = c.sorteio_id || '';
+                if (!groupMap.has(key)) {
+                  groupMap.set(key, groups.length);
+                  groups.push({ sorteio_id: key, sorteio_nome: c.sorteio_nome || 'Sorteio sem nome', data_sorteio: c.data_sorteio, cartelas: [] });
+                }
+                groups[groupMap.get(key)!].cartelas.push(c);
+              }
+              const multipleGroups = groups.length > 1;
+              return groups.map((group) => (
+                <div key={group.sorteio_id} className={multipleGroups ? 'mb-10' : ''}>
+                  {multipleGroups && (
+                    <div className="flex items-center gap-3 mb-4 pb-2 border-b-2 border-blue-100">
+                      <Ticket className="w-5 h-5 text-blue-700 flex-shrink-0" />
+                      <div>
+                        <h2 className="text-xl font-bold text-blue-900">{group.sorteio_nome}</h2>
+                        {group.data_sorteio && (
+                          <p className="text-sm text-gray-500 flex items-center gap-1 mt-0.5">
+                            <Calendar className="w-3.5 h-3.5" />
+                            {new Date(group.data_sorteio).toLocaleDateString('pt-BR')}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  <div className="grid gap-5 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+                    {group.cartelas.map((c) => (
+                      <CartelaCard
+                        key={c.id}
+                        cartela={c}
+                        onBuy={handleBuy}
+                        inCart={cartIds.has(c.id)}
+                        onToggleCart={handleToggleCart}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ));
+            })()}
             {/* Infinite scroll sentinel + loading indicator */}
             <div ref={sentinelRef} className="flex justify-center mt-8">
               {isLoadingMore && (
@@ -933,6 +967,11 @@ const LojaPublica: React.FC = () => {
           </DialogHeader>
           {buyingCartela && (
             <div className="space-y-3 max-h-96 overflow-y-auto">
+              {buyingCartela.sorteio_nome && (
+                <p className="text-sm text-blue-700 font-medium text-center bg-blue-50 rounded-lg py-1.5 px-3">
+                  {buyingCartela.sorteio_nome}
+                </p>
+              )}
               <p className="text-2xl font-bold text-green-600 text-center">
                 R$ {Number(buyingCartela.preco).toFixed(2).replace('.', ',')}
               </p>
@@ -1020,7 +1059,12 @@ const LojaPublica: React.FC = () => {
             <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 bg-gray-50">
               {cartItems.map(c => (
                 <div key={c.id} className="flex justify-between items-center px-3 py-2 text-sm">
-                  <span className="font-medium">Cartela {String(c.numero_cartela).padStart(3, '0')}</span>
+                  <div>
+                    <span className="font-medium">Cartela {String(c.numero_cartela).padStart(3, '0')}</span>
+                    {c.sorteio_nome && (
+                      <p className="text-xs text-gray-500 mt-0.5">{c.sorteio_nome}</p>
+                    )}
+                  </div>
                   <span className="font-semibold text-green-600">
                     {Number(c.preco) > 0 ? `R$ ${Number(c.preco).toFixed(2).replace('.', ',')}` : 'Grátis'}
                   </span>
@@ -1267,6 +1311,9 @@ const LojaPublica: React.FC = () => {
                 <div key={item.id} className="border border-gray-200 rounded-xl p-4 flex items-center justify-between gap-3">
                   <div>
                     <p className="font-bold text-blue-900">Cartela {String(item.numero_cartela).padStart(3, '0')}</p>
+                    {item.sorteio_nome && (
+                      <p className="text-sm font-medium text-blue-700">{item.sorteio_nome}</p>
+                    )}
                     <p className="text-sm text-gray-500">{item.store_titulo || item.store_nome}</p>
                     <p className="text-xs text-gray-400">{new Date(item.updated_at).toLocaleDateString('pt-BR')}</p>
                   </div>

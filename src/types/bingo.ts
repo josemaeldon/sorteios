@@ -72,6 +72,9 @@ export interface LojaCartela {
   comprador_telefone?: string;
   card_data: string; // JSON of BingoCardGrid
   layout_data: string; // JSON of CanvasLayout
+  sorteio_id?: string;
+  sorteio_nome?: string;
+  data_sorteio?: string;
   created_at?: string;
   updated_at?: string;
 }
