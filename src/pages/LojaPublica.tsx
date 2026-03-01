@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { Loader2, ShoppingCart, Ticket, CheckCircle, XCircle, Download, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, X, LogIn, LogOut, UserPlus, History, Eye, EyeOff } from 'lucide-react';
+import { Loader2, ShoppingCart, Ticket, CheckCircle, XCircle, Download, ChevronDown, ChevronUp, X, LogIn, LogOut, UserPlus, History, Eye, EyeOff } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -184,10 +184,13 @@ const LojaPublica: React.FC = () => {
   const [owner, setOwner] = useState<{ nome: string; titulo_sistema: string } | null>(null);
   const [cartelas, setCartelas] = useState<LojaCartela[]>([]);
   const [paymentGateway, setPaymentGateway] = useState<'stripe' | 'mercado_pago'>('stripe');
-  // Pagination state
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
+  // Infinite scroll state
+  const [hasMore, setHasMore] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [totalCartelas, setTotalCartelas] = useState(0);
+  const currentPageRef = useRef(1);
+  const isFetchingRef = useRef(false);
+  const sentinelRef = useRef<HTMLDivElement>(null);
   // Cart cache: keeps full LojaCartela data for items added to cart across pages
   const [cartCache, setCartCache] = useState<Map<string, LojaCartela>>(new Map());
 
@@ -290,19 +293,28 @@ const LojaPublica: React.FC = () => {
 
   const loadLoja = useCallback(async (page = 1) => {
     if (!userId) return;
-    setIsLoading(true);
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
+    if (page === 1) {
+      setIsLoading(true);
+    } else {
+      setIsLoadingMore(true);
+    }
     try {
       const result = await callApi('getLojaPublica', { user_id: userId, page });
       setOwner(result.owner);
-      setCartelas(result.cartelas || []);
-      setCurrentPage(result.page || 1);
-      setTotalPages(result.total_pages || 1);
+      setCartelas(prev => page === 1 ? (result.cartelas || []) : [...prev, ...(result.cartelas || [])]);
       setTotalCartelas(result.total || 0);
+      const totalPages = result.total_pages || 1;
+      setHasMore(page < totalPages);
+      currentPageRef.current = page;
       if (result.payment_gateway) setPaymentGateway(result.payment_gateway);
     } catch (err: any) {
       setError(err.message || 'Loja não encontrada.');
     } finally {
+      isFetchingRef.current = false;
       setIsLoading(false);
+      setIsLoadingMore(false);
     }
   }, [userId]);
 
@@ -310,6 +322,22 @@ const LojaPublica: React.FC = () => {
   useEffect(() => {
     loadLoja();
   }, [loadLoja]);
+
+  // Infinite scroll: observe sentinel element
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore) {
+          loadLoja(currentPageRef.current + 1);
+        }
+      },
+      { rootMargin: '200px' }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, loadLoja]);
 
   // Load buyer auth from localStorage
   useEffect(() => {
@@ -838,28 +866,12 @@ const LojaPublica: React.FC = () => {
                 />
               ))}
             </div>
-            {/* Pagination controls */}
-            {totalPages > 1 && (
-              <div className="flex items-center justify-center gap-3 mt-8">
-                <button
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300 text-sm text-gray-600 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                  onClick={() => { const p = currentPage - 1; setCurrentPage(p); loadLoja(p); }}
-                  disabled={currentPage <= 1 || isLoading}
-                >
-                  <ChevronLeft className="w-4 h-4" /> Anterior
-                </button>
-                <span className="text-sm text-gray-600">
-                  Página <strong>{currentPage}</strong> de <strong>{totalPages}</strong>
-                </span>
-                <button
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300 text-sm text-gray-600 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                  onClick={() => { const p = currentPage + 1; setCurrentPage(p); loadLoja(p); }}
-                  disabled={currentPage >= totalPages || isLoading}
-                >
-                  Próxima <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-            )}
+            {/* Infinite scroll sentinel + loading indicator */}
+            <div ref={sentinelRef} className="flex justify-center mt-8">
+              {isLoadingMore && (
+                <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
+              )}
+            </div>
           </>
         )}
       </div>
