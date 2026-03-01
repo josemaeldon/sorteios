@@ -714,14 +714,17 @@ async function getStripeWebhookSecret(dbClient) {
  *  Uses mp_sandbox_access_token when mp_sandbox_mode is 'true'. */
 async function getMercadoPagoClient(dbClient) {
   const cfgResult = await dbClient.query(
-    "SELECT chave, valor FROM configuracoes WHERE chave IN ('mp_access_token', 'mp_sandbox_access_token', 'mp_sandbox_mode')"
+    "SELECT chave, valor FROM configuracoes WHERE chave IN ('mp_public_key', 'mp_access_token', 'mp_client_id', 'mp_client_secret', 'mp_sandbox_public_key', 'mp_sandbox_access_token', 'mp_sandbox_mode')"
   );
   const cfg = {};
   cfgResult.rows.forEach(r => { cfg[r.chave] = r.valor || ''; });
   const sandboxMode = cfg['mp_sandbox_mode'] === 'true';
   const accessToken = sandboxMode ? cfg['mp_sandbox_access_token'] : cfg['mp_access_token'];
   if (!accessToken) return null;
-  return { client: new MercadoPagoConfig({ accessToken }), sandboxMode };
+  const publicKey = sandboxMode ? cfg['mp_sandbox_public_key'] : cfg['mp_public_key'];
+  const clientId = sandboxMode ? undefined : cfg['mp_client_id'];
+  const clientSecret = sandboxMode ? undefined : cfg['mp_client_secret'];
+  return { client: new MercadoPagoConfig({ accessToken }), sandboxMode, publicKey, clientId, clientSecret };
 }
 
 /** Returns the configured payment gateway ('stripe' or 'mercado_pago'). Defaults to 'stripe'. */
