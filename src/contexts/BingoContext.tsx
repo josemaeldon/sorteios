@@ -583,6 +583,7 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       await loadVendas();
       await loadCartelas();
       await loadAtribuicoes();
+      await loadMinhaLoja();
     } catch (error: any) {
       console.error('Error deleting venda:', error);
       toast({
@@ -591,7 +592,7 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         variant: "destructive"
       });
     }
-  }, [callApi, toast, loadVendas, loadCartelas, loadAtribuicoes]);
+  }, [callApi, toast, loadVendas, loadCartelas, loadAtribuicoes, loadMinhaLoja]);
 
   // ================== CARTELA LAYOUTS ==================
   const loadCartelaLayouts = useCallback(async () => {

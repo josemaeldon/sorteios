@@ -25,6 +25,7 @@ const App = () => (
           <Routes>
             <Route path="/auth" element={<Auth />} />
             <Route path="/loja/:userId" element={<LojaPublica />} />
+            <Route path="/loja/:sorteioSlug/:shortId" element={<LojaPublica />} />
             <Route
               path="/planos"
               element={

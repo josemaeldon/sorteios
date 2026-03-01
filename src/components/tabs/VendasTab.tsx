@@ -28,7 +28,6 @@ const VendasTab: React.FC = () => {
     filtrosVendas, 
     setFiltrosVendas,
     deleteVenda,
-    atualizarStatusCartela,
     isLoading
   } = useBingo();
   const { toast } = useToast();
@@ -96,13 +95,6 @@ const VendasTab: React.FC = () => {
 
   const confirmDelete = () => {
     if (deletingVendaId) {
-      const venda = vendas.find(v => v.id === deletingVendaId);
-      if (venda) {
-        // Retornar cartelas para atribuídas
-        venda.numeros_cartelas.split(',').forEach(num => {
-          atualizarStatusCartela(parseInt(num), 'ativa');
-        });
-      }
       deleteVenda(deletingVendaId);
       toast({
         title: "Venda excluída",

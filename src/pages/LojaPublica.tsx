@@ -180,12 +180,14 @@ const HistoricoDownloadButton: React.FC<{
 };
 
 const LojaPublica: React.FC = () => {
-  const { userId } = useParams<{ userId: string }>();
+  const { userId, sorteioSlug: _sorteioSlug, shortId } = useParams<{ userId?: string; sorteioSlug?: string; shortId?: string }>();
   const [searchParams] = useSearchParams();
 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [owner, setOwner] = useState<{ nome: string; titulo_sistema: string } | null>(null);
+  const [owner, setOwner] = useState<{ id?: string; nome: string; titulo_sistema: string } | null>(null);
+  // The resolved owner user ID (from URL or from loaded store data)
+  const ownerUserIdRef = useRef<string | undefined>(userId);
   const [cartelas, setCartelas] = useState<LojaCartela[]>([]);
   const [paymentGateway, setPaymentGateway] = useState<'stripe' | 'mercado_pago'>('stripe');
   // Infinite scroll state
@@ -314,7 +316,7 @@ const LojaPublica: React.FC = () => {
   );
 
   const loadLoja = useCallback(async (page = 1) => {
-    if (!userId) return;
+    if (!userId && !shortId) return;
     if (isFetchingRef.current) return;
     isFetchingRef.current = true;
     if (page === 1) {
@@ -323,8 +325,12 @@ const LojaPublica: React.FC = () => {
       setIsLoadingMore(true);
     }
     try {
-      const result = await callApi('getLojaPublica', { user_id: userId, page });
+      const apiParams = shortId
+        ? { short_id: shortId, page }
+        : { user_id: userId, page };
+      const result = await callApi('getLojaPublica', apiParams);
       setOwner(result.owner);
+      if (result.owner?.id) ownerUserIdRef.current = result.owner.id;
       setCartelas(prev => page === 1 ? (result.cartelas || []) : [...prev, ...(result.cartelas || [])]);
       setTotalCartelas(result.total || 0);
       const totalPages = result.total_pages || 1;
@@ -338,7 +344,7 @@ const LojaPublica: React.FC = () => {
       setIsLoading(false);
       setIsLoadingMore(false);
     }
-  }, [userId]);
+  }, [userId, shortId]);
 
   // Load store
   useEffect(() => {
@@ -383,7 +389,7 @@ const LojaPublica: React.FC = () => {
     if (gateway === 'mp' && mpPaymentId && mpPaymentStatus === 'approved') {
       setConfirmingPayment(true);
       if (checkoutType === 'multi') {
-        callApi('confirmMercadoPagoCheckoutMultiCartela', { payment_id: mpPaymentId, owner_user_id: userId })
+        callApi('confirmMercadoPagoCheckoutMultiCartela', { payment_id: mpPaymentId, owner_user_id: ownerUserIdRef.current })
           .then((result) => {
             if (result.success) {
               const count = result.cartelas?.length ?? 0;
@@ -409,7 +415,7 @@ const LojaPublica: React.FC = () => {
           })
           .finally(() => setConfirmingPayment(false));
       } else {
-        callApi('confirmMercadoPagoCheckoutCartela', { payment_id: mpPaymentId, owner_user_id: userId })
+        callApi('confirmMercadoPagoCheckoutCartela', { payment_id: mpPaymentId, owner_user_id: ownerUserIdRef.current })
           .then((result) => {
             if (result.success) {
               setPaymentResult({ ok: true, message: `Cartela ${String(result.numero_cartela).padStart(3, '0')} comprada com sucesso! Obrigado${result.comprador_nome ? `, ${result.comprador_nome}` : ''}!` });
@@ -443,7 +449,7 @@ const LojaPublica: React.FC = () => {
     if (!sessionId) return;
     setConfirmingPayment(true);
     if (checkoutType === 'multi') {
-      callApi('confirmStripeCheckoutMultiCartela', { session_id: sessionId, owner_user_id: userId })
+      callApi('confirmStripeCheckoutMultiCartela', { session_id: sessionId, owner_user_id: ownerUserIdRef.current })
         .then((result) => {
           if (result.success) {
             const count = result.cartelas?.length ?? 0;
@@ -469,7 +475,7 @@ const LojaPublica: React.FC = () => {
         })
         .finally(() => setConfirmingPayment(false));
     } else {
-      callApi('confirmStripeCheckoutCartela', { session_id: sessionId, owner_user_id: userId })
+      callApi('confirmStripeCheckoutCartela', { session_id: sessionId, owner_user_id: ownerUserIdRef.current })
         .then((result) => {
           if (result.success) {
             setPaymentResult({ ok: true, message: `Cartela ${String(result.numero_cartela).padStart(3, '0')} comprada com sucesso! Obrigado${result.comprador_nome ? `, ${result.comprador_nome}` : ''}!` });

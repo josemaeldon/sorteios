@@ -299,6 +299,11 @@ const BingoCardsBuilderTab: React.FC = () => {
   // not premios.length, so user customisation within the same sorteio is preserved)
   useEffect(() => {
     setNumeroPremios(Math.max(1, sorteioAtivo?.premios?.length ?? 1));
+    // Reset builder state when sorteio changes so the correct layout auto-loads
+    setActiveLayoutId(null);
+    setCards([]);
+    setPreviewIndex(0);
+    hasRestoredRef.current = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sorteioAtivo?.id]);
 
@@ -346,6 +351,28 @@ const BingoCardsBuilderTab: React.FC = () => {
       }),
     );
   }, [cartelas]);
+
+  // ─── Auto-load the existing layout for the current sorteio (Req 4) ─────────
+  useEffect(() => {
+    if (cartelaLayouts.length === 0) return;
+    // Only auto-load layouts that belong to the currently active sorteio
+    const item = sorteioAtivo
+      ? cartelaLayouts.find(l => l.sorteio_id === sorteioAtivo.id) ?? cartelaLayouts[0]
+      : cartelaLayouts[0];
+    if (!item) return;
+    try {
+      const parsedLayout: CanvasLayout = JSON.parse(item.layout_data);
+      const parsedCards: BingoCardGrid[] = JSON.parse(item.cards_data);
+      setLayout(parsedLayout);
+      setCards(parsedCards);
+      setPreviewIndex(0);
+      setActiveLayoutId(item.id);
+      hasRestoredRef.current = true;
+    } catch {
+      // ignore parse errors
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cartelaLayouts]);
 
   // ─── Layout helpers ────────────────────────────────────────────────────────
   const updateElement = useCallback((id: string, patch: Partial<CanvasElement>) => {
@@ -650,9 +677,12 @@ const BingoCardsBuilderTab: React.FC = () => {
       toast({ title: 'Preço inválido', variant: 'destructive' });
       return;
     }
+    // Find the vendor assigned to this card
+    const cartelaInfo = cartelas.find(c => c.numero === previewCard.cartelaNumero);
+    const vendedorId = cartelaInfo?.vendedor_id;
     setIsVendendo(true);
     try {
-      await adicionarCartelaLoja(activeLayoutId, previewCard.cartelaNumero, preco, JSON.stringify(previewCard), JSON.stringify(layout));
+      await adicionarCartelaLoja(activeLayoutId, previewCard.cartelaNumero, preco, JSON.stringify(previewCard), JSON.stringify(layout), vendedorId);
       toast({ title: `Cartela ${previewCard.cartelaNumero.toString().padStart(3, '0')} disponibilizada para venda!` });
       setShowVenderModal(false);
     } catch (err: any) {
@@ -702,8 +732,11 @@ const BingoCardsBuilderTab: React.FC = () => {
     let skipped = 0;
     try {
       for (const card of targetCards) {
+        // Find the vendor assigned to this card
+        const cartelaInfo = cartelas.find(c => c.numero === card.cartelaNumero);
+        const cardVendedorId = cartelaInfo?.vendedor_id;
         try {
-          await adicionarCartelaLoja(activeLayoutId, card.cartelaNumero, preco, JSON.stringify(card), JSON.stringify(layout));
+          await adicionarCartelaLoja(activeLayoutId, card.cartelaNumero, preco, JSON.stringify(card), JSON.stringify(layout), cardVendedorId);
           added++;
         } catch (cardErr: any) {
           if (cardErr.code === 'DUPLICATE_CARTELA') {
@@ -818,7 +851,16 @@ const BingoCardsBuilderTab: React.FC = () => {
     }
   };
 
-  const publicUrl = user ? `${window.location.origin}/loja/${user.id}` : '';
+  // Generate the public store URL for the current sorteio
+  const publicUrl = React.useMemo(() => {
+    if (!sorteioAtivo?.short_id) return user ? `${window.location.origin}/loja/${user.id}` : '';
+    const slug = sorteioAtivo.nome
+      .toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    return `${window.location.origin}/loja/${slug}/${sorteioAtivo.short_id}`;
+  }, [sorteioAtivo?.short_id, sorteioAtivo?.nome, user]);
 
   // ─── Render ────────────────────────────────────────────────────────────────
   if (!sorteioAtivo) {
