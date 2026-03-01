@@ -542,6 +542,7 @@ async function initSchema() {
           'ALTER TABLE loja_compradores ADD COLUMN endereco VARCHAR(255) DEFAULT NULL',
           'ALTER TABLE loja_compradores ADD COLUMN cidade VARCHAR(100) DEFAULT NULL',
           'ALTER TABLE loja_compradores ADD COLUMN telefone VARCHAR(50) DEFAULT NULL',
+          'ALTER TABLE loja_compradores ADD COLUMN owner_user_id CHAR(36) DEFAULT NULL',
         ];
         for (const sql of compradoresExtraCols) {
           try { await client.query(sql); } catch (e) {
@@ -684,6 +685,7 @@ async function initSchema() {
         await client.query(`ALTER TABLE loja_compradores ADD COLUMN IF NOT EXISTS endereco VARCHAR(255) DEFAULT NULL`);
         await client.query(`ALTER TABLE loja_compradores ADD COLUMN IF NOT EXISTS cidade VARCHAR(100) DEFAULT NULL`);
         await client.query(`ALTER TABLE loja_compradores ADD COLUMN IF NOT EXISTS telefone VARCHAR(50) DEFAULT NULL`);
+        await client.query(`ALTER TABLE loja_compradores ADD COLUMN IF NOT EXISTS owner_user_id UUID DEFAULT NULL`);
         // Create user_configuracoes table (PostgreSQL)
         await client.query(`
           CREATE TABLE IF NOT EXISTS public.user_configuracoes (
@@ -3277,14 +3279,121 @@ ${numerosCartelas ? `<p><strong>Cartelas:</strong> ${numerosCartelas}</p>` : ''}
             MAX(lc.updated_at) AS ultima_compra,
             COUNT(*) AS total_compras,
             comp.cpf,
-            comp.endereco
+            comp.endereco,
+            comp.id AS comprador_id,
+            comp.owner_user_id
           FROM loja_cartelas lc
           LEFT JOIN loja_compradores comp ON LOWER(lc.comprador_email) = LOWER(comp.email)
           WHERE lc.user_id = $1 AND lc.status = 'vendida' AND lc.comprador_email IS NOT NULL AND lc.comprador_email <> ''
-          GROUP BY lc.comprador_email, lc.comprador_nome, lc.comprador_telefone, lc.comprador_cidade, comp.cpf, comp.endereco
+          GROUP BY lc.comprador_email, lc.comprador_nome, lc.comprador_telefone, lc.comprador_cidade, comp.cpf, comp.endereco, comp.id, comp.owner_user_id
+          UNION ALL
+          SELECT
+            comp2.email,
+            comp2.nome,
+            comp2.telefone,
+            comp2.cidade,
+            comp2.created_at AS ultima_compra,
+            0 AS total_compras,
+            comp2.cpf,
+            comp2.endereco,
+            comp2.id AS comprador_id,
+            comp2.owner_user_id
+          FROM loja_compradores comp2
+          WHERE comp2.owner_user_id = $1
+            AND LOWER(comp2.email) NOT IN (
+              SELECT DISTINCT LOWER(lc2.comprador_email)
+              FROM loja_cartelas lc2
+              WHERE lc2.user_id = $1 AND lc2.status = 'vendida' AND lc2.comprador_email IS NOT NULL AND lc2.comprador_email <> ''
+            )
           ORDER BY ultima_compra DESC
         `, [data.authenticated_user_id]);
         return res.json({ data: lcQuery.rows });
+      }
+
+      case 'createLojaComprador': {
+        if (!data.nome || !data.email) {
+          return res.status(400).json({ error: 'Nome e e-mail são obrigatórios.' });
+        }
+        const emailNorm = data.email.toLowerCase().trim();
+        const existingComp = await client.query('SELECT id, owner_user_id FROM loja_compradores WHERE email = $1', [emailNorm]);
+        if (existingComp.rows.length > 0) {
+          return res.status(400).json({ error: 'Já existe um cliente cadastrado com este e-mail.' });
+        }
+        let newComp;
+        if (dbConfig.type === 'mysql') {
+          await client.query(
+            'INSERT INTO loja_compradores (id, email, senha_hash, nome, cpf, telefone, cidade, endereco, owner_user_id) VALUES (UUID(), $1, $2, $3, $4, $5, $6, $7, $8)',
+            [emailNorm, '!', data.nome.trim(), data.cpf || null, data.telefone || null, data.cidade || null, data.endereco || null, data.authenticated_user_id]
+          );
+          const inserted = await client.query('SELECT id, email, nome, cpf, telefone, cidade, endereco, owner_user_id, created_at FROM loja_compradores WHERE email = $1', [emailNorm]);
+          newComp = inserted.rows[0];
+        } else {
+          const inserted = await client.query(
+            'INSERT INTO loja_compradores (email, senha_hash, nome, cpf, telefone, cidade, endereco, owner_user_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, email, nome, cpf, telefone, cidade, endereco, owner_user_id, created_at',
+            [emailNorm, '!', data.nome.trim(), data.cpf || null, data.telefone || null, data.cidade || null, data.endereco || null, data.authenticated_user_id]
+          );
+          newComp = inserted.rows[0];
+        }
+        return res.json({ data: newComp });
+      }
+
+      case 'updateLojaComprador': {
+        if (!data.email) {
+          return res.status(400).json({ error: 'E-mail é obrigatório.' });
+        }
+        const emailNormU = data.email.toLowerCase().trim();
+        // Verify this customer belongs to this store (via purchases or manually added)
+        const authCheck = await client.query(
+          `SELECT id FROM loja_compradores WHERE LOWER(email) = $1 AND (owner_user_id = $2 OR EXISTS (SELECT 1 FROM loja_cartelas WHERE LOWER(comprador_email) = $1 AND user_id = $2))`,
+          [emailNormU, data.authenticated_user_id]
+        );
+        if (authCheck.rows.length === 0) {
+          return res.status(403).json({ error: 'Cliente não encontrado ou sem permissão.' });
+        }
+        const existingForUpdate = await client.query('SELECT id FROM loja_compradores WHERE LOWER(email) = $1', [emailNormU]);
+        if (existingForUpdate.rows.length === 0) {
+          // No account yet; create one linked to this owner
+          if (dbConfig.type === 'mysql') {
+            await client.query(
+              'INSERT INTO loja_compradores (id, email, senha_hash, nome, cpf, telefone, cidade, endereco, owner_user_id) VALUES (UUID(), $1, $2, $3, $4, $5, $6, $7, $8)',
+              [emailNormU, '!', data.nome || '', data.cpf || null, data.telefone || null, data.cidade || null, data.endereco || null, data.authenticated_user_id]
+            );
+          } else {
+            await client.query(
+              'INSERT INTO loja_compradores (email, senha_hash, nome, cpf, telefone, cidade, endereco, owner_user_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+              [emailNormU, '!', data.nome || '', data.cpf || null, data.telefone || null, data.cidade || null, data.endereco || null, data.authenticated_user_id]
+            );
+          }
+        } else {
+          await client.query(
+            'UPDATE loja_compradores SET nome = $1, cpf = $2, telefone = $3, cidade = $4, endereco = $5, updated_at = NOW() WHERE LOWER(email) = $6',
+            [data.nome || '', data.cpf || null, data.telefone || null, data.cidade || null, data.endereco || null, emailNormU]
+          );
+        }
+        // Also update comprador info in loja_cartelas for this store
+        await client.query(
+          'UPDATE loja_cartelas SET comprador_nome = $1, comprador_telefone = $2, comprador_cidade = $3 WHERE LOWER(comprador_email) = $4 AND user_id = $5',
+          [data.nome || '', data.telefone || null, data.cidade || null, emailNormU, data.authenticated_user_id]
+        );
+        return res.json({ success: true });
+      }
+
+      case 'deleteLojaComprador': {
+        if (!data.email) {
+          return res.status(400).json({ error: 'E-mail é obrigatório.' });
+        }
+        const emailNormD = data.email.toLowerCase().trim();
+        // Nullify comprador_email in loja_cartelas for this store
+        await client.query(
+          'UPDATE loja_cartelas SET comprador_nome = NULL, comprador_email = NULL, comprador_telefone = NULL, comprador_cidade = NULL WHERE LOWER(comprador_email) = $1 AND user_id = $2',
+          [emailNormD, data.authenticated_user_id]
+        );
+        // Delete loja_compradores record only if it was manually added by this owner
+        await client.query(
+          'DELETE FROM loja_compradores WHERE LOWER(email) = $1 AND owner_user_id = $2',
+          [emailNormD, data.authenticated_user_id]
+        );
+        return res.json({ success: true });
       }
 
       default:

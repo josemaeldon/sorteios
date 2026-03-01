@@ -33,6 +33,9 @@ interface AuthContextType extends AuthState {
   getUserConfiguracoes: () => Promise<Record<string, string>>;
   updateUserConfiguracoes: (config: Record<string, string>) => Promise<{ success: boolean; error?: string }>;
   getLojaCompradores: () => Promise<Record<string, string | number>[]>;
+  createLojaComprador: (data: { nome: string; email: string; cpf?: string; telefone?: string; cidade?: string; endereco?: string }) => Promise<{ success: boolean; error?: string }>;
+  updateLojaComprador: (data: { nome: string; email: string; cpf?: string; telefone?: string; cidade?: string; endereco?: string }) => Promise<{ success: boolean; error?: string }>;
+  deleteLojaComprador: (email: string) => Promise<{ success: boolean; error?: string }>;
   createStripeCheckout: (planoId: string, successPath?: string, cancelPath?: string) => Promise<{ url?: string; error?: string }>;
   refreshUser: () => Promise<void>;
   confirmStripeCheckout: (sessionId: string) => Promise<{ success: boolean; error?: string }>;
@@ -498,6 +501,45 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, []);
 
+  const createLojaComprador = useCallback(async (data: { nome: string; email: string; cpf?: string; telefone?: string; cidade?: string; endereco?: string }) => {
+    try {
+      const result = await callApi('createLojaComprador', data);
+      if (result.data) {
+        toast({ title: 'Cliente adicionado', description: 'O cliente foi cadastrado com sucesso.' });
+        return { success: true };
+      }
+      return { success: false, error: result.error || 'Erro ao adicionar cliente' };
+    } catch (error: any) {
+      return { success: false, error: error.message || 'Erro ao adicionar cliente' };
+    }
+  }, [toast]);
+
+  const updateLojaComprador = useCallback(async (data: { nome: string; email: string; cpf?: string; telefone?: string; cidade?: string; endereco?: string }) => {
+    try {
+      const result = await callApi('updateLojaComprador', data);
+      if (result.success) {
+        toast({ title: 'Cliente atualizado', description: 'Os dados do cliente foram atualizados.' });
+        return { success: true };
+      }
+      return { success: false, error: result.error || 'Erro ao atualizar cliente' };
+    } catch (error: any) {
+      return { success: false, error: error.message || 'Erro ao atualizar cliente' };
+    }
+  }, [toast]);
+
+  const deleteLojaComprador = useCallback(async (email: string) => {
+    try {
+      const result = await callApi('deleteLojaComprador', { email });
+      if (result.success) {
+        toast({ title: 'Cliente removido', description: 'O cliente foi removido da sua lista.' });
+        return { success: true };
+      }
+      return { success: false, error: result.error || 'Erro ao remover cliente' };
+    } catch (error: any) {
+      return { success: false, error: error.message || 'Erro ao remover cliente' };
+    }
+  }, [toast]);
+
   const createStripeCheckout = useCallback(async (planoId: string, successPath?: string, cancelPath?: string) => {
     try {
       const result = await callApi('createStripeCheckout', {
@@ -574,6 +616,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     getUserConfiguracoes,
     updateUserConfiguracoes,
     getLojaCompradores,
+    createLojaComprador,
+    updateLojaComprador,
+    deleteLojaComprador,
     createStripeCheckout,
     refreshUser,
     confirmStripeCheckout,
