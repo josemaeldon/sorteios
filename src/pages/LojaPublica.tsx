@@ -196,9 +196,10 @@ const LojaPublica: React.FC = () => {
   const [cartelas, setCartelas] = useState<LojaCartela[]>([]);
   const [paymentGateway, setPaymentGateway] = useState<'stripe' | 'mercado_pago'>('stripe');
   // Infinite scroll state
-  const [hasMore, setHasMore] = useState(true);
+  const [hasMore, setHasMore] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [totalCartelas, setTotalCartelas] = useState(0);
+  const [loadCount, setLoadCount] = useState(0); // increments after each load to re-trigger IntersectionObserver
   const currentPageRef = useRef(1);
   const isFetchingRef = useRef(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -341,6 +342,7 @@ const LojaPublica: React.FC = () => {
       const totalPages = result.total_pages || 1;
       setHasMore(page < totalPages);
       currentPageRef.current = page;
+      setLoadCount(c => c + 1);
       if (result.payment_gateway) setPaymentGateway(result.payment_gateway);
     } catch (err: any) {
       setError(err.message || 'Loja não encontrada.');
@@ -370,7 +372,7 @@ const LojaPublica: React.FC = () => {
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [hasMore, loadLoja]);
+  }, [hasMore, loadLoja, loadCount]);
 
   // Load buyer auth from localStorage
   useEffect(() => {
