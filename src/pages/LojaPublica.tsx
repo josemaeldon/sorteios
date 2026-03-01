@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { Loader2, ShoppingCart, Ticket, CheckCircle, XCircle, Download, ChevronDown, ChevronUp, X, LogIn, LogOut, UserPlus, History, Eye, EyeOff, Calendar, UserCog, Trash2, Camera } from 'lucide-react';
+import { Loader2, ShoppingCart, Ticket, CheckCircle, XCircle, Download, ChevronDown, ChevronUp, X, LogIn, LogOut, UserPlus, History, Eye, EyeOff, Calendar, UserCog, Trash2, Camera, Hash, Plus } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,6 +12,7 @@ import { LojaCartela } from '@/types/bingo';
 
 const CART_MAX_ITEMS = 20;
 const MAX_AVATAR_SIZE_BYTES = 2 * 1024 * 1024; // 2 MB
+const QUICK_ADD_SUCCESS_DURATION_MS = 3000;
 
 const COMPRADOR_TOKEN_KEY = 'loja_comprador_token';
 const COMPRADOR_INFO_KEY = 'loja_comprador_info';
@@ -24,6 +25,25 @@ function detectBuyerFields(layoutData: string): Set<string> {
   } catch {
     return new Set();
   }
+}
+
+/** Compresses a sorted array of numbers into human-readable ranges, e.g. [1,2,3,5,7,8] → "1–3, 5, 7–8" */
+function toRanges(nums: number[]): string {
+  if (nums.length === 0) return '';
+  const sorted = [...nums].sort((a, b) => a - b);
+  const ranges: string[] = [];
+  let start = sorted[0];
+  let end = sorted[0];
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i] === end + 1) {
+      end = sorted[i];
+    } else {
+      ranges.push(start === end ? String(start) : `${start}–${end}`);
+      start = end = sorted[i];
+    }
+  }
+  ranges.push(start === end ? String(start) : `${start}–${end}`);
+  return ranges.join(', ');
 }
 
 const BingoGridPublic: React.FC<{ grid: number[][] }> = ({ grid }) => (
@@ -296,6 +316,12 @@ const LojaPublica: React.FC = () => {
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
 
+  // Quick-add panel state
+  const [quickAddInput, setQuickAddInput] = useState('');
+  const [quickAddError, setQuickAddError] = useState<string | null>(null);
+  const [quickAddSuccess, setQuickAddSuccess] = useState<string | null>(null);
+  const [showAvailableNumbers, setShowAvailableNumbers] = useState(false);
+
   // Derived cart data — use cartCache so items from other pages are included
   const cartItems = React.useMemo(
     () => Array.from(cartIds).map(id => cartCache.get(id)).filter((c): c is LojaCartela => !!c),
@@ -319,6 +345,16 @@ const LojaPublica: React.FC = () => {
   const buyerFields = React.useMemo(
     () => buyingCartela?.layout_data ? detectBuyerFields(buyingCartela.layout_data) : new Set<string>(),
     [buyingCartela]
+  );
+
+  // Available (not-in-cart) cartelas and their numbers — used by quick-add and number summary
+  const availableCartelas = React.useMemo(
+    () => cartelas.filter(c => c.status === 'disponivel' && !cartIds.has(c.id)),
+    [cartelas, cartIds]
+  );
+  const availableNumbers = React.useMemo(
+    () => availableCartelas.map(c => c.numero_cartela).sort((a, b) => a - b),
+    [availableCartelas]
   );
 
   const loadLoja = useCallback(async (page = 1) => {
@@ -599,6 +635,80 @@ const LojaPublica: React.FC = () => {
       }
       return next;
     });
+  };
+
+  const handleQuickAdd = () => {
+    const input = quickAddInput.trim();
+    if (!input) {
+      setQuickAddError('Informe um número, faixa (ex: 10-20) ou *N para aleatório (ex: *5).');
+      return;
+    }
+    setQuickAddError(null);
+    setQuickAddSuccess(null);
+
+    let toAdd: LojaCartela[] = [];
+
+    // Mode: random selection — *N or rN
+    const randomMatch = input.match(/^[*rR](\d+)$/);
+    if (randomMatch) {
+      const qty = parseInt(randomMatch[1]);
+      if (qty <= 0) { setQuickAddError('Informe uma quantidade válida maior que zero.'); return; }
+      if (availableCartelas.length === 0) { setQuickAddError('Nenhuma cartela disponível.'); return; }
+      if (qty > availableCartelas.length) { setQuickAddError(`Apenas ${availableCartelas.length} cartelas disponíveis.`); return; }
+      // Fisher-Yates shuffle for uniform random selection
+      const pool = [...availableCartelas];
+      for (let i = pool.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [pool[i], pool[j]] = [pool[j], pool[i]];
+      }
+      toAdd = pool.slice(0, qty);
+    }
+    // Mode: range — A-B
+    else if (/^\d+\s*-\s*\d+$/.test(input)) {
+      const parts = input.split('-').map(n => parseInt(n.trim()));
+      const [start, end] = parts[0] <= parts[1] ? parts : [parts[1], parts[0]];
+      toAdd = availableCartelas.filter(c => c.numero_cartela >= start && c.numero_cartela <= end);
+      if (toAdd.length === 0) { setQuickAddError(`Nenhuma cartela disponível entre ${start} e ${end}.`); return; }
+    }
+    // Mode: specific number
+    else if (/^\d+$/.test(input)) {
+      const num = parseInt(input);
+      const found = availableCartelas.find(c => c.numero_cartela === num);
+      if (!found) {
+        const padded = String(num).padStart(3, '0');
+        const exists = cartelas.find(c => c.numero_cartela === num);
+        const notFoundMsg = hasMore
+          ? `Cartela ${padded} não encontrada nas cartelas carregadas (role para baixo para carregar mais).`
+          : `Cartela ${padded} não encontrada.`;
+        setQuickAddError(exists ? `Cartela ${padded} não está disponível.` : notFoundMsg);
+        return;
+      }
+      toAdd = [found];
+    }
+    else {
+      setQuickAddError('Formato inválido. Use número (ex: 42), faixa (ex: 10-20) ou *N para aleatório (ex: *5).');
+      return;
+    }
+
+    // Respect cart limit
+    const remaining = CART_MAX_ITEMS - cartIds.size;
+    if (remaining <= 0) { setQuickAddError(`Limite do carrinho atingido (${CART_MAX_ITEMS} itens).`); return; }
+    const toActuallyAdd = toAdd.slice(0, remaining);
+
+    setCartIds(prev => { const next = new Set(prev); toActuallyAdd.forEach(c => next.add(c.id)); return next; });
+    setCartCache(prev => { const next = new Map(prev); toActuallyAdd.forEach(c => next.set(c.id, c)); return next; });
+
+    const msg = toActuallyAdd.length === 1
+      ? `Cartela ${String(toActuallyAdd[0].numero_cartela).padStart(3, '0')} adicionada ao carrinho!`
+      : `${toActuallyAdd.length} cartelas adicionadas ao carrinho!`;
+
+    if (toActuallyAdd.length < toAdd.length) {
+      setQuickAddError(`${msg} (limite de ${CART_MAX_ITEMS} itens atingido)`);
+    } else {
+      setQuickAddInput('');
+      setQuickAddSuccess(msg);
+      setTimeout(() => setQuickAddSuccess(null), QUICK_ADD_SUCCESS_DURATION_MS);
+    }
   };
 
   const handleCheckout = async () => {
@@ -986,6 +1096,67 @@ const LojaPublica: React.FC = () => {
             <p className="text-center text-gray-400 mb-6 text-sm">
               Clique no número da cartela para ver os 25 números. Use o ícone <ShoppingCart className="w-3 h-3 inline" /> para adicionar várias ao carrinho.
             </p>
+
+            {/* Quick-add panel + available numbers summary */}
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 mb-6">
+              {/* Quick add */}
+              <h3 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-1.5">
+                <Plus className="w-4 h-4 text-blue-600" />
+                Adicionar ao Carrinho
+              </h3>
+              <div className="flex gap-2">
+                <Input
+                  value={quickAddInput}
+                  onChange={(e) => { setQuickAddInput(e.target.value); setQuickAddError(null); setQuickAddSuccess(null); }}
+                  onKeyDown={(e) => e.key === 'Enter' && handleQuickAdd()}
+                  placeholder="Número (42), faixa (10-20) ou *5 para aleatório"
+                  className="flex-1"
+                />
+                <Button onClick={handleQuickAdd} className="gap-1.5 flex-shrink-0">
+                  <Plus className="w-4 h-4" />
+                  Adicionar
+                </Button>
+              </div>
+              {quickAddError && <p className="text-xs text-red-600 mt-1.5">{quickAddError}</p>}
+              {quickAddSuccess && <p className="text-xs text-green-600 mt-1.5">{quickAddSuccess}</p>}
+              <p className="text-xs text-gray-400 mt-1.5">
+                Digite <span className="font-medium text-gray-500">42</span> para número específico,{' '}
+                <span className="font-medium text-gray-500">10-20</span> para uma faixa, ou{' '}
+                <span className="font-medium text-gray-500">*5</span> para 5 aleatórias
+              </p>
+
+              {/* Available numbers summary */}
+              <div className="border-t border-gray-100 mt-3 pt-3">
+                <button
+                  className="flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-900 w-full"
+                  onClick={() => setShowAvailableNumbers(v => !v)}
+                >
+                  <Hash className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                  <span>
+                    Números disponíveis{' '}
+                    <span className="text-gray-400 font-normal">
+                      ({availableNumbers.length}{hasMore ? '+' : ''} de {totalCartelas})
+                    </span>
+                  </span>
+                  {showAvailableNumbers ? <ChevronUp className="w-4 h-4 ml-auto text-gray-400" /> : <ChevronDown className="w-4 h-4 ml-auto text-gray-400" />}
+                </button>
+                {showAvailableNumbers && (
+                  <div className="mt-2">
+                    {availableNumbers.length === 0 ? (
+                      <p className="text-xs text-gray-400">Nenhuma cartela disponível entre as carregadas.</p>
+                    ) : (
+                      <p className="text-xs bg-gray-50 rounded-lg p-2 font-mono tracking-wide leading-relaxed text-gray-700 break-words">
+                        {toRanges(availableNumbers)}
+                      </p>
+                    )}
+                    {hasMore && (
+                      <p className="text-xs text-gray-400 mt-1">Role a página para carregar mais cartelas.</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
             {/* Group cartelas by sorteio */}
             {(() => {
               const groups: { sorteio_id: string; sorteio_nome: string; data_sorteio?: string; cartelas: LojaCartela[] }[] = [];
