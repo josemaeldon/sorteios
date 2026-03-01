@@ -524,16 +524,24 @@ async function initSchema() {
             email VARCHAR(255) NOT NULL UNIQUE,
             senha_hash VARCHAR(255) NOT NULL,
             nome VARCHAR(255) NOT NULL,
+            cpf VARCHAR(20) DEFAULT NULL,
+            endereco VARCHAR(255) DEFAULT NULL,
+            cidade VARCHAR(100) DEFAULT NULL,
+            telefone VARCHAR(50) DEFAULT NULL,
             reset_token VARCHAR(64) DEFAULT NULL,
             reset_token_expires DATETIME DEFAULT NULL,
             created_at TIMESTAMP DEFAULT NOW() NOT NULL,
             updated_at TIMESTAMP DEFAULT NOW() ON UPDATE NOW() NOT NULL
           )
         `);
-        // Add reset token columns to loja_compradores if upgrading (MySQL)
+        // Add columns to loja_compradores if upgrading (MySQL)
         const compradoresExtraCols = [
           'ALTER TABLE loja_compradores ADD COLUMN reset_token VARCHAR(64) DEFAULT NULL',
           'ALTER TABLE loja_compradores ADD COLUMN reset_token_expires DATETIME DEFAULT NULL',
+          'ALTER TABLE loja_compradores ADD COLUMN cpf VARCHAR(20) DEFAULT NULL',
+          'ALTER TABLE loja_compradores ADD COLUMN endereco VARCHAR(255) DEFAULT NULL',
+          'ALTER TABLE loja_compradores ADD COLUMN cidade VARCHAR(100) DEFAULT NULL',
+          'ALTER TABLE loja_compradores ADD COLUMN telefone VARCHAR(50) DEFAULT NULL',
         ];
         for (const sql of compradoresExtraCols) {
           try { await client.query(sql); } catch (e) {
@@ -542,6 +550,16 @@ async function initSchema() {
             }
           }
         }
+        // Create user_configuracoes table (MySQL)
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS user_configuracoes (
+            user_id CHAR(36) NOT NULL,
+            chave VARCHAR(100) NOT NULL,
+            valor TEXT,
+            updated_at TIMESTAMP DEFAULT NOW() ON UPDATE NOW() NOT NULL,
+            PRIMARY KEY (user_id, chave)
+          )
+        `);
         // Add stripe_session_id to vendas for deduplication (MySQL)
         try { await client.query('ALTER TABLE vendas ADD COLUMN stripe_session_id VARCHAR(255) DEFAULT NULL'); } catch (e) {
           if (!e.message || !e.message.includes('Duplicate column')) {
@@ -649,15 +667,33 @@ async function initSchema() {
             email VARCHAR(255) NOT NULL UNIQUE,
             senha_hash VARCHAR(255) NOT NULL,
             nome VARCHAR(255) NOT NULL,
+            cpf VARCHAR(20) DEFAULT NULL,
+            endereco VARCHAR(255) DEFAULT NULL,
+            cidade VARCHAR(100) DEFAULT NULL,
+            telefone VARCHAR(50) DEFAULT NULL,
             reset_token VARCHAR(64) DEFAULT NULL,
             reset_token_expires TIMESTAMP WITH TIME ZONE DEFAULT NULL,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
           )
         `);
-        // Add reset token columns to loja_compradores if upgrading (PostgreSQL)
+        // Add columns to loja_compradores if upgrading (PostgreSQL)
         await client.query(`ALTER TABLE loja_compradores ADD COLUMN IF NOT EXISTS reset_token VARCHAR(64) DEFAULT NULL`);
         await client.query(`ALTER TABLE loja_compradores ADD COLUMN IF NOT EXISTS reset_token_expires TIMESTAMP WITH TIME ZONE DEFAULT NULL`);
+        await client.query(`ALTER TABLE loja_compradores ADD COLUMN IF NOT EXISTS cpf VARCHAR(20) DEFAULT NULL`);
+        await client.query(`ALTER TABLE loja_compradores ADD COLUMN IF NOT EXISTS endereco VARCHAR(255) DEFAULT NULL`);
+        await client.query(`ALTER TABLE loja_compradores ADD COLUMN IF NOT EXISTS cidade VARCHAR(100) DEFAULT NULL`);
+        await client.query(`ALTER TABLE loja_compradores ADD COLUMN IF NOT EXISTS telefone VARCHAR(50) DEFAULT NULL`);
+        // Create user_configuracoes table (PostgreSQL)
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS public.user_configuracoes (
+            user_id UUID NOT NULL,
+            chave VARCHAR(100) NOT NULL,
+            valor TEXT,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+            PRIMARY KEY (user_id, chave)
+          )
+        `);
         // Add stripe_session_id to vendas for deduplication (PostgreSQL)
         await client.query(`ALTER TABLE vendas ADD COLUMN IF NOT EXISTS stripe_session_id VARCHAR(255) DEFAULT NULL`);
       }
@@ -733,6 +769,56 @@ async function getPaymentGateway(dbClient) {
     "SELECT valor FROM configuracoes WHERE chave = 'payment_gateway'"
   );
   return cfgResult.rows.length > 0 ? (cfgResult.rows[0].valor || 'stripe') : 'stripe';
+}
+
+/** Returns per-user Stripe secret key, falling back to global config. */
+async function getUserStripeSecretKey(dbClient, userId) {
+  if (!userId) return getStripeSecretKey(dbClient);
+  const cfgResult = await dbClient.query(
+    "SELECT chave, valor FROM user_configuracoes WHERE user_id = $1 AND chave IN ('stripe_secret_key', 'stripe_sandbox_secret_key', 'stripe_sandbox_mode')",
+    [userId]
+  );
+  const cfg = {};
+  cfgResult.rows.forEach(r => { cfg[r.chave] = r.valor || ''; });
+  if (!cfg['stripe_secret_key'] && !cfg['stripe_sandbox_secret_key']) {
+    return getStripeSecretKey(dbClient);
+  }
+  if (cfg['stripe_sandbox_mode'] === 'true') {
+    return cfg['stripe_sandbox_secret_key'] || '';
+  }
+  return cfg['stripe_secret_key'] || '';
+}
+
+/** Returns per-user MercadoPago client, falling back to global config. */
+async function getUserMercadoPagoClient(dbClient, userId) {
+  if (!userId) return getMercadoPagoClient(dbClient);
+  const cfgResult = await dbClient.query(
+    "SELECT chave, valor FROM user_configuracoes WHERE user_id = $1 AND chave IN ('mp_access_token', 'mp_sandbox_access_token', 'mp_sandbox_mode', 'mp_public_key')",
+    [userId]
+  );
+  const cfg = {};
+  cfgResult.rows.forEach(r => { cfg[r.chave] = r.valor || ''; });
+  if (!cfg['mp_access_token'] && !cfg['mp_sandbox_access_token']) {
+    return getMercadoPagoClient(dbClient);
+  }
+  const sandboxMode = cfg['mp_sandbox_mode'] === 'true';
+  const accessToken = sandboxMode ? cfg['mp_sandbox_access_token'] : cfg['mp_access_token'];
+  if (!accessToken) return null;
+  const publicKey = sandboxMode ? cfg['mp_sandbox_public_key'] : cfg['mp_public_key'];
+  return { client: new MercadoPagoConfig({ accessToken }), sandboxMode, publicKey };
+}
+
+/** Returns per-user payment gateway, falling back to global config. */
+async function getUserPaymentGateway(dbClient, userId) {
+  if (!userId) return getPaymentGateway(dbClient);
+  const cfgResult = await dbClient.query(
+    "SELECT valor FROM user_configuracoes WHERE user_id = $1 AND chave = 'payment_gateway'",
+    [userId]
+  );
+  if (cfgResult.rows.length > 0 && cfgResult.rows[0].valor) {
+    return cfgResult.rows[0].valor;
+  }
+  return getPaymentGateway(dbClient);
 }
 
 async function hashPassword(password) {
@@ -2236,7 +2322,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           page,
           page_size: PAGE_SIZE,
           total_pages: Math.ceil(total / PAGE_SIZE),
-          payment_gateway: await getPaymentGateway(client),
+          payment_gateway: await getUserPaymentGateway(client, data.user_id),
         });
       }
 
@@ -2314,10 +2400,6 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         if (!data.loja_cartela_id) {
           return res.status(400).json({ error: 'Cartela não especificada.' });
         }
-        const stripeKeyCartela = await getStripeSecretKey(client);
-        if (!stripeKeyCartela) {
-          return res.status(400).json({ error: 'Pagamento online não configurado. Contate o vendedor.' });
-        }
         const lojaCartelaResult = await client.query(
           'SELECT lc.*, u.nome as owner_nome FROM loja_cartelas lc JOIN usuarios u ON lc.user_id = u.id WHERE lc.id = $1 AND lc.status = $2',
           [data.loja_cartela_id, 'disponivel']
@@ -2326,6 +2408,10 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           return res.status(404).json({ error: 'Cartela não disponível para compra.' });
         }
         const lojaCartela = lojaCartelaResult.rows[0];
+        const stripeKeyCartela = await getUserStripeSecretKey(client, lojaCartela.user_id);
+        if (!stripeKeyCartela) {
+          return res.status(400).json({ error: 'Pagamento online não configurado. Contate o vendedor.' });
+        }
         const valorCentavos = Math.round(Number(lojaCartela.preco) * 100);
         if (valorCentavos < STRIPE_MIN_AMOUNT_CENTAVOS) {
           return res.status(400).json({ error: `Valor mínimo para pagamento online é R$ ${(STRIPE_MIN_AMOUNT_CENTAVOS / 100).toFixed(2).replace('.', ',')}.` });
@@ -2353,6 +2439,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           }],
           metadata: {
             type: 'cartela_loja',
+            owner_user_id: lojaCartela.user_id,
             loja_cartela_id: lojaCartela.id,
             comprador_nome: data.comprador_nome || '',
             comprador_email: data.comprador_email || '',
@@ -2368,7 +2455,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         if (!data.session_id) {
           return res.status(400).json({ error: 'Session ID não informado.' });
         }
-        const stripeKeyConfirm = await getStripeSecretKey(client);
+        const stripeKeyConfirm = await getUserStripeSecretKey(client, data.owner_user_id || null);
         if (!stripeKeyConfirm) {
           return res.status(400).json({ error: 'Stripe não configurado.' });
         }
@@ -2473,11 +2560,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         if (multiIds.length > 20) {
           return res.status(400).json({ error: 'Selecione no máximo 20 cartelas por pedido.' });
         }
-        const stripeKeyMulti = await getStripeSecretKey(client);
-        if (!stripeKeyMulti) {
-          return res.status(400).json({ error: 'Pagamento online não configurado. Contate o vendedor.' });
-        }
-        // Fetch all cartelas
+        // Fetch all cartelas first to get owner user_id
         const placeholders = multiIds.map((_, i) => `$${i + 1}`).join(',');
         const multiCartelasResult = await client.query(
           `SELECT lc.*, u.nome as owner_nome FROM loja_cartelas lc JOIN usuarios u ON lc.user_id = u.id WHERE lc.id IN (${placeholders}) AND lc.status = 'disponivel'`,
@@ -2490,6 +2573,10 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           return res.status(400).json({ error: 'Uma ou mais cartelas não estão disponíveis para compra.' });
         }
         const multiCartelas = multiCartelasResult.rows;
+        const stripeKeyMulti = await getUserStripeSecretKey(client, multiCartelas[0].user_id);
+        if (!stripeKeyMulti) {
+          return res.status(400).json({ error: 'Pagamento online não configurado. Contate o vendedor.' });
+        }
         const stripeMulti = Stripe(stripeKeyMulti);
         const baseUrlMulti = (process.env.APP_URL || '').replace(/\/$/, '') || `${req.protocol}://${req.get('host')}`;
         const isValidPathMulti = (p) => typeof p === 'string' && /^\/[a-zA-Z0-9/_?=&-]*$/.test(p) && !p.includes('//') && !p.includes('..');
@@ -2528,6 +2615,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           line_items: lineItems,
           metadata: {
             type: 'cartela_loja_multi',
+            owner_user_id: multiCartelas[0].user_id,
             comprador_nome: data.comprador_nome || '',
             comprador_email: data.comprador_email || '',
             comprador_endereco: data.comprador_endereco || '',
@@ -2543,7 +2631,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         if (!data.session_id) {
           return res.status(400).json({ error: 'Session ID não informado.' });
         }
-        const stripeKeyConfirmMulti = await getStripeSecretKey(client);
+        const stripeKeyConfirmMulti = await getUserStripeSecretKey(client, data.owner_user_id || null);
         if (!stripeKeyConfirmMulti) {
           return res.status(400).json({ error: 'Stripe não configurado.' });
         }
@@ -2668,10 +2756,6 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         if (!data.loja_cartela_id) {
           return res.status(400).json({ error: 'Cartela não especificada.' });
         }
-        const mpCfgCartela = await getMercadoPagoClient(client);
-        if (!mpCfgCartela) {
-          return res.status(400).json({ error: 'Mercado Pago não configurado. Contate o vendedor.' });
-        }
         const mpLojaCartelaResult = await client.query(
           'SELECT lc.*, u.nome as owner_nome FROM loja_cartelas lc JOIN usuarios u ON lc.user_id = u.id WHERE lc.id = $1 AND lc.status = $2',
           [data.loja_cartela_id, 'disponivel']
@@ -2680,6 +2764,10 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           return res.status(404).json({ error: 'Cartela não disponível para compra.' });
         }
         const mpLojaCartela = mpLojaCartelaResult.rows[0];
+        const mpCfgCartela = await getUserMercadoPagoClient(client, mpLojaCartela.user_id);
+        if (!mpCfgCartela) {
+          return res.status(400).json({ error: 'Mercado Pago não configurado. Contate o vendedor.' });
+        }
         if (Number(mpLojaCartela.preco) <= 0) {
           return res.status(400).json({ error: 'Cartela sem preço definido.' });
         }
@@ -2709,6 +2797,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
             notification_url: mpNotificationUrl,
             metadata: {
               type: 'cartela_loja',
+              owner_user_id: mpLojaCartela.user_id,
               loja_cartela_id: mpLojaCartela.id,
               comprador_nome: data.comprador_nome || '',
               comprador_email: data.comprador_email || '',
@@ -2726,7 +2815,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         if (!data.payment_id) {
           return res.status(400).json({ error: 'Payment ID não informado.' });
         }
-        const mpCfgConfirm = await getMercadoPagoClient(client);
+        const mpCfgConfirm = await getUserMercadoPagoClient(client, data.owner_user_id || null);
         if (!mpCfgConfirm) {
           return res.status(400).json({ error: 'Mercado Pago não configurado.' });
         }
@@ -2830,10 +2919,6 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         if (mpMultiIds.length > 20) {
           return res.status(400).json({ error: 'Selecione no máximo 20 cartelas por pedido.' });
         }
-        const mpCfgMulti = await getMercadoPagoClient(client);
-        if (!mpCfgMulti) {
-          return res.status(400).json({ error: 'Mercado Pago não configurado. Contate o vendedor.' });
-        }
         const mpMultiPlaceholders = mpMultiIds.map((_, i) => `$${i + 1}`).join(',');
         const mpMultiCartelasResult = await client.query(
           `SELECT lc.*, u.nome as owner_nome FROM loja_cartelas lc JOIN usuarios u ON lc.user_id = u.id WHERE lc.id IN (${mpMultiPlaceholders}) AND lc.status = 'disponivel'`,
@@ -2846,6 +2931,10 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           return res.status(400).json({ error: 'Uma ou mais cartelas não estão disponíveis para compra.' });
         }
         const mpMultiCartelas = mpMultiCartelasResult.rows;
+        const mpCfgMulti = await getUserMercadoPagoClient(client, mpMultiCartelas[0].user_id);
+        if (!mpCfgMulti) {
+          return res.status(400).json({ error: 'Mercado Pago não configurado. Contate o vendedor.' });
+        }
         const mpBaseUrlMulti = (process.env.APP_URL || '').replace(/\/$/, '') || `${req.protocol}://${req.get('host')}`;
         const isValidMpPathMulti = (p) => typeof p === 'string' && /^\/[a-zA-Z0-9/_?=&-]*$/.test(p) && !p.includes('//') && !p.includes('..');
         const mpSuccessPathMulti = isValidMpPathMulti(data.success_path) ? data.success_path : `/loja/${mpMultiCartelas[0].user_id}`;
@@ -2873,6 +2962,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
             notification_url: mpNotificationUrlMulti,
             metadata: {
               type: 'cartela_loja_multi',
+              owner_user_id: mpMultiCartelas[0].user_id,
               loja_cartela_ids: mpMultiIds.join(','),
               comprador_nome: data.comprador_nome || '',
               comprador_email: data.comprador_email || '',
@@ -2890,7 +2980,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         if (!data.payment_id) {
           return res.status(400).json({ error: 'Payment ID não informado.' });
         }
-        const mpCfgConfirmMulti = await getMercadoPagoClient(client);
+        const mpCfgConfirmMulti = await getUserMercadoPagoClient(client, data.owner_user_id || null);
         if (!mpCfgConfirmMulti) {
           return res.status(400).json({ error: 'Mercado Pago não configurado.' });
         }
@@ -3002,8 +3092,16 @@ app.post('/api', checkBasicAuth, async (req, res) => {
       }
 
       case 'cadastrarComprador': {
-        if (!data.email || !data.senha || !data.nome) {
-          return res.status(400).json({ error: 'Email, senha e nome são obrigatórios.' });
+        if (!data.email || !data.senha || !data.nome || !data.cpf || !data.endereco || !data.cidade || !data.telefone) {
+          return res.status(400).json({ error: 'Nome, E-mail, CPF, Endereço, Cidade, Telefone e senha são obrigatórios.' });
+        }
+        const nomeComp = data.nome.trim();
+        const cpfComp = data.cpf.trim();
+        const enderecoComp = data.endereco.trim();
+        const cidadeComp = data.cidade.trim();
+        const telefoneComp = data.telefone.trim();
+        if (!nomeComp || !cpfComp || !enderecoComp || !cidadeComp || !telefoneComp) {
+          return res.status(400).json({ error: 'Nome, E-mail, CPF, Endereço, Cidade, Telefone e senha são obrigatórios.' });
         }
         const emailCheckComp = await client.query('SELECT id FROM loja_compradores WHERE email = $1', [data.email.toLowerCase().trim()]);
         if (emailCheckComp.rows.length > 0) {
@@ -3013,20 +3111,20 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         let newComp;
         if (dbConfig.type === 'mysql') {
           await client.query(
-            'INSERT INTO loja_compradores (id, email, senha_hash, nome) VALUES (UUID(), $1, $2, $3)',
-            [data.email.toLowerCase().trim(), compHash, data.nome.trim()]
+            'INSERT INTO loja_compradores (id, email, senha_hash, nome, cpf, endereco, cidade, telefone) VALUES (UUID(), $1, $2, $3, $4, $5, $6, $7)',
+            [data.email.toLowerCase().trim(), compHash, nomeComp, cpfComp, enderecoComp, cidadeComp, telefoneComp]
           );
-          const inserted = await client.query('SELECT id, email, nome, created_at FROM loja_compradores WHERE email = $1', [data.email.toLowerCase().trim()]);
+          const inserted = await client.query('SELECT id, email, nome, cpf, endereco, cidade, telefone, created_at FROM loja_compradores WHERE email = $1', [data.email.toLowerCase().trim()]);
           newComp = inserted.rows[0];
         } else {
           const inserted = await client.query(
-            'INSERT INTO loja_compradores (email, senha_hash, nome) VALUES ($1, $2, $3) RETURNING id, email, nome, created_at',
-            [data.email.toLowerCase().trim(), compHash, data.nome.trim()]
+            'INSERT INTO loja_compradores (email, senha_hash, nome, cpf, endereco, cidade, telefone) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, email, nome, cpf, endereco, cidade, telefone, created_at',
+            [data.email.toLowerCase().trim(), compHash, nomeComp, cpfComp, enderecoComp, cidadeComp, telefoneComp]
           );
           newComp = inserted.rows[0];
         }
         const compToken = await createJwt({ comprador_id: newComp.id, role: 'comprador', email: newComp.email });
-        return res.json({ comprador: { id: newComp.id, email: newComp.email, nome: newComp.nome }, token: compToken });
+        return res.json({ comprador: { id: newComp.id, email: newComp.email, nome: newComp.nome, cpf: newComp.cpf, endereco: newComp.endereco, cidade: newComp.cidade, telefone: newComp.telefone }, token: compToken });
       }
 
       case 'loginComprador': {
@@ -3043,7 +3141,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           return res.status(401).json({ error: 'Credenciais inválidas.' });
         }
         const compLoginToken = await createJwt({ comprador_id: foundComp.id, role: 'comprador', email: foundComp.email });
-        return res.json({ comprador: { id: foundComp.id, email: foundComp.email, nome: foundComp.nome }, token: compLoginToken });
+        return res.json({ comprador: { id: foundComp.id, email: foundComp.email, nome: foundComp.nome, cpf: foundComp.cpf || '', endereco: foundComp.endereco || '', cidade: foundComp.cidade || '', telefone: foundComp.telefone || '' }, token: compLoginToken });
       }
 
       case 'getHistoricoComprador': {
@@ -3137,6 +3235,56 @@ ${numerosCartelas ? `<p><strong>Cartelas:</strong> ${numerosCartelas}</p>` : ''}
           [newHash, compResetResult.rows[0].id]
         );
         return res.json({ success: true });
+      }
+
+      // ================== PER-USER CONFIGURAÇÕES ==================
+      case 'getUserConfiguracoes': {
+        const ucResult = await client.query(
+          'SELECT chave, valor FROM user_configuracoes WHERE user_id = $1',
+          [data.authenticated_user_id]
+        );
+        const ucConfig = {};
+        ucResult.rows.forEach(row => { ucConfig[row.chave] = row.valor; });
+        return res.json({ data: ucConfig });
+      }
+
+      case 'updateUserConfiguracoes': {
+        const ucEntries = Object.entries(data.config || {});
+        for (const [chave, valor] of ucEntries) {
+          if (dbConfig.type === 'mysql') {
+            await client.query(
+              `INSERT INTO user_configuracoes (user_id, chave, valor) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE valor = VALUES(valor), updated_at = NOW()`,
+              [data.authenticated_user_id, chave, valor]
+            );
+          } else {
+            await client.query(
+              `INSERT INTO user_configuracoes (user_id, chave, valor) VALUES ($1, $2, $3) ON CONFLICT (user_id, chave) DO UPDATE SET valor = EXCLUDED.valor, updated_at = NOW()`,
+              [data.authenticated_user_id, chave, valor]
+            );
+          }
+        }
+        return res.json({ success: true });
+      }
+
+      // ================== LOJA CLIENTES ==================
+      case 'getLojaCompradores': {
+        const lcQuery = await client.query(`
+          SELECT
+            lc.comprador_email AS email,
+            lc.comprador_nome AS nome,
+            lc.comprador_telefone AS telefone,
+            lc.comprador_cidade AS cidade,
+            MAX(lc.updated_at) AS ultima_compra,
+            COUNT(*) AS total_compras,
+            comp.cpf,
+            comp.endereco
+          FROM loja_cartelas lc
+          LEFT JOIN loja_compradores comp ON LOWER(lc.comprador_email) = LOWER(comp.email)
+          WHERE lc.user_id = $1 AND lc.status = 'vendida' AND lc.comprador_email IS NOT NULL AND lc.comprador_email <> ''
+          GROUP BY lc.comprador_email, lc.comprador_nome, lc.comprador_telefone, lc.comprador_cidade, comp.cpf, comp.endereco
+          ORDER BY ultima_compra DESC
+        `, [data.authenticated_user_id]);
+        return res.json({ data: lcQuery.rows });
       }
 
       default:

@@ -30,6 +30,9 @@ interface AuthContextType extends AuthState {
   grantLifetimeAccess: (userId: string, grant: boolean) => Promise<{ success: boolean; error?: string }>;
   getConfiguracoes: () => Promise<Record<string, string>>;
   updateConfiguracoes: (config: Record<string, string>) => Promise<{ success: boolean; error?: string }>;
+  getUserConfiguracoes: () => Promise<Record<string, string>>;
+  updateUserConfiguracoes: (config: Record<string, string>) => Promise<{ success: boolean; error?: string }>;
+  getLojaCompradores: () => Promise<Record<string, string | number>[]>;
   createStripeCheckout: (planoId: string, successPath?: string, cancelPath?: string) => Promise<{ url?: string; error?: string }>;
   refreshUser: () => Promise<void>;
   confirmStripeCheckout: (sessionId: string) => Promise<{ success: boolean; error?: string }>;
@@ -462,6 +465,39 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [user, toast]);
 
+  const getUserConfiguracoes = useCallback(async (): Promise<Record<string, string>> => {
+    try {
+      const result = await callApi('getUserConfiguracoes');
+      return result.data || {};
+    } catch (error) {
+      console.error('Get user configuracoes error:', error);
+      return {};
+    }
+  }, []);
+
+  const updateUserConfiguracoes = useCallback(async (config: Record<string, string>) => {
+    try {
+      const result = await callApi('updateUserConfiguracoes', { config });
+      if (result.success) {
+        toast({ title: 'Configurações salvas', description: 'Configurações de pagamento atualizadas.' });
+        return { success: true };
+      }
+      return { success: false, error: result.error || 'Erro ao salvar configurações' };
+    } catch (error: any) {
+      return { success: false, error: error.message || 'Erro ao salvar configurações' };
+    }
+  }, [toast]);
+
+  const getLojaCompradores = useCallback(async (): Promise<any[]> => {
+    try {
+      const result = await callApi('getLojaCompradores');
+      return result.data || [];
+    } catch (error) {
+      console.error('Get loja compradores error:', error);
+      return [];
+    }
+  }, []);
+
   const createStripeCheckout = useCallback(async (planoId: string, successPath?: string, cancelPath?: string) => {
     try {
       const result = await callApi('createStripeCheckout', {
@@ -535,6 +571,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     grantLifetimeAccess,
     getConfiguracoes,
     updateConfiguracoes,
+    getUserConfiguracoes,
+    updateUserConfiguracoes,
+    getLojaCompradores,
     createStripeCheckout,
     refreshUser,
     confirmStripeCheckout,
