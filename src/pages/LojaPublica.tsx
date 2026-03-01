@@ -687,13 +687,13 @@ const LojaPublica: React.FC = () => {
     try {
       const action = authTab === 'login' ? 'loginComprador' : 'cadastrarComprador';
       const payload: Record<string, string> = { email: authEmail.trim(), senha: authSenha };
+      if (ownerUserIdRef.current) payload.owner_user_id = ownerUserIdRef.current;
       if (authTab === 'cadastro') {
         payload.nome = authNome.trim();
         payload.cpf = authCpf.trim();
         payload.endereco = authEndereco.trim();
         payload.cidade = authCidade.trim();
         payload.telefone = authTelefone.trim();
-        if (ownerUserIdRef.current) payload.owner_user_id = ownerUserIdRef.current;
       }
       const result = await callApi(action, payload);
       if (result.error) { setAuthError(result.error); return; }
@@ -718,7 +718,7 @@ const LojaPublica: React.FC = () => {
     if (!resetEmail.trim()) { setResetError('Informe seu e-mail.'); return; }
     setIsResetSubmitting(true);
     try {
-      await callApi('solicitarRecuperacaoSenha', { email: resetEmail.trim() });
+      await callApi('solicitarRecuperacaoSenha', { email: resetEmail.trim(), ...(ownerUserIdRef.current ? { owner_user_id: ownerUserIdRef.current } : {}) });
       setResetSuccess('Se o e-mail estiver cadastrado, você receberá o código em breve.');
       setResetStep('code');
     } catch (err: any) {
@@ -733,7 +733,7 @@ const LojaPublica: React.FC = () => {
     if (!resetCode.trim() || !resetNovaSenha.trim()) { setResetError('Preencha o código e a nova senha.'); return; }
     setIsResetSubmitting(true);
     try {
-      const result = await callApi('resetarSenha', { email: resetEmail.trim(), codigo: resetCode.trim(), nova_senha: resetNovaSenha });
+      const result = await callApi('resetarSenha', { email: resetEmail.trim(), codigo: resetCode.trim(), nova_senha: resetNovaSenha, ...(ownerUserIdRef.current ? { owner_user_id: ownerUserIdRef.current } : {}) });
       if (result.error) { setResetError(result.error); return; }
       setResetSuccess('Senha alterada com sucesso! Faça login com a nova senha.');
       setTimeout(() => {
