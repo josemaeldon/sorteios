@@ -700,6 +700,18 @@ async function initSchema() {
         `);
         // Add stripe_session_id to vendas for deduplication (PostgreSQL)
         await client.query(`ALTER TABLE vendas ADD COLUMN IF NOT EXISTS stripe_session_id VARCHAR(255) DEFAULT NULL`);
+        // Add short_id to sorteios for public store URL (PostgreSQL)
+        await client.query(`ALTER TABLE sorteios ADD COLUMN IF NOT EXISTS short_id VARCHAR(8) DEFAULT NULL`);
+        await client.query(`
+          DO $$
+          DECLARE r RECORD;
+          BEGIN
+            FOR r IN SELECT id FROM sorteios WHERE short_id IS NULL LOOP
+              UPDATE sorteios SET short_id = UPPER(SUBSTRING(MD5(RANDOM()::TEXT || r.id::TEXT) FROM 1 FOR 6)) WHERE id = r.id;
+            END LOOP;
+          END;
+          $$;
+        `);
       }
       console.log('Schema initialized: sorteio_compartilhado table ready');
     } finally {
@@ -710,6 +722,16 @@ async function initSchema() {
   }
 }
 initSchema();
+
+/** Generates a 6-character alphanumeric short ID for public store URLs. */
+function generateShortId() {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let result = '';
+  for (let i = 0; i < 6; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
 
 // Basic Auth credentials from environment
 const BASIC_AUTH_USER = process.env.BASIC_AUTH_USER || '';
@@ -1344,12 +1366,23 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         const sorteioOwnerId = (data.authenticated_role === 'admin' && data.target_user_id)
           ? data.target_user_id
           : data.authenticated_user_id;
+
+        // Generate a unique short_id for the store URL
+        let shortId = generateShortId();
+        let shortIdUnique = false;
+        for (let attempt = 0; attempt < 10 && !shortIdUnique; attempt++) {
+          const existing = await client.query('SELECT id FROM sorteios WHERE short_id = $1', [shortId]);
+          if (existing.rows.length === 0) { shortIdUnique = true; } else { shortId = generateShortId(); }
+        }
+        if (!shortIdUnique) {
+          return res.status(500).json({ error: 'Não foi possível gerar um identificador único para a loja. Tente novamente.' });
+        }
         
         result = await client.query(`
-          INSERT INTO sorteios (user_id, nome, data_sorteio, premio, premios, valor_cartela, quantidade_cartelas, status)
-          VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8)
+          INSERT INTO sorteios (user_id, nome, data_sorteio, premio, premios, valor_cartela, quantidade_cartelas, status, short_id)
+          VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9)
           RETURNING *
-        `, [sorteioOwnerId, data.nome, data.data_sorteio, premioCreate, JSON.stringify(premiosCreate), data.valor_cartela, data.quantidade_cartelas, data.status]);
+        `, [sorteioOwnerId, data.nome, data.data_sorteio, premioCreate, JSON.stringify(premiosCreate), data.valor_cartela, data.quantidade_cartelas, data.status, shortId]);
         
         const newSorteioId = result.rows[0].id;
         const quantidadeCartelas = Number(data.quantidade_cartelas || 0);
@@ -2063,6 +2096,14 @@ app.post('/api', checkBasicAuth, async (req, res) => {
                 SELECT id FROM atribuicoes WHERE sorteio_id = $2
               )
             `, [numero, vendaToDelete.sorteio_id]);
+            // Reset loja_cartelas to disponivel for the returned cards
+            await client.query(`
+              UPDATE loja_cartelas SET status = 'disponivel', comprador_nome = NULL, comprador_email = NULL,
+                comprador_endereco = NULL, comprador_cidade = NULL, comprador_telefone = NULL, updated_at = NOW()
+              WHERE numero_cartela = $1 AND status = 'vendida' AND card_set_id IN (
+                SELECT id FROM bingo_card_sets WHERE sorteio_id = $2
+              )
+            `, [numero, vendaToDelete.sorteio_id]);
           }
         }
         
@@ -2109,10 +2150,22 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         return res.json({ data: result.rows });
 
       case 'saveCartelaLayout': {
-        result = await client.query(
-          'INSERT INTO bingo_card_sets (sorteio_id, nome, layout_data, cards_data) VALUES ($1, $2, $3, $4) RETURNING *',
-          [data.sorteio_id, data.nome, data.layout_data, data.cards_data]
+        // Each sorteio can only have one card set: upsert (update if exists, insert if not)
+        const existingLayout = await client.query(
+          'SELECT id FROM bingo_card_sets WHERE sorteio_id = $1 LIMIT 1',
+          [data.sorteio_id]
         );
+        if (existingLayout.rows.length > 0) {
+          result = await client.query(
+            'UPDATE bingo_card_sets SET nome = $2, layout_data = $3, cards_data = $4, updated_at = NOW() WHERE id = $1 RETURNING *',
+            [existingLayout.rows[0].id, data.nome, data.layout_data, data.cards_data]
+          );
+        } else {
+          result = await client.query(
+            'INSERT INTO bingo_card_sets (sorteio_id, nome, layout_data, cards_data) VALUES ($1, $2, $3, $4) RETURNING *',
+            [data.sorteio_id, data.nome, data.layout_data, data.cards_data]
+          );
+        }
         return res.json({ data: result.rows[0] });
       }
 
@@ -2298,10 +2351,26 @@ app.post('/api', checkBasicAuth, async (req, res) => {
 
       // ================== LOJA PÚBLICA ==================
       case 'getLojaPublica': {
-        // Public: get user's store by user_id, with pagination
+        // Public: get store by short_id (new format) or user_id (legacy)
+        let lojaUserId = data.user_id;
+        let lojaSorteioId = null;
+
+        if (data.short_id) {
+          // New URL format: lookup sorteio by short_id
+          const sorteioByShortId = await client.query(
+            'SELECT id, user_id FROM sorteios WHERE short_id = $1',
+            [data.short_id]
+          );
+          if (sorteioByShortId.rows.length === 0) {
+            return res.status(404).json({ error: 'Loja não encontrada.' });
+          }
+          lojaSorteioId = sorteioByShortId.rows[0].id;
+          lojaUserId = sorteioByShortId.rows[0].user_id;
+        }
+
         const ownerResult = await client.query(
           'SELECT id, nome, titulo_sistema FROM usuarios WHERE id = $1 AND ativo = true',
-          [data.user_id]
+          [lojaUserId]
         );
         if (ownerResult.rows.length === 0) {
           return res.status(404).json({ error: 'Loja não encontrada.' });
@@ -2310,30 +2379,46 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         const PAGE_SIZE = 10;
         const page = Math.max(1, parseInt(data.page) || 1);
         const offset = (page - 1) * PAGE_SIZE;
+
+        // Build WHERE clause: filter by user_id, optionally by sorteio
+        const countParams = [lojaUserId, 'disponivel'];
+        let countWhere = 'lc.user_id = $1 AND lc.status = $2';
+        if (lojaSorteioId) {
+          countParams.push(lojaSorteioId);
+          countWhere += ` AND bcs.sorteio_id = $${countParams.length}`;
+        }
         const countResult = await client.query(
-          'SELECT COUNT(*) as total FROM loja_cartelas WHERE user_id = $1 AND status = $2',
-          [data.user_id, 'disponivel']
+          `SELECT COUNT(*) as total FROM loja_cartelas lc JOIN bingo_card_sets bcs ON lc.card_set_id = bcs.id WHERE ${countWhere}`,
+          countParams
         );
         const total = parseInt(countResult.rows[0].total) || 0;
+
+        const lojaParams = [lojaUserId, 'disponivel'];
+        let lojaWhere = 'lc.user_id = $1 AND lc.status = $2';
+        if (lojaSorteioId) {
+          lojaParams.push(lojaSorteioId);
+          lojaWhere += ` AND bcs.sorteio_id = $${lojaParams.length}`;
+        }
+        lojaParams.push(PAGE_SIZE, offset);
         const lojaResult = await client.query(
           `SELECT lc.id, lc.numero_cartela, lc.preco, lc.status, lc.card_data, lc.layout_data,
                   bcs.sorteio_id, s.nome as sorteio_nome, s.data_sorteio
            FROM loja_cartelas lc
            JOIN bingo_card_sets bcs ON lc.card_set_id = bcs.id
            JOIN sorteios s ON bcs.sorteio_id = s.id
-           WHERE lc.user_id = $1 AND lc.status = $2
+           WHERE ${lojaWhere}
            ORDER BY s.data_sorteio DESC, s.nome ASC, lc.numero_cartela ASC
-           LIMIT $3 OFFSET $4`,
-          [data.user_id, 'disponivel', PAGE_SIZE, offset]
+           LIMIT $${lojaParams.length - 1} OFFSET $${lojaParams.length}`,
+          lojaParams
         );
         return res.json({
-          owner: { nome: owner.nome, titulo_sistema: owner.titulo_sistema },
+          owner: { id: owner.id, nome: owner.nome, titulo_sistema: owner.titulo_sistema },
           cartelas: lojaResult.rows,
           total,
           page,
           page_size: PAGE_SIZE,
           total_pages: Math.ceil(total / PAGE_SIZE),
-          payment_gateway: await getUserPaymentGateway(client, data.user_id),
+          payment_gateway: await getUserPaymentGateway(client, lojaUserId),
         });
       }
 
