@@ -175,6 +175,7 @@ function drawGridPdf(doc: jsPDF, el: CanvasElement, grid: number[][], offsetY: n
   const ch = (el.height - hh) / 5;
   const cw = el.width / 5;
   const bw = el.borderWidth ?? 0.5;
+  const noBorder = !el.borderColor || el.borderColor === 'transparent' || bw <= 0;
   const gridY = el.y + offsetY;
 
   const [bR, bG, bB] = hexToRgb(el.borderColor ?? '#1e3a8a');
@@ -192,9 +193,11 @@ function drawGridPdf(doc: jsPDF, el: CanvasElement, grid: number[][], offsetY: n
       const cx = el.x + col * cw;
       doc.setFillColor(hR, hG, hB);
       doc.rect(cx, gridY, cw, hh, 'F');
-      doc.setDrawColor(bR, bG, bB);
-      doc.setLineWidth(bw);
-      doc.rect(cx, gridY, cw, hh, 'S');
+      if (!noBorder) {
+        doc.setDrawColor(bR, bG, bB);
+        doc.setLineWidth(bw);
+        doc.rect(cx, gridY, cw, hh, 'S');
+      }
       doc.setTextColor(htR, htG, htB);
       doc.setFontSize(el.headerFontSize ?? 14);
       doc.setFont('helvetica', 'bold');
@@ -214,9 +217,11 @@ function drawGridPdf(doc: jsPDF, el: CanvasElement, grid: number[][], offsetY: n
         doc.setFillColor(r, g, b);
         doc.rect(cx, cy, cw, ch, 'F');
       }
-      doc.setDrawColor(bR, bG, bB);
-      doc.setLineWidth(bw);
-      doc.rect(cx, cy, cw, ch, 'S');
+      if (!noBorder) {
+        doc.setDrawColor(bR, bG, bB);
+        doc.setLineWidth(bw);
+        doc.rect(cx, cy, cw, ch, 'S');
+      }
       if (!free || showFreeText) {
         doc.setTextColor(nR, nG, nB);
         doc.setFontSize(el.fontSize ?? 12);
