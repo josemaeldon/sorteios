@@ -992,7 +992,7 @@ const BingoCardsBuilderTab: React.FC = () => {
                   <span className="truncate">Número da Cartela{i > 0 ? ` ${i + 1}` : ''}</span>
                 </button>
               ))}
-            {layout.elements
+            {!rifaOnly && layout.elements
               .filter((e) => e.type === 'bingo_grid')
               .map((e, i) => (
                 <button
@@ -1003,9 +1003,11 @@ const BingoCardsBuilderTab: React.FC = () => {
                   <LayoutGrid className="w-3.5 h-3.5" /> Grade Bingo {i + 1}
                 </button>
               ))}
-            <Button size="sm" variant="outline" onClick={addBingoGridElement} className="w-full gap-1 h-7 text-xs">
-              <Plus className="w-3 h-3" /> Adicionar Grade Bingo
-            </Button>
+            {!rifaOnly && (
+              <Button size="sm" variant="outline" onClick={addBingoGridElement} className="w-full gap-1 h-7 text-xs">
+                <Plus className="w-3 h-3" /> Adicionar Grade Bingo
+              </Button>
+            )}
             {layout.elements
               .filter((e) => e.type === 'text')
               .map((e) => (
@@ -1241,7 +1243,7 @@ const BingoCardsBuilderTab: React.FC = () => {
                     </div>
                   )}
 
-                  {el.type === 'bingo_grid' && (
+                  {el.type === 'bingo_grid' && !rifaOnly && (
                     <BingoGridPreview el={el} card={previewCard} scale={SCALE} numeroPremios={numeroPremios} gridCols={gridCols} gridRows={gridRows} />
                   )}
 
