@@ -66,6 +66,11 @@ CREATE TABLE IF NOT EXISTS public.sorteios (
     valor_cartela NUMERIC,
     quantidade_cartelas INTEGER DEFAULT 0,
     status TEXT DEFAULT 'ativo',
+    papel_largura NUMERIC DEFAULT 210,
+    papel_altura NUMERIC DEFAULT 297,
+    grade_colunas INTEGER DEFAULT 5,
+    grade_linhas INTEGER DEFAULT 5,
+    apenas_numero_rifa BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE
 );
