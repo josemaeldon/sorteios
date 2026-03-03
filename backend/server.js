@@ -580,6 +580,145 @@ async function initSchema() {
           }
         }
       } else {
+        // Create core base tables if they don't exist (first-run without SQL init file)
+        await client.query(`CREATE EXTENSION IF NOT EXISTS "pgcrypto"`);
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS public.usuarios (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            nome TEXT NOT NULL,
+            email TEXT NOT NULL UNIQUE,
+            senha_hash TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'user',
+            ativo BOOLEAN NOT NULL DEFAULT true,
+            avatar_url TEXT,
+            titulo_sistema TEXT DEFAULT 'Sorteios',
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+            updated_at TIMESTAMP WITH TIME ZONE
+          )
+        `);
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS public.sorteios (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID NOT NULL,
+            nome TEXT NOT NULL,
+            premio TEXT,
+            premios JSONB DEFAULT '[]'::jsonb,
+            data_sorteio DATE,
+            valor_cartela NUMERIC,
+            quantidade_cartelas INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'ativo',
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+            updated_at TIMESTAMP WITH TIME ZONE
+          )
+        `);
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS public.vendedores (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            sorteio_id UUID NOT NULL REFERENCES public.sorteios(id) ON DELETE CASCADE,
+            nome TEXT NOT NULL,
+            telefone TEXT,
+            email TEXT,
+            cpf TEXT,
+            endereco TEXT,
+            ativo BOOLEAN DEFAULT true,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+            updated_at TIMESTAMP WITH TIME ZONE
+          )
+        `);
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS public.cartelas (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            sorteio_id UUID NOT NULL REFERENCES public.sorteios(id) ON DELETE CASCADE,
+            vendedor_id UUID REFERENCES public.vendedores(id) ON DELETE SET NULL,
+            numero INTEGER NOT NULL,
+            status TEXT DEFAULT 'disponivel',
+            numeros_grade JSONB,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+            updated_at TIMESTAMP WITH TIME ZONE
+          )
+        `);
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS public.atribuicoes (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            sorteio_id UUID NOT NULL REFERENCES public.sorteios(id) ON DELETE CASCADE,
+            vendedor_id UUID NOT NULL REFERENCES public.vendedores(id) ON DELETE CASCADE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+            updated_at TIMESTAMP WITH TIME ZONE
+          )
+        `);
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS public.atribuicao_cartelas (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            atribuicao_id UUID NOT NULL REFERENCES public.atribuicoes(id) ON DELETE CASCADE,
+            numero_cartela INTEGER NOT NULL,
+            status TEXT DEFAULT 'ativa',
+            data_atribuicao TIMESTAMP WITH TIME ZONE,
+            data_devolucao TIMESTAMP WITH TIME ZONE,
+            venda_id UUID,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
+          )
+        `);
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS public.vendas (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            sorteio_id UUID NOT NULL REFERENCES public.sorteios(id) ON DELETE CASCADE,
+            vendedor_id UUID REFERENCES public.vendedores(id) ON DELETE SET NULL,
+            cliente_nome TEXT,
+            cliente_telefone TEXT,
+            numeros_cartelas TEXT,
+            valor_total NUMERIC,
+            valor_pago NUMERIC DEFAULT 0,
+            data_venda TIMESTAMP WITH TIME ZONE,
+            status TEXT DEFAULT 'pendente',
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+            updated_at TIMESTAMP WITH TIME ZONE
+          )
+        `);
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS public.pagamentos (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            venda_id UUID NOT NULL REFERENCES public.vendas(id) ON DELETE CASCADE,
+            valor NUMERIC,
+            forma_pagamento TEXT,
+            data_pagamento TIMESTAMP WITH TIME ZONE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
+          )
+        `);
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS public.rodadas_sorteio (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            sorteio_id UUID NOT NULL REFERENCES public.sorteios(id) ON DELETE CASCADE,
+            nome TEXT NOT NULL,
+            range_start INTEGER NOT NULL,
+            range_end INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'ativo',
+            data_inicio TIMESTAMP WITH TIME ZONE,
+            data_fim TIMESTAMP WITH TIME ZONE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+            updated_at TIMESTAMP WITH TIME ZONE
+          )
+        `);
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS public.sorteio_historico (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            sorteio_id UUID REFERENCES public.sorteios(id) ON DELETE CASCADE,
+            rodada_id UUID REFERENCES public.rodadas_sorteio(id) ON DELETE CASCADE,
+            numero_sorteado INTEGER NOT NULL,
+            range_start INTEGER NOT NULL,
+            range_end INTEGER NOT NULL,
+            ordem INTEGER NOT NULL,
+            registro VARCHAR(255),
+            data_sorteio TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+            CONSTRAINT check_sorteio_or_rodada CHECK (sorteio_id IS NOT NULL OR rodada_id IS NOT NULL)
+          )
+        `);
+        // Insert default admin user if not exists (first-run)
+        await client.query(`
+          INSERT INTO public.usuarios (nome, email, senha_hash, role, ativo)
+          VALUES ('Administrador', 'admin@bingo.local', '$2a$10$N9qo8uLOickgx2ZMRZoMy.MQDOqKzFoXaZAKDxcj9kNxbD5e7B5I.', 'admin', true)
+          ON CONFLICT (email) DO NOTHING
+        `);
         await client.query(`
           CREATE TABLE IF NOT EXISTS public.sorteio_compartilhado (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
