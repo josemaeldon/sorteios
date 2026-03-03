@@ -34,6 +34,7 @@ interface AuthContextType extends AuthState {
   getUserConfiguracoes: () => Promise<Record<string, string>>;
   updateUserConfiguracoes: (config: Record<string, string>) => Promise<{ success: boolean; error?: string }>;
   getLojaCompradores: () => Promise<Record<string, string | number>[]>;
+  getCartelasComprador: (email: string) => Promise<Record<string, unknown>[]>;
   createLojaComprador: (data: { nome: string; email: string; cpf?: string; telefone?: string; cidade?: string; endereco?: string }) => Promise<{ success: boolean; error?: string }>;
   updateLojaComprador: (data: { nome: string; email: string; cpf?: string; telefone?: string; cidade?: string; endereco?: string }) => Promise<{ success: boolean; error?: string }>;
   deleteLojaComprador: (email: string) => Promise<{ success: boolean; error?: string }>;
@@ -512,6 +513,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, []);
 
+  const getCartelasComprador = useCallback(async (email: string): Promise<any[]> => {
+    try {
+      const result = await callApi('getCartelasComprador', { email });
+      return result.data || [];
+    } catch (error) {
+      console.error('Get cartelas comprador error:', error);
+      return [];
+    }
+  }, []);
+
   const createLojaComprador = useCallback(async (data: { nome: string; email: string; cpf?: string; telefone?: string; cidade?: string; endereco?: string }) => {
     try {
       const result = await callApi('createLojaComprador', data);
@@ -628,6 +639,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     getUserConfiguracoes,
     updateUserConfiguracoes,
     getLojaCompradores,
+    getCartelasComprador,
     createLojaComprador,
     updateLojaComprador,
     deleteLojaComprador,

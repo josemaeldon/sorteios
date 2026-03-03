@@ -3754,6 +3754,25 @@ ${numerosCartelas ? `<p><strong>Cartelas:</strong> ${numerosCartelas}</p>` : ''}
         return res.json({ success: true });
       }
 
+      case 'getCartelasComprador': {
+        if (!data.email) {
+          return res.status(400).json({ error: 'E-mail é obrigatório.' });
+        }
+        const emailComp = data.email.toLowerCase().trim();
+        const cartelasComp = await client.query(
+          `SELECT lc.id, lc.numero_cartela, lc.preco, lc.status, lc.card_data, lc.layout_data,
+                  lc.comprador_nome, lc.comprador_email, lc.updated_at,
+                  s.nome AS sorteio_nome, s.data_sorteio, bcs.sorteio_id
+           FROM loja_cartelas lc
+           JOIN bingo_card_sets bcs ON lc.card_set_id = bcs.id
+           JOIN sorteios s ON bcs.sorteio_id = s.id
+           WHERE lc.user_id = $1 AND LOWER(lc.comprador_email) = $2 AND lc.status = 'vendida'
+           ORDER BY lc.updated_at DESC`,
+          [data.authenticated_user_id, emailComp]
+        );
+        return res.json({ data: cartelasComp.rows });
+      }
+
       case 'deleteLojaComprador': {
         if (!data.email) {
           return res.status(400).json({ error: 'E-mail é obrigatório.' });
