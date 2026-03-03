@@ -513,7 +513,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, []);
 
-  const getCartelasComprador = useCallback(async (email: string): Promise<any[]> => {
+  const getCartelasComprador = useCallback(async (email: string): Promise<Record<string, unknown>[]> => {
     try {
       const result = await callApi('getCartelasComprador', { email });
       return result.data || [];

@@ -215,14 +215,8 @@ const LojaPublica: React.FC = () => {
   const ownerUserIdRef = useRef<string | undefined>(userId);
   const [cartelas, setCartelas] = useState<LojaCartela[]>([]);
   const [paymentGateway, setPaymentGateway] = useState<'stripe' | 'mercado_pago'>('stripe');
-  // Infinite scroll state
-  const [hasMore, setHasMore] = useState(false);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [totalCartelas, setTotalCartelas] = useState(0);
-  const [loadCount, setLoadCount] = useState(0); // increments after each load to re-trigger IntersectionObserver
-  const currentPageRef = useRef(1);
   const isFetchingRef = useRef(false);
-  const sentinelRef = useRef<HTMLDivElement>(null);
   // Cart cache: keeps full LojaCartela data for items added to cart across pages
   const [cartCache, setCartCache] = useState<Map<string, LojaCartela>>(new Map());
 
@@ -357,35 +351,26 @@ const LojaPublica: React.FC = () => {
     [availableCartelas]
   );
 
-  const loadLoja = useCallback(async (page = 1) => {
+  const loadLoja = useCallback(async () => {
     if (!userId && !shortId) return;
     if (isFetchingRef.current) return;
     isFetchingRef.current = true;
-    if (page === 1) {
-      setIsLoading(true);
-    } else {
-      setIsLoadingMore(true);
-    }
+    setIsLoading(true);
     try {
       const apiParams = shortId
-        ? { short_id: shortId, page }
-        : { user_id: userId, page };
+        ? { short_id: shortId }
+        : { user_id: userId };
       const result = await callApi('getLojaPublica', apiParams);
       setOwner(result.owner);
       if (result.owner?.id) ownerUserIdRef.current = result.owner.id;
-      setCartelas(prev => page === 1 ? (result.cartelas || []) : [...prev, ...(result.cartelas || [])]);
+      setCartelas(result.cartelas || []);
       setTotalCartelas(result.total || 0);
-      const totalPages = result.total_pages || 1;
-      setHasMore(page < totalPages);
-      currentPageRef.current = page;
-      setLoadCount(c => c + 1);
       if (result.payment_gateway) setPaymentGateway(result.payment_gateway);
     } catch (err: any) {
       setError(err.message || 'Loja não encontrada.');
     } finally {
       isFetchingRef.current = false;
       setIsLoading(false);
-      setIsLoadingMore(false);
     }
   }, [userId, shortId]);
 
@@ -393,22 +378,6 @@ const LojaPublica: React.FC = () => {
   useEffect(() => {
     loadLoja();
   }, [loadLoja]);
-
-  // Infinite scroll: observe sentinel element
-  useEffect(() => {
-    const sentinel = sentinelRef.current;
-    if (!sentinel) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasMore) {
-          loadLoja(currentPageRef.current + 1);
-        }
-      },
-      { rootMargin: '200px' }
-    );
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [hasMore, loadLoja, loadCount]);
 
   // Load buyer auth from localStorage
   useEffect(() => {
@@ -677,9 +646,7 @@ const LojaPublica: React.FC = () => {
       if (!found) {
         const padded = String(num).padStart(3, '0');
         const exists = cartelas.find(c => c.numero_cartela === num);
-        const notFoundMsg = hasMore
-          ? `Cartela ${padded} não encontrada nas cartelas carregadas (role para baixo para carregar mais).`
-          : `Cartela ${padded} não encontrada.`;
+        const notFoundMsg = `Cartela ${padded} não encontrada.`;
         setQuickAddError(exists ? `Cartela ${padded} não está disponível.` : notFoundMsg);
         return;
       }
@@ -1135,7 +1102,7 @@ const LojaPublica: React.FC = () => {
                   <span>
                     Números disponíveis{' '}
                     <span className="text-gray-400 font-normal">
-                      ({availableNumbers.length}{hasMore ? '+' : ''} de {totalCartelas})
+                      ({availableNumbers.length} de {totalCartelas})
                     </span>
                   </span>
                   {showAvailableNumbers ? <ChevronUp className="w-4 h-4 ml-auto text-gray-400" /> : <ChevronDown className="w-4 h-4 ml-auto text-gray-400" />}
@@ -1143,14 +1110,11 @@ const LojaPublica: React.FC = () => {
                 {showAvailableNumbers && (
                   <div className="mt-2">
                     {availableNumbers.length === 0 ? (
-                      <p className="text-xs text-gray-400">Nenhuma cartela disponível entre as carregadas.</p>
+                      <p className="text-xs text-gray-400">Nenhuma cartela disponível.</p>
                     ) : (
                       <p className="text-xs bg-gray-50 rounded-lg p-2 font-mono tracking-wide leading-relaxed text-gray-700 break-words">
                         {toRanges(availableNumbers)}
                       </p>
-                    )}
-                    {hasMore && (
-                      <p className="text-xs text-gray-400 mt-1">Role a página para carregar mais cartelas.</p>
                     )}
                   </div>
                 )}
@@ -1200,12 +1164,6 @@ const LojaPublica: React.FC = () => {
                 </div>
               ));
             })()}
-            {/* Infinite scroll sentinel + loading indicator */}
-            <div ref={sentinelRef} className="flex justify-center mt-8">
-              {isLoadingMore && (
-                <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
-              )}
-            </div>
           </>
         )}
       </div>

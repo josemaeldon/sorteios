@@ -864,7 +864,7 @@ const BingoCardsBuilderTab: React.FC = () => {
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '');
     return `${window.location.origin}/loja/${slug}/${sorteioAtivo.short_id}`;
-  }, [sorteioAtivo?.short_id, sorteioAtivo?.nome, user]);
+  }, [sorteioAtivo?.short_id, sorteioAtivo?.nome, sorteioAtivo?.user_id, user]);
 
   // ─── Render ────────────────────────────────────────────────────────────────
   if (!sorteioAtivo) {
