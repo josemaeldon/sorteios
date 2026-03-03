@@ -31,8 +31,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 // ─── Canvas constants ─────────────────────────────────────────────────────────
 /** px per mm — keeps A4 canvas at ~595×841 px (72 dpi equivalent) */
 const SCALE = 595 / 210;
-const CANVAS_W = Math.round(A4_W_MM * SCALE);
-const CANVAS_H = Math.round(A4_H_MM * SCALE);
 
 const mm = (v: number) => v * SCALE;   // mm → px
 const px = (v: number) => v / SCALE;   // px → mm
@@ -57,7 +55,9 @@ const BingoGridPreview: React.FC<{
   card: BingoCardGrid | null;
   scale: number;
   numeroPremios: number;
-}> = ({ el, card, scale, numeroPremios }) => {
+  gridCols?: number;
+  gridRows?: number;
+}> = ({ el, card, scale, numeroPremios, gridCols = 5, gridRows = 5 }) => {
   const showHeader = el.showHeader ?? false;
   const showFreeText = el.showFreeText ?? false;
   const cellFontPx = (el.fontSize ?? 12) * (scale / SCALE);
@@ -70,28 +70,47 @@ const BingoGridPreview: React.FC<{
       style={{
         flex: 1,
         display: 'grid',
-        gridTemplateColumns: 'repeat(5, 1fr)',
-        gridTemplateRows: showHeader ? `1fr repeat(5, 1fr)` : 'repeat(5, 1fr)',
+        gridTemplateColumns: `repeat(${gridCols}, 1fr)`,
+        gridTemplateRows: showHeader ? `1fr repeat(${gridRows}, 1fr)` : `repeat(${gridRows}, 1fr)`,
         overflow: 'hidden',
       }}
     >
       {/* Header row (optional) */}
-      {showHeader && BINGO_COLS.map((col) => (
-        <div
-          key={col}
-          style={{
-            background: el.headerColor ?? '#1e3a8a',
-            color: el.headerTextColor ?? '#ffffff',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: headerFontPx,
-            fontWeight: 'bold',
-            border: `${bw}px solid ${el.borderColor ?? '#1e3a8a'}`,
-            boxSizing: 'border-box',
-          }}
-        >
-          {col}
-        </div>
-      ))}
+      {showHeader && (
+        gridCols === 5
+          ? BINGO_COLS.map((col) => (
+            <div
+              key={col}
+              style={{
+                background: el.headerColor ?? '#1e3a8a',
+                color: el.headerTextColor ?? '#ffffff',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: headerFontPx,
+                fontWeight: 'bold',
+                border: `${bw}px solid ${el.borderColor ?? '#1e3a8a'}`,
+                boxSizing: 'border-box',
+              }}
+            >
+              {col}
+            </div>
+          ))
+          : Array.from({ length: gridCols }, (_, i) => (
+            <div
+              key={i}
+              style={{
+                background: el.headerColor ?? '#1e3a8a',
+                color: el.headerTextColor ?? '#ffffff',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: headerFontPx,
+                fontWeight: 'bold',
+                border: `${bw}px solid ${el.borderColor ?? '#1e3a8a'}`,
+                boxSizing: 'border-box',
+              }}
+            >
+              {i + 1}
+            </div>
+          ))
+      )}
       {/* Numbers */}
       {grid.flatMap((row, ri) =>
         row.map((num, ci) => {
@@ -121,7 +140,7 @@ const BingoGridPreview: React.FC<{
   );
 
   const allGrids = card?.grids ?? Array.from({ length: numeroPremios }, () =>
-    Array.from({ length: 5 }, () => Array(5).fill(0))
+    Array.from({ length: gridRows }, () => Array(gridCols).fill(0))
   );
 
   return (
@@ -252,9 +271,19 @@ const BingoCardsBuilderTab: React.FC = () => {
     vendedores,
     cartelaLayouts, loadCartelaLayouts, saveCartelaLayout, updateCartelaLayout, deleteCartelaLayout,
     lojaCartelas, loadMinhaLoja, adicionarCartelaLoja, removerCartelaLoja, removerMultiplasCartelasLoja, atualizarPrecoLojaCartela,
+    cartelasValidadas,
   } = useBingo();
   const { user } = useAuth();
   const { toast } = useToast();
+
+  // ─── Paper / grid dimensions derived from active sorteio ─────────────────
+  const paperW = sorteioAtivo?.papel_largura ?? A4_W_MM;
+  const paperH = sorteioAtivo?.papel_altura ?? A4_H_MM;
+  const canvasW = Math.round(paperW * SCALE);
+  const canvasH = Math.round(paperH * SCALE);
+  const gridCols = sorteioAtivo?.grade_colunas ?? 5;
+  const gridRows = sorteioAtivo?.grade_linhas ?? 5;
+  const rifaOnly = sorteioAtivo?.apenas_numero_rifa ?? false;
 
   // Layout
   const [layout, setLayout] = useState<CanvasLayout>(() =>
@@ -268,6 +297,7 @@ const BingoCardsBuilderTab: React.FC = () => {
   const [isExporting, setIsExporting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const numeroPremios = 1;
+  const hasValidatedCards = cartelasValidadas.length > 0;
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
 
   // Loja state
@@ -316,6 +346,8 @@ const BingoCardsBuilderTab: React.FC = () => {
   const resizingRef = useRef<ResizeState | null>(null);
   const layoutRef = useRef(layout);
   useEffect(() => { layoutRef.current = layout; }, [layout]);
+  const paperDimsRef = useRef({ paperW, paperH });
+  useEffect(() => { paperDimsRef.current = { paperW, paperH }; }, [paperW, paperH]);
 
   // Tracks whether the one-time DB restore has already run for the current sorteio
   const hasRestoredRef = useRef(false);
@@ -336,17 +368,19 @@ const BingoCardsBuilderTab: React.FC = () => {
       .sort((a, b) => a.numero - b.numero);
     if (saved.length === 0) return;
     hasRestoredRef.current = true;
+    const expectedCells = gridCols * gridRows;
     setCards(
-      saved.map(c => {
-        // numeros_grade is number[][] - array of flat 25-number arrays per prize
-        // numeros_grade stores flat 25-number arrays per prize; reshape each to a 5×5 grid (BINGO_COLS.length rows/cols)
-        const grids = c.numeros_grade!.map(flat =>
-          Array.from({ length: 5 }, (_, row) => flat.slice(row * 5, row * 5 + 5))
-        );
-        return { cartelaNumero: c.numero, grids };
-      }),
+      saved
+        .filter(c => c.numeros_grade!.every(flat => flat.length === expectedCells))
+        .map(c => {
+          // numeros_grade stores flat arrays per prize; reshape each to a gridRows×gridCols grid
+          const grids = c.numeros_grade!.map(flat =>
+            Array.from({ length: gridRows }, (_, row) => flat.slice(row * gridCols, row * gridCols + gridCols))
+          );
+          return { cartelaNumero: c.numero, grids };
+        }),
     );
-  }, [cartelas]);
+  }, [cartelas, gridCols, gridRows]);
 
   // ─── Auto-load the existing layout for the current sorteio (Req 4) ─────────
   useEffect(() => {
@@ -479,7 +513,7 @@ const BingoCardsBuilderTab: React.FC = () => {
             ...prev,
             elements: prev.elements.map((el) =>
               el.id === d.id
-                ? { ...el, x: clamp(d.origX + dx, 0, A4_W_MM - el.width), y: clamp(d.origY + dy, 0, A4_H_MM - el.height) }
+                ? { ...el, x: clamp(d.origX + dx, 0, paperDimsRef.current.paperW - el.width), y: clamp(d.origY + dy, 0, paperDimsRef.current.paperH - el.height) }
                 : el,
             ),
           };
@@ -551,7 +585,7 @@ const BingoCardsBuilderTab: React.FC = () => {
   // ─── Generate cards ────────────────────────────────────────────────────────
   const doGenerate = async () => {
     const count = totalCards;
-    const generated = generateAllBingoCards(count, numeroPremios);
+    const generated = generateAllBingoCards(count, numeroPremios, gridCols, gridRows);
     setCards(generated);
     setPreviewIndex(0);
     // Save all prize grids to each cartela in the DB
@@ -588,7 +622,7 @@ const BingoCardsBuilderTab: React.FC = () => {
     }
     setIsExporting(true);
     try {
-      await exportBingoCardsPDF(cards, layout, sorteioAtivo?.nome ?? 'bingo');
+      await exportBingoCardsPDF(cards, layout, sorteioAtivo?.nome ?? 'bingo', undefined, paperW, paperH, gridCols, gridRows);
       toast({ title: 'PDF exportado com sucesso!' });
     } catch {
       toast({ title: 'Erro ao exportar PDF', variant: 'destructive' });
@@ -786,9 +820,12 @@ const BingoCardsBuilderTab: React.FC = () => {
     let skipped = 0;
     try {
       for (const c of vendorCartelas) {
-        // Convert numeros_grade (flat arrays per prize) to BingoCardGrid.grids (5x5 per prize)
+        // Convert numeros_grade (flat arrays per prize) to BingoCardGrid.grids
+        const expectedCells = gridCols * gridRows;
         const grids = c.numeros_grade!.map(flat =>
-          Array.from({ length: 5 }, (_, row) => flat.slice(row * 5, row * 5 + 5))
+          flat.length === expectedCells
+            ? Array.from({ length: gridRows }, (_, row) => flat.slice(row * gridCols, row * gridCols + gridCols))
+            : Array.from({ length: gridRows }, () => Array(gridCols).fill(0))
         );
         const cardGrid: BingoCardGrid = { cartelaNumero: c.numero, grids };
         try {
@@ -899,7 +936,7 @@ const BingoCardsBuilderTab: React.FC = () => {
             <List className="w-4 h-4" />
             Minhas Cartelas {cartelaLayouts.length > 0 && `(${cartelaLayouts.length})`}
           </Button>
-          <Button onClick={handleGenerate} variant="outline" className="gap-2" disabled={isSaving}>
+          <Button onClick={handleGenerate} variant="outline" className="gap-2" disabled={isSaving || hasValidatedCards}>
             {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
             Gerar
           </Button>
@@ -918,10 +955,19 @@ const BingoCardsBuilderTab: React.FC = () => {
         </div>
       </div>
 
-      {cards.length === 0 && (
+      {hasValidatedCards && (
+        <div className="flex items-center gap-3 p-4 bg-destructive/10 border border-destructive/30 rounded-xl text-sm">
+          <X className="w-5 h-5 text-destructive flex-shrink-0" />
+          <span className="text-destructive">
+            Existem <strong>{cartelasValidadas.length}</strong> cartela(s) validada(s). Novos números só podem ser gerados após a exclusão das cartelas validadas.
+          </span>
+        </div>
+      )}
+
+      {!hasValidatedCards && cards.length === 0 && (
         <div className="flex items-center gap-3 p-4 bg-primary/5 border border-primary/20 rounded-xl text-sm">
           <FileText className="w-5 h-5 text-primary flex-shrink-0" />
-          <span>Clique em <strong>Gerar</strong> para criar {totalCards} cartelas únicas com números de 1 a 75 e grades independentes por prêmio, depois <strong>Salvar Como...</strong> para nomear e salvar.</span>
+          <span>Clique em <strong>Gerar</strong> para criar {totalCards} cartelas únicas com números de 1 a {gridCols === 5 && gridRows === 5 ? '75' : `${gridCols * gridRows * 3}`} e grades independentes por prêmio, depois <strong>Salvar Como...</strong> para nomear e salvar.</span>
         </div>
       )}
 
@@ -1123,8 +1169,8 @@ const BingoCardsBuilderTab: React.FC = () => {
         <div className="flex-1 bg-muted overflow-auto flex items-start justify-center p-6 min-w-0">
           <div
             style={{
-              width: CANVAS_W,
-              height: CANVAS_H,
+              width: canvasW,
+              height: canvasH,
               position: 'relative',
               flexShrink: 0,
               backgroundColor: layout.background.color,
@@ -1196,7 +1242,7 @@ const BingoCardsBuilderTab: React.FC = () => {
                   )}
 
                   {el.type === 'bingo_grid' && (
-                    <BingoGridPreview el={el} card={previewCard} scale={SCALE} numeroPremios={numeroPremios} />
+                    <BingoGridPreview el={el} card={previewCard} scale={SCALE} numeroPremios={numeroPremios} gridCols={gridCols} gridRows={gridRows} />
                   )}
 
                   {el.type === 'text' && (

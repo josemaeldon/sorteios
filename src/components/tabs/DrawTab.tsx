@@ -49,13 +49,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 const ANIMATION_CYCLES = 20;
 const ANIMATION_INTERVAL_MS = 100;
 const FULLSCREEN_FONT_SIZE_DEFAULT = 300;
-const WINNING_SCORE = 25;
 const Z_INDEX_WINNER_POPUP = 9999;
 const LOTE_SIZE = 50;
 
 const DrawTab: React.FC = () => {
   const { sorteioAtivo, cartelas, cartelasValidadas, loadCartelasValidadas } = useBingo();
   const { toast } = useToast();
+
+  // Winning score = total cells in the grid (cols × rows), defaults to 25 (5×5)
+  const winningScore = (sorteioAtivo?.grade_colunas ?? 5) * (sorteioAtivo?.grade_linhas ?? 5);
   
   // Rodadas state
   const [rodadas, setRodadas] = useState<RodadaSorteio[]>([]);
@@ -588,7 +590,7 @@ const DrawTab: React.FC = () => {
   }, [drawnNumbers, cartelas, cartelasValidadas]);
 
   useEffect(() => {
-    const winnerEntry = topScoringCartelas.find(entry => entry.score >= WINNING_SCORE);
+    const winnerEntry = topScoringCartelas.find(entry => entry.score >= winningScore);
     if (winnerEntry) {
       const newWinners = winnerEntry.cartelas.filter(c => !ganhadoresPopShownRef.current.has(c.numero));
       if (newWinners.length > 0) {

@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Dice5, Save, Loader2, Plus, Trash2, Gift } from 'lucide-react';
 
 interface SorteioModalProps {
@@ -29,6 +30,13 @@ interface SorteioModalProps {
   onClose: () => void;
   editingId: string | null;
 }
+
+const PAPER_PRESETS = [
+  { label: 'A4 (210 × 297 mm)', value: 'A4', w: 210, h: 297 },
+  { label: 'A3 (297 × 420 mm)', value: 'A3', w: 297, h: 420 },
+  { label: 'Letter (216 × 279 mm)', value: 'Letter', w: 216, h: 279 },
+  { label: 'Personalizado', value: 'custom', w: 0, h: 0 },
+];
 
 const SorteioModal: React.FC<SorteioModalProps> = ({ isOpen, onClose, editingId }) => {
   const { sorteios, addSorteio, updateSorteio } = useBingo();
@@ -45,7 +53,13 @@ const SorteioModal: React.FC<SorteioModalProps> = ({ isOpen, onClose, editingId 
     premios: [''],
     valor_cartela: '',
     quantidade_cartelas: '',
-    status: 'agendado' as 'agendado' | 'em_andamento' | 'concluido'
+    status: 'agendado' as 'agendado' | 'em_andamento' | 'concluido',
+    papel_tamanho: 'A4',
+    papel_largura: '210',
+    papel_altura: '297',
+    grade_colunas: '5',
+    grade_linhas: '5',
+    apenas_numero_rifa: false,
   });
 
   const [isCreating, setIsCreating] = useState(false);
@@ -69,6 +83,10 @@ const SorteioModal: React.FC<SorteioModalProps> = ({ isOpen, onClose, editingId 
         const premiosArray = sorteio.premios && sorteio.premios.length > 0 
           ? sorteio.premios 
           : (sorteio.premio ? [sorteio.premio] : ['']);
+
+        const w = sorteio.papel_largura ?? 210;
+        const h = sorteio.papel_altura ?? 297;
+        const preset = PAPER_PRESETS.find(p => p.w === w && p.h === h && p.value !== 'custom');
         
         setFormData({
           nome: sorteio.nome,
@@ -76,7 +94,13 @@ const SorteioModal: React.FC<SorteioModalProps> = ({ isOpen, onClose, editingId 
           premios: premiosArray,
           valor_cartela: sorteio.valor_cartela.toString(),
           quantidade_cartelas: sorteio.quantidade_cartelas.toString(),
-          status: sorteio.status
+          status: sorteio.status,
+          papel_tamanho: preset ? preset.value : 'custom',
+          papel_largura: w.toString(),
+          papel_altura: h.toString(),
+          grade_colunas: (sorteio.grade_colunas ?? 5).toString(),
+          grade_linhas: (sorteio.grade_linhas ?? 5).toString(),
+          apenas_numero_rifa: sorteio.apenas_numero_rifa ?? false,
         });
       }
     } else {
@@ -86,7 +110,13 @@ const SorteioModal: React.FC<SorteioModalProps> = ({ isOpen, onClose, editingId 
         premios: [''],
         valor_cartela: '',
         quantidade_cartelas: '',
-        status: 'agendado'
+        status: 'agendado',
+        papel_tamanho: 'A4',
+        papel_largura: '210',
+        papel_altura: '297',
+        grade_colunas: '5',
+        grade_linhas: '5',
+        apenas_numero_rifa: false,
       });
     }
   }, [editingId, sorteios, isOpen]);
@@ -98,6 +128,21 @@ const SorteioModal: React.FC<SorteioModalProps> = ({ isOpen, onClose, editingId 
       setProgress(0);
     }
   }, [isOpen]);
+
+  // When paper preset changes, update width/height fields
+  const handlePapelTamanhoChange = (value: string) => {
+    const preset = PAPER_PRESETS.find(p => p.value === value);
+    if (preset && preset.value !== 'custom') {
+      setFormData(prev => ({
+        ...prev,
+        papel_tamanho: value,
+        papel_largura: preset.w.toString(),
+        papel_altura: preset.h.toString(),
+      }));
+    } else {
+      setFormData(prev => ({ ...prev, papel_tamanho: value }));
+    }
+  };
 
   const simulateProgress = (quantidade: number) => {
     // A barra é apenas "estimativa". Para volumes grandes, mantemos movimento até 99%
@@ -165,6 +210,11 @@ const SorteioModal: React.FC<SorteioModalProps> = ({ isOpen, onClose, editingId 
       return;
     }
 
+    const papelLargura = parseFloat(formData.papel_largura) || 210;
+    const papelAltura = parseFloat(formData.papel_altura) || 297;
+    const gradeColunas = Math.max(1, parseInt(formData.grade_colunas) || 5);
+    const gradeLinhas = Math.max(1, parseInt(formData.grade_linhas) || 5);
+
     const sorteioData: Sorteio = {
       id: editingId || gerarId(),
       nome: formData.nome,
@@ -174,6 +224,11 @@ const SorteioModal: React.FC<SorteioModalProps> = ({ isOpen, onClose, editingId 
       valor_cartela: parseFloat(formData.valor_cartela),
       quantidade_cartelas: parseInt(formData.quantidade_cartelas),
       status: formData.status,
+      papel_largura: papelLargura,
+      papel_altura: papelAltura,
+      grade_colunas: gradeColunas,
+      grade_linhas: gradeLinhas,
+      apenas_numero_rifa: formData.apenas_numero_rifa,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       vendas: {
@@ -388,6 +443,103 @@ const SorteioModal: React.FC<SorteioModalProps> = ({ isOpen, onClose, editingId 
                 required
               />
             </div>
+          </div>
+
+          {/* Tamanho do Papel */}
+          <div className="space-y-3 border border-border rounded-lg p-3">
+            <Label className="text-sm font-medium">Tamanho do Papel</Label>
+            <Select value={formData.papel_tamanho} onValueChange={handlePapelTamanhoChange}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PAPER_PRESETS.map(p => (
+                  <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {formData.papel_tamanho === 'custom' && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label htmlFor="papel_largura" className="text-xs text-muted-foreground">Largura (mm)</Label>
+                  <Input
+                    id="papel_largura"
+                    type="number"
+                    min="50"
+                    max="600"
+                    value={formData.papel_largura}
+                    onChange={(e) => setFormData({ ...formData, papel_largura: e.target.value })}
+                    placeholder="210"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="papel_altura" className="text-xs text-muted-foreground">Altura (mm)</Label>
+                  <Input
+                    id="papel_altura"
+                    type="number"
+                    min="50"
+                    max="900"
+                    value={formData.papel_altura}
+                    onChange={(e) => setFormData({ ...formData, papel_altura: e.target.value })}
+                    placeholder="297"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Grade de Números */}
+          <div className="space-y-3 border border-border rounded-lg p-3">
+            <Label className="text-sm font-medium">Grade de Números</Label>
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="apenas_numero_rifa"
+                checked={formData.apenas_numero_rifa}
+                onCheckedChange={(checked) =>
+                  setFormData({ ...formData, apenas_numero_rifa: checked === true })
+                }
+              />
+              <Label htmlFor="apenas_numero_rifa" className="text-sm font-normal cursor-pointer">
+                Apenas número da rifa (sem grade de números)
+              </Label>
+            </div>
+            {!formData.apenas_numero_rifa && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label htmlFor="grade_colunas" className="text-xs text-muted-foreground">Colunas</Label>
+                  <Input
+                    id="grade_colunas"
+                    type="number"
+                    min="1"
+                    max="20"
+                    value={formData.grade_colunas}
+                    onChange={(e) => setFormData({ ...formData, grade_colunas: e.target.value })}
+                    placeholder="5"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="grade_linhas" className="text-xs text-muted-foreground">Linhas</Label>
+                  <Input
+                    id="grade_linhas"
+                    type="number"
+                    min="1"
+                    max="20"
+                    value={formData.grade_linhas}
+                    onChange={(e) => setFormData({ ...formData, grade_linhas: e.target.value })}
+                    placeholder="5"
+                  />
+                </div>
+              </div>
+            )}
+            {!formData.apenas_numero_rifa && (() => {
+              const cols = parseInt(formData.grade_colunas) || 5;
+              const rows = parseInt(formData.grade_linhas) || 5;
+              return (
+                <p className="text-xs text-muted-foreground">
+                  Grade de {cols} × {rows} = {cols * rows} números por cartela
+                </p>
+              );
+            })()}
           </div>
 
           <div className="flex gap-4 pt-4">

@@ -112,16 +112,29 @@ function pickRandom(min: number, max: number, count: number): number[] {
   return res.sort((a, b) => a - b);
 }
 
-export function generateBingoGrid(): number[][] {
-  const b = pickRandom(1, 15, 5);
-  const iNums = pickRandom(16, 30, 5);
-  const n = pickRandom(31, 45, 5);
-  const g = pickRandom(46, 60, 5);
-  const o = pickRandom(61, 75, 5);
-  return Array.from({ length: 5 }, (_, row) => [b[row], iNums[row], n[row], g[row], o[row]]);
+export function generateBingoGrid(cols: number = 5, rows: number = 5): number[][] {
+  if (cols === 5 && rows === 5) {
+    // Standard BINGO distribution (B:1-15, I:16-30, N:31-45, G:46-60, O:61-75)
+    const b = pickRandom(1, 15, 5);
+    const iNums = pickRandom(16, 30, 5);
+    const n = pickRandom(31, 45, 5);
+    const g = pickRandom(46, 60, 5);
+    const o = pickRandom(61, 75, 5);
+    return Array.from({ length: 5 }, (_, row) => [b[row], iNums[row], n[row], g[row], o[row]]);
+  }
+  // For custom grid sizes: pick unique numbers from 1 to cols*rows*3
+  const total = cols * rows;
+  const maxNum = total * 3;
+  const nums = pickRandom(1, maxNum, total);
+  return Array.from({ length: rows }, (_, row) => nums.slice(row * cols, (row + 1) * cols));
 }
 
-export function generateAllBingoCards(quantidade: number, numeroPremios: number = 1): BingoCardGrid[] {
+export function generateAllBingoCards(
+  quantidade: number,
+  numeroPremios: number = 1,
+  cols: number = 5,
+  rows: number = 5,
+): BingoCardGrid[] {
   const premios = Math.max(1, Math.round(numeroPremios));
   const cards: BingoCardGrid[] = [];
   // Track seen grids to avoid duplicate cards
@@ -131,7 +144,7 @@ export function generateAllBingoCards(quantidade: number, numeroPremios: number 
     let baseGrid: number[][] = [];
     let tries = 0;
     do {
-      baseGrid = generateBingoGrid();
+      baseGrid = generateBingoGrid(cols, rows);
       tries++;
     } while (seenGrids.has(baseGrid.flat().join(',')) && tries < 500);
     seenGrids.add(baseGrid.flat().join(','));
@@ -167,13 +180,19 @@ function renderBarcodeToDataUrl(value: string, format: string, showText: boolean
   }
 }
 
-function drawGridPdf(doc: jsPDF, el: CanvasElement, grid: number[][], offsetY: number = 0) {
+function drawGridPdf(
+  doc: jsPDF,
+  el: CanvasElement,
+  grid: number[][],
+  offsetY: number = 0,
+  cols: number = 5,
+  rows: number = 5,
+) {
   const showHeader = el.showHeader ?? false;
   const showFreeText = el.showFreeText ?? false;
-  const rows = showHeader ? 6 : 5;
-  const hh = showHeader ? el.height / rows : 0;
-  const ch = (el.height - hh) / 5;
-  const cw = el.width / 5;
+  const hh = showHeader ? el.height / (rows + 1) : 0;
+  const ch = (el.height - hh) / rows;
+  const cw = el.width / cols;
   const bw = el.borderWidth ?? 0.5;
   const noBorder = !el.borderColor || el.borderColor === 'transparent' || bw <= 0;
   const gridY = el.y + offsetY;
@@ -187,9 +206,12 @@ function drawGridPdf(doc: jsPDF, el: CanvasElement, grid: number[][], offsetY: n
   const transparent = !cellBg || cellBg === 'transparent';
   const freeTransparent = !freeBg || freeBg === 'transparent';
 
-  // Header row (optional)
+  // Header row (optional) — shows B I N G O for 5 cols, numbers otherwise
   if (showHeader) {
-    for (let col = 0; col < 5; col++) {
+    const headerLabels = cols === 5
+      ? [...BINGO_COLS]
+      : Array.from({ length: cols }, (_, i) => (i + 1).toString());
+    for (let col = 0; col < cols; col++) {
       const cx = el.x + col * cw;
       doc.setFillColor(hR, hG, hB);
       doc.rect(cx, gridY, cw, hh, 'F');
@@ -201,16 +223,16 @@ function drawGridPdf(doc: jsPDF, el: CanvasElement, grid: number[][], offsetY: n
       doc.setTextColor(htR, htG, htB);
       doc.setFontSize(el.headerFontSize ?? 14);
       doc.setFont('helvetica', 'bold');
-      doc.text(BINGO_COLS[col], cx + cw / 2, gridY + hh * 0.72, { align: 'center' });
+      doc.text(headerLabels[col], cx + cw / 2, gridY + hh * 0.72, { align: 'center' });
     }
   }
 
   // Number cells
-  for (let row = 0; row < 5; row++) {
-    for (let col = 0; col < 5; col++) {
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
       const cx = el.x + col * cw;
       const cy = gridY + hh + row * ch;
-      const num = grid[row][col];
+      const num = grid[row]?.[col] ?? 0;
       const free = num === 0;
       if (free ? !freeTransparent : !transparent) {
         const [r, g, b] = free ? hexToRgb(freeBg!) : hexToRgb(cellBg!);
@@ -237,8 +259,12 @@ export async function exportBingoCardsPDF(
   layout: CanvasLayout,
   sorteioNome: string,
   buyerData?: BuyerData,
+  paperWidthMm: number = A4_W_MM,
+  paperHeightMm: number = A4_H_MM,
+  gridCols: number = 5,
+  gridRows: number = 5,
 ): Promise<Blob> {
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [paperWidthMm, paperHeightMm] });
 
   for (let i = 0; i < cards.length; i++) {
     if (i > 0) doc.addPage();
@@ -247,13 +273,13 @@ export async function exportBingoCardsPDF(
 
     // Background colour
     doc.setFillColor(...hexToRgb(layout.background.color));
-    doc.rect(0, 0, A4_W_MM, A4_H_MM, 'F');
+    doc.rect(0, 0, paperWidthMm, paperHeightMm, 'F');
 
     // Background image
     if (layout.background.imageData) {
       try {
         const fmt = layout.background.imageData.includes('image/png') ? 'PNG' : 'JPEG';
-        doc.addImage(layout.background.imageData, fmt, 0, 0, A4_W_MM, A4_H_MM);
+        doc.addImage(layout.background.imageData, fmt, 0, 0, paperWidthMm, paperHeightMm);
       } catch { /* ignore unsupported images */ }
     }
 
@@ -281,7 +307,7 @@ export async function exportBingoCardsPDF(
             doc.setFont('helvetica', 'bold');
             doc.text(`Prêmio ${p + 1}`, el.x, el.y + offsetY - 1);
           }
-          drawGridPdf(doc, gridEl, card.grids[p], offsetY);
+          drawGridPdf(doc, gridEl, card.grids[p], offsetY, gridCols, gridRows);
         }
       } else if (el.type === 'text') {
         doc.setTextColor(...hexToRgb(el.color ?? '#000000'));

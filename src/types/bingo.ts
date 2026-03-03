@@ -17,6 +17,13 @@ export interface Sorteio {
     cartelas_vendidas: number;
     total_arrecadado: number;
   };
+  // Paper size settings
+  papel_largura?: number;       // mm, default 210 (A4)
+  papel_altura?: number;        // mm, default 297 (A4)
+  // Grid size settings
+  grade_colunas?: number;       // default 5
+  grade_linhas?: number;        // default 5
+  apenas_numero_rifa?: boolean; // if true, no number grid (rifa only)
 }
 
 export interface RodadaSorteio {
