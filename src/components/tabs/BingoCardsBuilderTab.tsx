@@ -267,7 +267,7 @@ const BingoCardsBuilderTab: React.FC = () => {
   const [previewIndex, setPreviewIndex] = useState(0);
   const [isExporting, setIsExporting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [numeroPremios, setNumeroPremios] = useState(() => Math.max(1, sorteioAtivo?.premios?.length ?? 1));
+  const numeroPremios = 1;
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
 
   // Loja state
@@ -295,16 +295,12 @@ const BingoCardsBuilderTab: React.FC = () => {
   const [isVendedorLojaVendendo, setIsVendedorLojaVendendo] = useState(false);
   const [vendedorLojaProgress, setVendedorLojaProgress] = useState(0);
 
-  // Sync numeroPremios when the active sorteio changes (intentionally only on id change,
-  // not premios.length, so user customisation within the same sorteio is preserved)
+  // Reset builder state when sorteio changes so the correct layout auto-loads
   useEffect(() => {
-    setNumeroPremios(Math.max(1, sorteioAtivo?.premios?.length ?? 1));
-    // Reset builder state when sorteio changes so the correct layout auto-loads
     setActiveLayoutId(null);
     setCards([]);
     setPreviewIndex(0);
     hasRestoredRef.current = false;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sorteioAtivo?.id]);
 
   // Named layout management
@@ -899,17 +895,6 @@ const BingoCardsBuilderTab: React.FC = () => {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex items-center gap-2">
-            <Label className="text-xs text-muted-foreground whitespace-nowrap">Prêmios:</Label>
-            <Input
-              type="number"
-              min={1}
-              max={20}
-              value={numeroPremios}
-              onChange={(e) => setNumeroPremios(Math.max(1, parseInt(e.target.value) || 1))}
-              className="w-16 h-7 text-xs"
-            />
-          </div>
           <Button variant="outline" size="sm" className="gap-2" onClick={() => { loadCartelaLayouts(); setShowLayoutsList(true); }}>
             <List className="w-4 h-4" />
             Minhas Cartelas {cartelaLayouts.length > 0 && `(${cartelaLayouts.length})`}
