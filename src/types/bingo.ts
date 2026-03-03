@@ -8,6 +8,7 @@ export interface Sorteio {
   quantidade_cartelas: number;
   status: 'agendado' | 'em_andamento' | 'concluido';
   short_id?: string;
+  user_id?: string;
   created_at?: string;
   updated_at?: string;
   owner_nome?: string;

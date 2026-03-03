@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Plan } from '@/types/auth';
+import { LojaCartela } from '@/types/bingo';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,7 +17,7 @@ import {
   ArrowLeft, User, Loader2, Save, Camera, X, Lock, Mail, Type,
   CreditCard, CheckCircle, Settings, Users, Plus, Pencil, Trash2,
   HelpCircle, Dice5, BarChart3, Shuffle, Grid3X3, LayoutGrid,
-  ListTodo, ShoppingCart, PieChart, Store,
+  ListTodo, ShoppingCart, PieChart, Store, Eye,
 } from 'lucide-react';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
@@ -53,7 +54,7 @@ const passwordSchema = z.object({
 const Profile: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { user, updateProfile, isAuthenticated, getPublicPlanos, createStripeCheckout, refreshUser, getUserConfiguracoes, updateUserConfiguracoes, getLojaCompradores, createLojaComprador, updateLojaComprador, deleteLojaComprador } = useAuth();
+  const { user, updateProfile, isAuthenticated, getPublicPlanos, createStripeCheckout, refreshUser, getUserConfiguracoes, updateUserConfiguracoes, getLojaCompradores, getCartelasComprador, createLojaComprador, updateLojaComprador, deleteLojaComprador } = useAuth();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -88,6 +89,11 @@ const Profile: React.FC = () => {
   const [isSavingComprador, setIsSavingComprador] = useState(false);
   const [deletingComprador, setDeletingComprador] = useState<LojaComprador | null>(null);
   const [isDeletingComprador, setIsDeletingComprador] = useState(false);
+
+  // Cartelas por comprador
+  const [viewingCompradorEmail, setViewingCompradorEmail] = useState<string | null>(null);
+  const [compradorCartelas, setCompradorCartelas] = useState<LojaCartela[]>([]);
+  const [isLoadingCartelasComprador, setIsLoadingCartelasComprador] = useState(false);
 
   // After returning from a successful Stripe payment, refresh the user so the
   // new plano_id is reflected in the local state.
@@ -154,6 +160,15 @@ const Profile: React.FC = () => {
     const data = await getLojaCompradores();
     setLojaCompradores(data);
     setIsLoadingCompradores(false);
+  };
+
+  const openCartelasComprador = async (email: string) => {
+    setViewingCompradorEmail(email);
+    setCompradorCartelas([]);
+    setIsLoadingCartelasComprador(true);
+    const data = await getCartelasComprador(email);
+    setCompradorCartelas(data as LojaCartela[]);
+    setIsLoadingCartelasComprador(false);
   };
 
   const openAddComprador = () => {
@@ -1076,6 +1091,11 @@ const Profile: React.FC = () => {
                             </td>
                             <td className="py-2">
                               <div className="flex items-center gap-1">
+                                {Number(c.total_compras) > 0 && (
+                                  <Button variant="ghost" size="sm" onClick={() => openCartelasComprador(c.email)} className="h-7 w-7 p-0 text-primary" title="Ver cartelas adquiridas">
+                                    <Eye className="h-3.5 w-3.5" />
+                                  </Button>
+                                )}
                                 <Button variant="ghost" size="sm" onClick={() => openEditComprador(c)} className="h-7 w-7 p-0">
                                   <Pencil className="h-3.5 w-3.5" />
                                 </Button>
@@ -1419,6 +1439,72 @@ const Profile: React.FC = () => {
               {isDeletingComprador ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Trash2 className="h-4 w-4 mr-2" />}
               Remover
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Cartelas do Comprador Dialog */}
+      <Dialog open={!!viewingCompradorEmail} onOpenChange={(open) => { if (!open) setViewingCompradorEmail(null); }}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShoppingCart className="h-5 w-5" />
+              Cartelas de {viewingCompradorEmail}
+            </DialogTitle>
+            <DialogDescription>
+              Todas as cartelas adquiridas por este cliente na sua loja.
+            </DialogDescription>
+          </DialogHeader>
+          {isLoadingCartelasComprador ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+          ) : compradorCartelas.length === 0 ? (
+            <p className="text-muted-foreground text-sm text-center py-6">
+              Nenhuma cartela encontrada para este cliente.
+            </p>
+          ) : (
+            <div className="space-y-4">
+              {(() => {
+                const grouped = compradorCartelas.reduce<Record<string, LojaCartela[]>>((acc, c) => {
+                  const key = c.sorteio_nome || 'Sorteio';
+                  if (!acc[key]) acc[key] = [];
+                  acc[key].push(c);
+                  return acc;
+                }, {});
+                return Object.entries(grouped).map(([sorteioNome, cartelas]) => (
+                  <div key={sorteioNome}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <h3 className="font-semibold text-sm text-foreground">{sorteioNome}</h3>
+                      {cartelas[0]?.data_sorteio && (
+                        <span className="text-xs text-muted-foreground">
+                          — {new Date(cartelas[0].data_sorteio).toLocaleDateString('pt-BR')}
+                        </span>
+                      )}
+                      <Badge variant="secondary" className="ml-auto">{cartelas.length} cartela{cartelas.length !== 1 ? 's' : ''}</Badge>
+                    </div>
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                      {cartelas.map((c) => (
+                        <div key={c.id} className="flex flex-col items-center justify-center rounded-lg border bg-primary/5 border-primary/20 px-3 py-2">
+                          <span className="text-lg font-bold text-primary">{String(c.numero_cartela).padStart(3, '0')}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {c.updated_at ? new Date(c.updated_at).toLocaleDateString('pt-BR') : '—'}
+                          </span>
+                          {c.preco > 0 && (
+                            <span className="text-xs font-medium text-green-600 mt-0.5">
+                              R$ {Number(c.preco).toFixed(2)}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ));
+              })()}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setViewingCompradorEmail(null)}>Fechar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -2557,30 +2557,14 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           return res.status(404).json({ error: 'Loja não encontrada.' });
         }
         const owner = ownerResult.rows[0];
-        const PAGE_SIZE = 10;
-        const page = Math.max(1, parseInt(data.page) || 1);
-        const offset = (page - 1) * PAGE_SIZE;
 
         // Build WHERE clause: filter by user_id, optionally by sorteio
-        const countParams = [lojaUserId, 'disponivel'];
-        let countWhere = 'lc.user_id = $1 AND lc.status = $2';
-        if (lojaSorteioId) {
-          countParams.push(lojaSorteioId);
-          countWhere += ` AND bcs.sorteio_id = $${countParams.length}`;
-        }
-        const countResult = await client.query(
-          `SELECT COUNT(*) as total FROM loja_cartelas lc JOIN bingo_card_sets bcs ON lc.card_set_id = bcs.id WHERE ${countWhere}`,
-          countParams
-        );
-        const total = parseInt(countResult.rows[0].total) || 0;
-
         const lojaParams = [lojaUserId, 'disponivel'];
         let lojaWhere = 'lc.user_id = $1 AND lc.status = $2';
         if (lojaSorteioId) {
           lojaParams.push(lojaSorteioId);
           lojaWhere += ` AND bcs.sorteio_id = $${lojaParams.length}`;
         }
-        lojaParams.push(PAGE_SIZE, offset);
         const lojaResult = await client.query(
           `SELECT lc.id, lc.numero_cartela, lc.preco, lc.status, lc.card_data, lc.layout_data,
                   bcs.sorteio_id, s.nome as sorteio_nome, s.data_sorteio
@@ -2588,17 +2572,13 @@ app.post('/api', checkBasicAuth, async (req, res) => {
            JOIN bingo_card_sets bcs ON lc.card_set_id = bcs.id
            JOIN sorteios s ON bcs.sorteio_id = s.id
            WHERE ${lojaWhere}
-           ORDER BY s.data_sorteio DESC, s.nome ASC, lc.numero_cartela ASC
-           LIMIT $${lojaParams.length - 1} OFFSET $${lojaParams.length}`,
+           ORDER BY s.data_sorteio DESC, s.nome ASC, lc.numero_cartela ASC`,
           lojaParams
         );
         return res.json({
           owner: { id: owner.id, nome: owner.nome, titulo_sistema: owner.titulo_sistema },
           cartelas: lojaResult.rows,
-          total,
-          page,
-          page_size: PAGE_SIZE,
-          total_pages: Math.ceil(total / PAGE_SIZE),
+          total: lojaResult.rows.length,
           payment_gateway: await getUserPaymentGateway(client, lojaUserId),
         });
       }
@@ -3752,6 +3732,25 @@ ${numerosCartelas ? `<p><strong>Cartelas:</strong> ${numerosCartelas}</p>` : ''}
           [data.nome || '', data.telefone || null, data.cidade || null, emailNormU, data.authenticated_user_id]
         );
         return res.json({ success: true });
+      }
+
+      case 'getCartelasComprador': {
+        if (!data.email) {
+          return res.status(400).json({ error: 'E-mail é obrigatório.' });
+        }
+        const emailComp = data.email.toLowerCase().trim();
+        const cartelasComp = await client.query(
+          `SELECT lc.id, lc.numero_cartela, lc.preco, lc.status, lc.card_data, lc.layout_data,
+                  lc.comprador_nome, lc.comprador_email, lc.updated_at,
+                  s.nome AS sorteio_nome, s.data_sorteio, bcs.sorteio_id
+           FROM loja_cartelas lc
+           JOIN bingo_card_sets bcs ON lc.card_set_id = bcs.id
+           JOIN sorteios s ON bcs.sorteio_id = s.id
+           WHERE lc.user_id = $1 AND LOWER(lc.comprador_email) = $2 AND lc.status = 'vendida'
+           ORDER BY lc.updated_at DESC`,
+          [data.authenticated_user_id, emailComp]
+        );
+        return res.json({ data: cartelasComp.rows });
       }
 
       case 'deleteLojaComprador': {

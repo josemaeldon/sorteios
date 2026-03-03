@@ -853,14 +853,18 @@ const BingoCardsBuilderTab: React.FC = () => {
 
   // Generate the public store URL for the current sorteio
   const publicUrl = React.useMemo(() => {
-    if (!sorteioAtivo?.short_id) return user ? `${window.location.origin}/loja/${user.id}` : '';
+    if (!sorteioAtivo?.short_id) {
+      // Use the sorteio owner's user_id if available (e.g. when admin views another user's sorteio)
+      const ownerId = sorteioAtivo?.user_id || user?.id;
+      return ownerId ? `${window.location.origin}/loja/${ownerId}` : '';
+    }
     const slug = sorteioAtivo.nome
       .toLowerCase()
       .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '');
     return `${window.location.origin}/loja/${slug}/${sorteioAtivo.short_id}`;
-  }, [sorteioAtivo?.short_id, sorteioAtivo?.nome, user]);
+  }, [sorteioAtivo?.short_id, sorteioAtivo?.nome, sorteioAtivo?.user_id, user]);
 
   // ─── Render ────────────────────────────────────────────────────────────────
   if (!sorteioAtivo) {
