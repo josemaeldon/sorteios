@@ -27,6 +27,7 @@ import { cn } from '@/lib/utils';
 import { callApi } from '@/lib/apiClient';
 import { useToast } from '@/hooks/use-toast';
 import { formatarData } from '@/lib/utils/formatters';
+import { getBingoMaxNumber } from '@/lib/utils/bingoCardUtils';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -150,10 +151,12 @@ const DrawTab: React.FC = () => {
   const handleNewRodada = () => {
     setEditingRodada(null);
     const isRifa = sorteioAtivo?.tipo === 'rifa';
+    const cols = sorteioAtivo?.grade_colunas ?? 5;
+    const rows = sorteioAtivo?.grade_linhas ?? 5;
     setFormData({
       nome: '',
       range_start: '1',
-      range_end: isRifa ? (sorteioAtivo?.quantidade_cartelas?.toString() ?? '75') : '75',
+      range_end: isRifa ? (sorteioAtivo?.quantidade_cartelas?.toString() ?? '75') : getBingoMaxNumber(cols, rows).toString(),
       status: 'ativo'
     });
     setIsModalOpen(true);
