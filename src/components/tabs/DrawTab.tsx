@@ -867,11 +867,13 @@ const DrawTab: React.FC = () => {
 
                     {topScoringCartelas.length > 0 && (
                       <div className="w-96 flex-shrink-0 bg-card rounded-lg p-6">
-                        <h3 className="text-2xl font-bold flex items-center gap-2 mb-4">
-                          <Trophy className="w-6 h-6 text-yellow-500" />
-                          Top 10 Cartelas
-                        </h3>
-                        <div className="space-y-3">
+                        <div className="flex items-center justify-between mb-4">
+                          <h3 className="text-2xl font-bold flex items-center gap-2">
+                            <Trophy className="w-6 h-6 text-yellow-500" />
+                            Top 10 Cartelas
+                          </h3>
+                        </div>
+                        <div className="space-y-3 max-h-[200px] overflow-y-auto">
                           {topScoringCartelas.map((entry, idx) => (
                             <div key={entry.score} className="flex items-center gap-3">
                               <span className="text-lg font-bold text-muted-foreground w-6">{idx + 1}º</span>
