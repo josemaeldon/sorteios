@@ -586,6 +586,7 @@ async function initSchema() {
           'ALTER TABLE sorteios ADD COLUMN grade_colunas INT DEFAULT 5',
           'ALTER TABLE sorteios ADD COLUMN grade_linhas INT DEFAULT 5',
           'ALTER TABLE sorteios ADD COLUMN apenas_numero_rifa TINYINT(1) NOT NULL DEFAULT 0',
+          "ALTER TABLE sorteios ADD COLUMN tipo VARCHAR(10) NOT NULL DEFAULT 'bingo'",
         ];
         for (const sql of sorteiosExtraCols) {
           try { await client.query(sql); } catch (e) {
@@ -622,6 +623,7 @@ async function initSchema() {
             valor_cartela NUMERIC,
             quantidade_cartelas INTEGER DEFAULT 0,
             status TEXT DEFAULT 'ativo',
+            tipo TEXT NOT NULL DEFAULT 'bingo',
             papel_largura NUMERIC DEFAULT 210,
             papel_altura NUMERIC DEFAULT 297,
             grade_colunas INTEGER DEFAULT 5,
@@ -899,6 +901,7 @@ async function initSchema() {
         await client.query(`ALTER TABLE sorteios ADD COLUMN IF NOT EXISTS grade_colunas INTEGER DEFAULT 5`);
         await client.query(`ALTER TABLE sorteios ADD COLUMN IF NOT EXISTS grade_linhas INTEGER DEFAULT 5`);
         await client.query(`ALTER TABLE sorteios ADD COLUMN IF NOT EXISTS apenas_numero_rifa BOOLEAN DEFAULT FALSE`);
+        await client.query(`ALTER TABLE sorteios ADD COLUMN IF NOT EXISTS tipo TEXT DEFAULT 'bingo'`);
       }
       console.log('Schema initialized: sorteio_compartilhado table ready');
     } finally {
@@ -1582,11 +1585,11 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         }
         
         result = await client.query(`
-          INSERT INTO sorteios (user_id, nome, data_sorteio, premio, premios, valor_cartela, quantidade_cartelas, status, short_id, papel_largura, papel_altura, grade_colunas, grade_linhas, apenas_numero_rifa)
-          VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+          INSERT INTO sorteios (user_id, nome, data_sorteio, premio, premios, valor_cartela, quantidade_cartelas, status, short_id, tipo, papel_largura, papel_altura, grade_colunas, grade_linhas, apenas_numero_rifa)
+          VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
           RETURNING *
         `, [sorteioOwnerId, data.nome, data.data_sorteio, premioCreate, JSON.stringify(premiosCreate), data.valor_cartela, data.quantidade_cartelas, data.status, shortId,
-            data.papel_largura ?? 210, data.papel_altura ?? 297, data.grade_colunas ?? 5, data.grade_linhas ?? 5, data.apenas_numero_rifa ?? false]);
+            data.tipo ?? 'bingo', data.papel_largura ?? 210, data.papel_altura ?? 297, data.grade_colunas ?? 5, data.grade_linhas ?? 5, data.apenas_numero_rifa ?? false]);
         
         const newSorteioId = result.rows[0].id;
         const quantidadeCartelas = Number(data.quantidade_cartelas || 0);
@@ -1625,11 +1628,11 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         result = await client.query(`
           UPDATE sorteios 
           SET nome = $2, data_sorteio = $3, premio = $4, premios = $5::jsonb, valor_cartela = $6, quantidade_cartelas = $7, status = $8,
-              papel_largura = $9, papel_altura = $10, grade_colunas = $11, grade_linhas = $12, apenas_numero_rifa = $13, updated_at = NOW()
+              tipo = $9, papel_largura = $10, papel_altura = $11, grade_colunas = $12, grade_linhas = $13, apenas_numero_rifa = $14, updated_at = NOW()
           WHERE id = $1
           RETURNING *
         `, [data.id, data.nome, data.data_sorteio, premioUpdate, JSON.stringify(premiosUpdate), data.valor_cartela, data.quantidade_cartelas, data.status,
-            data.papel_largura ?? 210, data.papel_altura ?? 297, data.grade_colunas ?? 5, data.grade_linhas ?? 5, data.apenas_numero_rifa ?? false]);
+            data.tipo ?? 'bingo', data.papel_largura ?? 210, data.papel_altura ?? 297, data.grade_colunas ?? 5, data.grade_linhas ?? 5, data.apenas_numero_rifa ?? false]);
         return res.json({ data: result.rows });
       }
 

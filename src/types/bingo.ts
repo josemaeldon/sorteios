@@ -7,6 +7,7 @@ export interface Sorteio {
   valor_cartela: number;
   quantidade_cartelas: number;
   status: 'agendado' | 'em_andamento' | 'concluido';
+  tipo?: 'bingo' | 'rifa';
   short_id?: string;
   user_id?: string;
   created_at?: string;
