@@ -1158,7 +1158,7 @@ const DrawTab: React.FC = () => {
 
       {/* Cartela numbers modal */}
       <Dialog open={selectedCartelaModal !== null} onOpenChange={() => setSelectedCartelaModal(null)}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-sm" container={isFullscreen ? fullscreenRef.current : undefined}>
           <DialogHeader>
             <DialogTitle>
               Cartela {selectedCartelaModal?.numero.toString().padStart(3, '0')}
