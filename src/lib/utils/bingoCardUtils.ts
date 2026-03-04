@@ -180,6 +180,97 @@ function renderBarcodeToDataUrl(value: string, format: string, showText: boolean
   }
 }
 
+/** Render all elements of one card onto the doc at an (offsetX, offsetY) position (in mm). */
+async function renderCardToPdf(
+  doc: jsPDF,
+  card: BingoCardGrid,
+  layout: CanvasLayout,
+  offsetX: number,
+  offsetY: number,
+  ticketW: number,
+  ticketH: number,
+  gridCols: number,
+  gridRows: number,
+  rifaOnly: boolean,
+  buyerData?: BuyerData,
+) {
+  const numeroPremios = card.grids.length;
+
+  // Background colour (clipped to ticket area)
+  doc.setFillColor(...hexToRgb(layout.background.color));
+  doc.rect(offsetX, offsetY, ticketW, ticketH, 'F');
+
+  // Background image
+  if (layout.background.imageData) {
+    try {
+      const fmt = layout.background.imageData.includes('image/png') ? 'PNG' : 'JPEG';
+      doc.addImage(layout.background.imageData, fmt, offsetX, offsetY, ticketW, ticketH);
+    } catch { /* ignore unsupported images */ }
+  }
+
+  for (const el of layout.elements) {
+    if (rifaOnly && el.type === 'bingo_grid') continue;
+
+    // Shift element coordinates by the canvas offset
+    const oel: CanvasElement = { ...el, x: el.x + offsetX, y: el.y + offsetY };
+
+    if (oel.type === 'card_number') {
+      const num = card.cartelaNumero.toString().padStart(3, '0');
+      const text = `${oel.prefix ?? 'Cartela '}${num}`;
+      doc.setTextColor(...hexToRgb(oel.color ?? '#000000'));
+      doc.setFontSize(oel.fontSize ?? 18);
+      doc.setFont('helvetica', oel.fontWeight === 'bold' ? 'bold' : 'normal');
+      const align = (oel.textAlign ?? 'center') as 'left' | 'center' | 'right';
+      const tx = align === 'center' ? oel.x + oel.width / 2
+        : align === 'right' ? oel.x + oel.width : oel.x;
+      doc.text(text, tx, oel.y + oel.height * 0.72, { align });
+    } else if (oel.type === 'bingo_grid') {
+      const gridHeight = oel.height / numeroPremios;
+      const gridEl = { ...oel, height: gridHeight };
+      for (let p = 0; p < numeroPremios; p++) {
+        const relativeGridOffsetY = p * gridHeight;
+        if (numeroPremios > 1) {
+          doc.setTextColor(...hexToRgb(oel.color ?? '#111827'));
+          doc.setFontSize(8);
+          doc.setFont('helvetica', 'bold');
+          doc.text(`Prêmio ${p + 1}`, oel.x, oel.y + relativeGridOffsetY - 1);
+        }
+        drawGridPdf(doc, gridEl, card.grids[p], relativeGridOffsetY, gridCols, gridRows);
+      }
+    } else if (oel.type === 'text') {
+      doc.setTextColor(...hexToRgb(oel.color ?? '#000000'));
+      doc.setFontSize(oel.fontSize ?? 12);
+      doc.setFont('helvetica', oel.fontWeight === 'bold' ? 'bold' : 'normal');
+      const align = (oel.textAlign ?? 'left') as 'left' | 'center' | 'right';
+      const tx = align === 'center' ? oel.x + oel.width / 2
+        : align === 'right' ? oel.x + oel.width : oel.x;
+      doc.text(oel.content ?? '', tx, oel.y + oel.height * 0.72, { align });
+    } else if (oel.type === 'barcode') {
+      const barcodeValue = card.cartelaNumero.toString().padStart(6, '0');
+      const format = oel.barcodeFormat ?? 'CODE128';
+      const showText = oel.showBarcodeText !== false;
+      const dataUrl = renderBarcodeToDataUrl(barcodeValue, format, showText);
+      if (dataUrl) {
+        doc.addImage(dataUrl, 'PNG', oel.x, oel.y, oel.width, oel.height);
+      }
+    } else if (oel.type === 'buyer_name' || oel.type === 'buyer_address' || oel.type === 'buyer_city' || oel.type === 'buyer_phone') {
+      const fieldMap: Record<string, keyof BuyerData> = {
+        buyer_name: 'nome', buyer_address: 'endereco', buyer_city: 'cidade', buyer_phone: 'telefone',
+      };
+      const value = buyerData?.[fieldMap[oel.type]] ?? '';
+      if (value) {
+        doc.setTextColor(...hexToRgb(oel.color ?? '#000000'));
+        doc.setFontSize(oel.fontSize ?? 11);
+        doc.setFont('helvetica', oel.fontWeight === 'bold' ? 'bold' : 'normal');
+        const align = (oel.textAlign ?? 'left') as 'left' | 'center' | 'right';
+        const tx = align === 'center' ? oel.x + oel.width / 2
+          : align === 'right' ? oel.x + oel.width : oel.x;
+        doc.text(value, tx, oel.y + oel.height * 0.72, { align });
+      }
+    }
+  }
+}
+
 function drawGridPdf(
   doc: jsPDF,
   el: CanvasElement,
@@ -264,91 +355,54 @@ export async function exportBingoCardsPDF(
   gridCols: number = 5,
   gridRows: number = 5,
   rifaOnly: boolean = false,
+  a4MultiPerPage: boolean = false,
 ): Promise<Blob> {
-  const pageWidth = Number(paperWidthMm);
-  const pageHeight = Number(paperHeightMm);
+  const ticketW = Number(paperWidthMm);
+  const ticketH = Number(paperHeightMm);
+
+  if (a4MultiPerPage) {
+    // ── A4 multi-per-page mode ────────────────────────────────────────────────
+    // Fit as many tickets as possible onto each A4 portrait page.
+    const GAP = 3; // mm between tickets
+    const cols = Math.max(1, Math.floor((A4_W_MM + GAP) / (ticketW + GAP)));
+    const rows = Math.max(1, Math.floor((A4_H_MM + GAP) / (ticketH + GAP)));
+    const cardsPerPage = cols * rows;
+    // Center the grid of tickets on the A4 page
+    const gridW = cols * ticketW + (cols - 1) * GAP;
+    const gridH = rows * ticketH + (rows - 1) * GAP;
+    const startX = (A4_W_MM - gridW) / 2;
+    const startY = (A4_H_MM - gridH) / 2;
+
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [A4_W_MM, A4_H_MM] });
+
+    for (let i = 0; i < cards.length; i++) {
+      const posInPage = i % cardsPerPage;
+      if (posInPage === 0 && i > 0) doc.addPage();
+
+      const col = posInPage % cols;
+      const row = Math.floor(posInPage / cols);
+      const offsetX = startX + col * (ticketW + GAP);
+      const offsetY = startY + row * (ticketH + GAP);
+
+      await renderCardToPdf(doc, cards[i], layout, offsetX, offsetY, ticketW, ticketH, gridCols, gridRows, rifaOnly, buyerData);
+    }
+
+    doc.save(
+      `cartelas-bingo-a4-${sorteioNome.replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.pdf`,
+    );
+    return doc.output('blob');
+  }
+
+  // ── Single-ticket-per-page mode (original behaviour) ─────────────────────
+  const pageWidth = ticketW;
+  const pageHeight = ticketH;
   const orientation = pageWidth > pageHeight ? 'landscape' : 'portrait';
 
   const doc = new jsPDF({ orientation, unit: 'mm', format: [pageWidth, pageHeight] });
 
   for (let i = 0; i < cards.length; i++) {
     if (i > 0) doc.addPage();
-    const card = cards[i];
-    const numeroPremios = card.grids.length;
-
-    // Background colour
-    doc.setFillColor(...hexToRgb(layout.background.color));
-    doc.rect(0, 0, pageWidth, pageHeight, 'F');
-
-    // Background image
-    if (layout.background.imageData) {
-      try {
-        const fmt = layout.background.imageData.includes('image/png') ? 'PNG' : 'JPEG';
-        doc.addImage(layout.background.imageData, fmt, 0, 0, pageWidth, pageHeight);
-      } catch { /* ignore unsupported images */ }
-    }
-
-    // Elements
-    for (const el of layout.elements) {
-      // Skip bingo grid entirely in rifaOnly mode
-      if (rifaOnly && el.type === 'bingo_grid') continue;
-
-      if (el.type === 'card_number') {
-        const num = card.cartelaNumero.toString().padStart(3, '0');
-        const text = `${el.prefix ?? 'Cartela '}${num}`;
-        doc.setTextColor(...hexToRgb(el.color ?? '#000000'));
-        doc.setFontSize(el.fontSize ?? 18);
-        doc.setFont('helvetica', el.fontWeight === 'bold' ? 'bold' : 'normal');
-        const align = (el.textAlign ?? 'center') as 'left' | 'center' | 'right';
-        const tx = align === 'center' ? el.x + el.width / 2
-          : align === 'right' ? el.x + el.width : el.x;
-        doc.text(text, tx, el.y + el.height * 0.72, { align });
-      } else if (el.type === 'bingo_grid') {
-        const gridHeight = el.height / numeroPremios;
-        const gridEl = { ...el, height: gridHeight };
-        for (let p = 0; p < numeroPremios; p++) {
-          const offsetY = p * gridHeight;
-          if (numeroPremios > 1) {
-            // Prize label
-            doc.setTextColor(...hexToRgb(el.color ?? '#111827'));
-            doc.setFontSize(8);
-            doc.setFont('helvetica', 'bold');
-            doc.text(`Prêmio ${p + 1}`, el.x, el.y + offsetY - 1);
-          }
-          drawGridPdf(doc, gridEl, card.grids[p], offsetY, gridCols, gridRows);
-        }
-      } else if (el.type === 'text') {
-        doc.setTextColor(...hexToRgb(el.color ?? '#000000'));
-        doc.setFontSize(el.fontSize ?? 12);
-        doc.setFont('helvetica', el.fontWeight === 'bold' ? 'bold' : 'normal');
-        const align = (el.textAlign ?? 'left') as 'left' | 'center' | 'right';
-        const tx = align === 'center' ? el.x + el.width / 2
-          : align === 'right' ? el.x + el.width : el.x;
-        doc.text(el.content ?? '', tx, el.y + el.height * 0.72, { align });
-      } else if (el.type === 'barcode') {
-        const barcodeValue = card.cartelaNumero.toString().padStart(6, '0');
-        const format = el.barcodeFormat ?? 'CODE128';
-        const showText = el.showBarcodeText !== false;
-        const dataUrl = renderBarcodeToDataUrl(barcodeValue, format, showText);
-        if (dataUrl) {
-          doc.addImage(dataUrl, 'PNG', el.x, el.y, el.width, el.height);
-        }
-      } else if (el.type === 'buyer_name' || el.type === 'buyer_address' || el.type === 'buyer_city' || el.type === 'buyer_phone') {
-        const fieldMap: Record<string, keyof BuyerData> = {
-          buyer_name: 'nome', buyer_address: 'endereco', buyer_city: 'cidade', buyer_phone: 'telefone',
-        };
-        const value = buyerData?.[fieldMap[el.type]] ?? '';
-        if (value) {
-          doc.setTextColor(...hexToRgb(el.color ?? '#000000'));
-          doc.setFontSize(el.fontSize ?? 11);
-          doc.setFont('helvetica', el.fontWeight === 'bold' ? 'bold' : 'normal');
-          const align = (el.textAlign ?? 'left') as 'left' | 'center' | 'right';
-          const tx = align === 'center' ? el.x + el.width / 2
-            : align === 'right' ? el.x + el.width : el.x;
-          doc.text(value, tx, el.y + el.height * 0.72, { align });
-        }
-      }
-    }
+    await renderCardToPdf(doc, cards[i], layout, 0, 0, pageWidth, pageHeight, gridCols, gridRows, rifaOnly, buyerData);
   }
 
   doc.save(
