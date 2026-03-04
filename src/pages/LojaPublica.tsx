@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { callApi } from '@/lib/apiClient';
-import { BingoCardGrid, CanvasLayout, BINGO_COLS, exportBingoCardsPDF, BuyerData, BUYER_ELEMENT_LABELS } from '@/lib/utils/bingoCardUtils';
+import { BingoCardGrid, CanvasLayout, BINGO_COLS, exportBingoCardsPDF, BuyerData, BUYER_ELEMENT_LABELS, A4_W_MM, A4_H_MM } from '@/lib/utils/bingoCardUtils';
 import { LojaCartela } from '@/types/bingo';
 
 const CART_MAX_ITEMS = 20;
@@ -174,6 +174,8 @@ interface HistoricoItem {
   store_titulo?: string;
   sorteio_nome?: string;
   data_sorteio?: string;
+  papel_largura?: number;
+  papel_altura?: number;
   updated_at: string;
 }
 
@@ -187,7 +189,7 @@ const HistoricoDownloadButton: React.FC<{
     try {
       const card: BingoCardGrid = JSON.parse(item.card_data);
       const layout: CanvasLayout = JSON.parse(item.layout_data);
-      await exportBingoCardsPDF([card], layout, `cartela-${item.numero_cartela}`, buyerData);
+      await exportBingoCardsPDF([card], layout, `cartela-${item.numero_cartela}`, buyerData, item.papel_largura ?? A4_W_MM, item.papel_altura ?? A4_H_MM);
     } catch (err) {
       console.error('Download error:', err);
     } finally {
@@ -232,10 +234,11 @@ const LojaPublica: React.FC = () => {
   // Card data for download after single purchase
   const [purchasedCardData, setPurchasedCardData] = useState<{
     cardData: string; layoutData: string; buyerData: BuyerData; numeroCartela: number;
+    papelLargura?: number; papelAltura?: number;
   } | null>(null);
   // Card data for download after multi-cart purchase
   const [purchasedMultiData, setPurchasedMultiData] = useState<{
-    cartelas: Array<{ numero_cartela: number; card_data: string; layout_data: string }>;
+    cartelas: Array<{ numero_cartela: number; card_data: string; layout_data: string; papel_largura?: number; papel_altura?: number }>;
     buyerData: BuyerData;
   } | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -436,6 +439,8 @@ const LojaPublica: React.FC = () => {
                   cardData: result.card_data,
                   layoutData: result.layout_data,
                   numeroCartela: result.numero_cartela,
+                  papelLargura: result.papel_largura,
+                  papelAltura: result.papel_altura,
                   buyerData: {
                     nome: result.comprador_nome || '',
                     endereco: result.comprador_endereco || '',
@@ -496,6 +501,8 @@ const LojaPublica: React.FC = () => {
                 cardData: result.card_data,
                 layoutData: result.layout_data,
                 numeroCartela: result.numero_cartela,
+                papelLargura: result.papel_largura,
+                papelAltura: result.papel_altura,
                 buyerData: {
                   nome: result.comprador_nome || '',
                   endereco: result.comprador_endereco || '',
@@ -522,7 +529,7 @@ const LojaPublica: React.FC = () => {
     try {
       const card: BingoCardGrid = JSON.parse(purchasedCardData.cardData);
       const layout: CanvasLayout = JSON.parse(purchasedCardData.layoutData);
-      const pdfBlob = await exportBingoCardsPDF([card], layout, `cartela-${purchasedCardData.numeroCartela}`, purchasedCardData.buyerData);
+      const pdfBlob = await exportBingoCardsPDF([card], layout, `cartela-${purchasedCardData.numeroCartela}`, purchasedCardData.buyerData, purchasedCardData.papelLargura ?? A4_W_MM, purchasedCardData.papelAltura ?? A4_H_MM);
       // Email PDF to logged-in buyer
       const emailDest = compradorInfo?.email;
       if (emailDest && pdfBlob) {
@@ -551,7 +558,7 @@ const LojaPublica: React.FC = () => {
       const layout: CanvasLayout = JSON.parse(purchasedMultiData.cartelas[0].layout_data);
       const cards: BingoCardGrid[] = purchasedMultiData.cartelas.map(c => JSON.parse(c.card_data));
       const nums = purchasedMultiData.cartelas.map(c => c.numero_cartela).join('-');
-      const pdfBlob = await exportBingoCardsPDF(cards, layout, `cartelas-${nums}`, purchasedMultiData.buyerData);
+      const pdfBlob = await exportBingoCardsPDF(cards, layout, `cartelas-${nums}`, purchasedMultiData.buyerData, purchasedMultiData.cartelas[0].papel_largura ?? A4_W_MM, purchasedMultiData.cartelas[0].papel_altura ?? A4_H_MM);
       // Email PDF to logged-in buyer
       const emailDest = compradorInfo?.email;
       if (emailDest && pdfBlob) {

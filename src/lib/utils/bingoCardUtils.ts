@@ -265,8 +265,8 @@ export async function exportBingoCardsPDF(
   gridRows: number = 5,
   rifaOnly: boolean = false,
 ): Promise<Blob> {
-  const pageWidth = paperWidthMm;
-  const pageHeight = paperHeightMm;
+  const pageWidth = Number(paperWidthMm);
+  const pageHeight = Number(paperHeightMm);
   const orientation = pageWidth > pageHeight ? 'landscape' : 'portrait';
 
   const doc = new jsPDF({ orientation, unit: 'mm', format: [pageWidth, pageHeight] });

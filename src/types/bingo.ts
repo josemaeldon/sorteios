@@ -84,6 +84,8 @@ export interface LojaCartela {
   sorteio_id?: string;
   sorteio_nome?: string;
   data_sorteio?: string;
+  papel_largura?: number;
+  papel_altura?: number;
   created_at?: string;
   updated_at?: string;
 }
