@@ -40,6 +40,8 @@ const PAPER_PRESETS = [
   { label: 'Personalizado', value: 'custom', w: 0, h: 0 },
 ];
 
+const RIFA_PAPER_PRESET = PAPER_PRESETS.find(p => p.value === 'Rifa') ?? { label: 'Rifa (210 × 70 mm)', value: 'Rifa', w: 210, h: 70 };
+
 const SorteioModal: React.FC<SorteioModalProps> = ({ isOpen, onClose, editingId }) => {
   const { sorteios, addSorteio, updateSorteio } = useBingo();
   const { user, getAllUsers } = useAuth();
@@ -56,6 +58,7 @@ const SorteioModal: React.FC<SorteioModalProps> = ({ isOpen, onClose, editingId 
     valor_cartela: '',
     quantidade_cartelas: '',
     status: 'agendado' as 'agendado' | 'em_andamento' | 'concluido',
+    tipo: 'bingo' as 'bingo' | 'rifa',
     papel_tamanho: 'A4',
     papel_largura: '210',
     papel_altura: '297',
@@ -97,6 +100,7 @@ const SorteioModal: React.FC<SorteioModalProps> = ({ isOpen, onClose, editingId 
           valor_cartela: sorteio.valor_cartela.toString(),
           quantidade_cartelas: sorteio.quantidade_cartelas.toString(),
           status: sorteio.status,
+          tipo: sorteio.tipo ?? 'bingo',
           papel_tamanho: preset ? preset.value : 'custom',
           papel_largura: w.toString(),
           papel_altura: h.toString(),
@@ -113,6 +117,7 @@ const SorteioModal: React.FC<SorteioModalProps> = ({ isOpen, onClose, editingId 
         valor_cartela: '',
         quantidade_cartelas: '',
         status: 'agendado',
+        tipo: 'bingo',
         papel_tamanho: 'A4',
         papel_largura: '210',
         papel_altura: '297',
@@ -143,6 +148,33 @@ const SorteioModal: React.FC<SorteioModalProps> = ({ isOpen, onClose, editingId 
       }));
     } else {
       setFormData(prev => ({ ...prev, papel_tamanho: value }));
+    }
+  };
+
+  // When tipo changes, auto-configure paper and grid for rifa
+  const handleTipoChange = (value: 'bingo' | 'rifa') => {
+    if (value === 'rifa') {
+      setFormData(prev => ({
+        ...prev,
+        tipo: 'rifa',
+        papel_tamanho: RIFA_PAPER_PRESET.value,
+        papel_largura: RIFA_PAPER_PRESET.w.toString(),
+        papel_altura: RIFA_PAPER_PRESET.h.toString(),
+        grade_colunas: '1',
+        grade_linhas: '1',
+        apenas_numero_rifa: true,
+      }));
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        tipo: 'bingo',
+        papel_tamanho: 'A4',
+        papel_largura: '210',
+        papel_altura: '297',
+        grade_colunas: '5',
+        grade_linhas: '5',
+        apenas_numero_rifa: false,
+      }));
     }
   };
 
@@ -226,6 +258,7 @@ const SorteioModal: React.FC<SorteioModalProps> = ({ isOpen, onClose, editingId 
       valor_cartela: parseFloat(formData.valor_cartela),
       quantidade_cartelas: parseInt(formData.quantidade_cartelas),
       status: formData.status,
+      tipo: formData.tipo,
       papel_largura: papelLargura,
       papel_altura: papelAltura,
       grade_colunas: gradeColunas,
@@ -330,6 +363,35 @@ const SorteioModal: React.FC<SorteioModalProps> = ({ isOpen, onClose, editingId 
               </Select>
             </div>
           )}
+
+          {/* Tipo do Sorteio */}
+          <div className="space-y-2">
+            <Label>Tipo do Sorteio *</Label>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => handleTipoChange('bingo')}
+                className={`flex-1 py-2 px-4 rounded-md border-2 text-sm font-medium transition-colors ${
+                  formData.tipo === 'bingo'
+                    ? 'border-primary bg-primary text-primary-foreground'
+                    : 'border-border bg-background text-foreground hover:border-primary/50'
+                }`}
+              >
+                Bingo
+              </button>
+              <button
+                type="button"
+                onClick={() => handleTipoChange('rifa')}
+                className={`flex-1 py-2 px-4 rounded-md border-2 text-sm font-medium transition-colors ${
+                  formData.tipo === 'rifa'
+                    ? 'border-primary bg-primary text-primary-foreground'
+                    : 'border-border bg-background text-foreground hover:border-primary/50'
+                }`}
+              >
+                Rifa
+              </button>
+            </div>
+          </div>
 
           <div className="space-y-2">
             <Label htmlFor="nome">Nome do Sorteio *</Label>
@@ -450,12 +512,15 @@ const SorteioModal: React.FC<SorteioModalProps> = ({ isOpen, onClose, editingId 
           {/* Tamanho do Papel */}
           <div className="space-y-3 border border-border rounded-lg p-3">
             <Label className="text-sm font-medium">Tamanho do Papel</Label>
-            <Select value={formData.papel_tamanho} onValueChange={handlePapelTamanhoChange}>
+            <Select value={formData.papel_tamanho} onValueChange={handlePapelTamanhoChange} disabled={formData.tipo === 'rifa'}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {PAPER_PRESETS.map(p => (
+                {(formData.tipo === 'rifa'
+                  ? PAPER_PRESETS.filter(p => p.value === 'Rifa')
+                  : PAPER_PRESETS
+                ).map(p => (
                   <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
                 ))}
               </SelectContent>
@@ -493,55 +558,66 @@ const SorteioModal: React.FC<SorteioModalProps> = ({ isOpen, onClose, editingId 
           {/* Grade de Números */}
           <div className="space-y-3 border border-border rounded-lg p-3">
             <Label className="text-sm font-medium">Grade de Números</Label>
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="apenas_numero_rifa"
-                checked={formData.apenas_numero_rifa}
-                onCheckedChange={(checked) =>
-                  setFormData({ ...formData, apenas_numero_rifa: checked === true })
-                }
-              />
-              <Label htmlFor="apenas_numero_rifa" className="text-sm font-normal cursor-pointer">
-                Apenas número da rifa (sem grade de números)
-              </Label>
-            </div>
-            {!formData.apenas_numero_rifa && (
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label htmlFor="grade_colunas" className="text-xs text-muted-foreground">Colunas</Label>
-                  <Input
-                    id="grade_colunas"
-                    type="number"
-                    min="1"
-                    max="20"
-                    value={formData.grade_colunas}
-                    onChange={(e) => setFormData({ ...formData, grade_colunas: e.target.value })}
-                    placeholder="5"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="grade_linhas" className="text-xs text-muted-foreground">Linhas</Label>
-                  <Input
-                    id="grade_linhas"
-                    type="number"
-                    min="1"
-                    max="20"
-                    value={formData.grade_linhas}
-                    onChange={(e) => setFormData({ ...formData, grade_linhas: e.target.value })}
-                    placeholder="5"
-                  />
-                </div>
+            {formData.tipo === 'rifa' ? (
+              <div className="flex items-center space-x-2 opacity-70">
+                <Checkbox id="apenas_numero_rifa" checked disabled />
+                <Label htmlFor="apenas_numero_rifa" className="text-sm font-normal">
+                  Apenas número da rifa (sem grade de números)
+                </Label>
               </div>
+            ) : (
+              <>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="apenas_numero_rifa"
+                    checked={formData.apenas_numero_rifa}
+                    onCheckedChange={(checked) =>
+                      setFormData({ ...formData, apenas_numero_rifa: checked === true })
+                    }
+                  />
+                  <Label htmlFor="apenas_numero_rifa" className="text-sm font-normal cursor-pointer">
+                    Apenas número da rifa (sem grade de números)
+                  </Label>
+                </div>
+                {!formData.apenas_numero_rifa && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label htmlFor="grade_colunas" className="text-xs text-muted-foreground">Colunas</Label>
+                      <Input
+                        id="grade_colunas"
+                        type="number"
+                        min="1"
+                        max="20"
+                        value={formData.grade_colunas}
+                        onChange={(e) => setFormData({ ...formData, grade_colunas: e.target.value })}
+                        placeholder="5"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="grade_linhas" className="text-xs text-muted-foreground">Linhas</Label>
+                      <Input
+                        id="grade_linhas"
+                        type="number"
+                        min="1"
+                        max="20"
+                        value={formData.grade_linhas}
+                        onChange={(e) => setFormData({ ...formData, grade_linhas: e.target.value })}
+                        placeholder="5"
+                      />
+                    </div>
+                  </div>
+                )}
+                {!formData.apenas_numero_rifa && (() => {
+                  const cols = parseInt(formData.grade_colunas) || 5;
+                  const rows = parseInt(formData.grade_linhas) || 5;
+                  return (
+                    <p className="text-xs text-muted-foreground">
+                      Grade de {cols} × {rows} = {cols * rows} números por cartela
+                    </p>
+                  );
+                })()}
+              </>
             )}
-            {!formData.apenas_numero_rifa && (() => {
-              const cols = parseInt(formData.grade_colunas) || 5;
-              const rows = parseInt(formData.grade_linhas) || 5;
-              return (
-                <p className="text-xs text-muted-foreground">
-                  Grade de {cols} × {rows} = {cols * rows} números por cartela
-                </p>
-              );
-            })()}
           </div>
 
           <div className="flex gap-4 pt-4">

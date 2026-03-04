@@ -92,10 +92,11 @@ const RodadasTab: React.FC = () => {
 
   const handleNew = () => {
     setEditingRodada(null);
+    const isRifa = sorteioAtivo?.tipo === 'rifa';
     setFormData({
       nome: '',
       range_start: '1',
-      range_end: '75',
+      range_end: isRifa ? (sorteioAtivo?.quantidade_cartelas?.toString() ?? '75') : '75',
       status: 'ativo'
     });
     setIsModalOpen(true);
