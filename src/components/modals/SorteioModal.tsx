@@ -36,6 +36,7 @@ const PAPER_PRESETS = [
   { label: 'A5 (148 × 210 mm)', value: 'A5', w: 148, h: 210 },
   { label: 'A3 (297 × 420 mm)', value: 'A3', w: 297, h: 420 },
   { label: 'Letter (216 × 279 mm)', value: 'Letter', w: 216, h: 279 },
+  { label: 'Rifa (210 × 70 mm)', value: 'Rifa', w: 210, h: 70 },
   { label: 'Personalizado', value: 'custom', w: 0, h: 0 },
 ];
 
