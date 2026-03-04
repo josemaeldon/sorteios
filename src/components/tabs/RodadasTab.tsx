@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { callApi } from '@/lib/apiClient';
 import { formatarData } from '@/lib/utils/formatters';
+import { getBingoMaxNumber } from '@/lib/utils/bingoCardUtils';
 import { cn } from '@/lib/utils';
 import {
   AlertDialog,
@@ -93,10 +94,12 @@ const RodadasTab: React.FC = () => {
   const handleNew = () => {
     setEditingRodada(null);
     const isRifa = sorteioAtivo?.tipo === 'rifa';
+    const cols = sorteioAtivo?.grade_colunas ?? 5;
+    const rows = sorteioAtivo?.grade_linhas ?? 5;
     setFormData({
       nome: '',
       range_start: '1',
-      range_end: isRifa ? (sorteioAtivo?.quantidade_cartelas?.toString() ?? '75') : '75',
+      range_end: isRifa ? (sorteioAtivo?.quantidade_cartelas?.toString() ?? '75') : getBingoMaxNumber(cols, rows).toString(),
       status: 'ativo'
     });
     setIsModalOpen(true);

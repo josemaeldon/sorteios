@@ -112,6 +112,16 @@ function pickRandom(min: number, max: number, count: number): number[] {
   return res.sort((a, b) => a - b);
 }
 
+/**
+ * Returns the highest number that can appear on a bingo card for the given grid
+ * dimensions. This matches the number pool used by generateBingoGrid:
+ * - Standard 5×5: 75 (classic B-I-N-G-O distribution)
+ * - Custom sizes: cols × rows × 3
+ */
+export function getBingoMaxNumber(cols: number = 5, rows: number = 5): number {
+  return cols === 5 && rows === 5 ? 75 : cols * rows * 3;
+}
+
 export function generateBingoGrid(cols: number = 5, rows: number = 5): number[][] {
   if (cols === 5 && rows === 5) {
     // Standard BINGO distribution (B:1-15, I:16-30, N:31-45, G:46-60, O:61-75)
