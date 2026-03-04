@@ -33,6 +33,7 @@ interface SorteioModalProps {
 
 const PAPER_PRESETS = [
   { label: 'A4 (210 × 297 mm)', value: 'A4', w: 210, h: 297 },
+  { label: 'A5 (148 × 210 mm)', value: 'A5', w: 148, h: 210 },
   { label: 'A3 (297 × 420 mm)', value: 'A3', w: 297, h: 420 },
   { label: 'Letter (216 × 279 mm)', value: 'Letter', w: 216, h: 279 },
   { label: 'Personalizado', value: 'custom', w: 0, h: 0 },

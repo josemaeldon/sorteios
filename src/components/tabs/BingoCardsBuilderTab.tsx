@@ -616,13 +616,18 @@ const BingoCardsBuilderTab: React.FC = () => {
 
   // ─── Export PDF ────────────────────────────────────────────────────────────
   const handleExportPDF = async () => {
-    if (cards.length === 0) {
+    // In rifaOnly mode cards are just numbers — generate them on-the-fly if needed
+    const exportCards = (rifaOnly && cards.length === 0)
+      ? Array.from<BingoCardGrid>({ length: totalCards }, (_, i) => ({ cartelaNumero: i + 1, grids: [] }))
+      : cards;
+
+    if (exportCards.length === 0) {
       toast({ title: 'Gere as cartelas primeiro', variant: 'destructive' });
       return;
     }
     setIsExporting(true);
     try {
-      await exportBingoCardsPDF(cards, layout, sorteioAtivo?.nome ?? 'bingo', undefined, paperW, paperH, gridCols, gridRows);
+      await exportBingoCardsPDF(exportCards, layout, sorteioAtivo?.nome ?? 'bingo', undefined, paperW, paperH, gridCols, gridRows, rifaOnly);
       toast({ title: 'PDF exportado com sucesso!' });
     } catch {
       toast({ title: 'Erro ao exportar PDF', variant: 'destructive' });
@@ -944,7 +949,7 @@ const BingoCardsBuilderTab: React.FC = () => {
             <Save className="w-4 h-4" />
             {activeLayoutId ? 'Atualizar' : 'Salvar Como...'}
           </Button>
-          <Button onClick={handleExportPDF} disabled={isExporting || cards.length === 0} className="gap-2">
+          <Button onClick={handleExportPDF} disabled={isExporting || (!rifaOnly && cards.length === 0)} className="gap-2">
             {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
             Exportar PDF {cards.length > 0 && `(${cards.length})`}
           </Button>
@@ -967,7 +972,10 @@ const BingoCardsBuilderTab: React.FC = () => {
       {!hasValidatedCards && cards.length === 0 && (
         <div className="flex items-center gap-3 p-4 bg-primary/5 border border-primary/20 rounded-xl text-sm">
           <FileText className="w-5 h-5 text-primary flex-shrink-0" />
-          <span>Clique em <strong>Gerar</strong> para criar {totalCards} cartelas únicas com números de 1 a {gridCols === 5 && gridRows === 5 ? '75' : `${gridCols * gridRows * 3}`} e grades independentes por prêmio, depois <strong>Salvar Como...</strong> para nomear e salvar.</span>
+          {rifaOnly
+            ? <span>Modo <strong>Apenas número da rifa</strong>: clique em <strong>Exportar PDF</strong> para gerar {totalCards} rifas numeradas diretamente, ou em <strong>Gerar</strong> para pré-visualizar primeiro.</span>
+            : <span>Clique em <strong>Gerar</strong> para criar {totalCards} cartelas únicas com números de 1 a {gridCols === 5 && gridRows === 5 ? '75' : `${gridCols * gridRows * 3}`} e grades independentes por prêmio, depois <strong>Salvar Como...</strong> para nomear e salvar.</span>
+          }
         </div>
       )}
 
@@ -1199,7 +1207,7 @@ const BingoCardsBuilderTab: React.FC = () => {
             )}
 
             {/* Canvas elements */}
-            {layout.elements.map((el) => {
+            {layout.elements.filter(el => !(rifaOnly && el.type === 'bingo_grid')).map((el) => {
               const isSelected = selectedId === el.id;
               return (
                 <div

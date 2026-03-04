@@ -254,6 +254,9 @@ function drawGridPdf(
   }
 }
 
+/** Number of raffle-only cards (rifaOnly) to place per PDF page */
+const RIFA_CARDS_PER_PAGE = 4;
+
 export async function exportBingoCardsPDF(
   cards: BingoCardGrid[],
   layout: CanvasLayout,
@@ -263,28 +266,43 @@ export async function exportBingoCardsPDF(
   paperHeightMm: number = A4_H_MM,
   gridCols: number = 5,
   gridRows: number = 5,
+  rifaOnly: boolean = false,
 ): Promise<Blob> {
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [paperWidthMm, paperHeightMm] });
+  // In rifaOnly mode place RIFA_CARDS_PER_PAGE cards per page (stacked vertically)
+  const cardsPerPage = rifaOnly ? RIFA_CARDS_PER_PAGE : 1;
+  const pageWidth = paperWidthMm;
+  const pageHeight = rifaOnly ? paperHeightMm * cardsPerPage : paperHeightMm;
+  const orientation = pageWidth > pageHeight ? 'landscape' : 'portrait';
+
+  const doc = new jsPDF({ orientation, unit: 'mm', format: [pageWidth, pageHeight] });
 
   for (let i = 0; i < cards.length; i++) {
-    if (i > 0) doc.addPage();
+    const posInPage = i % cardsPerPage;
+    if (i > 0 && posInPage === 0) doc.addPage();
     const card = cards[i];
     const numeroPremios = card.grids.length;
+    // Vertical offset for this card within the page
+    const yOffset = posInPage * paperHeightMm;
 
-    // Background colour
-    doc.setFillColor(...hexToRgb(layout.background.color));
-    doc.rect(0, 0, paperWidthMm, paperHeightMm, 'F');
+    // Background colour — draw only once per page (first card on that page)
+    if (posInPage === 0) {
+      doc.setFillColor(...hexToRgb(layout.background.color));
+      doc.rect(0, 0, pageWidth, pageHeight, 'F');
 
-    // Background image
-    if (layout.background.imageData) {
-      try {
-        const fmt = layout.background.imageData.includes('image/png') ? 'PNG' : 'JPEG';
-        doc.addImage(layout.background.imageData, fmt, 0, 0, paperWidthMm, paperHeightMm);
-      } catch { /* ignore unsupported images */ }
+      // Background image
+      if (layout.background.imageData) {
+        try {
+          const fmt = layout.background.imageData.includes('image/png') ? 'PNG' : 'JPEG';
+          doc.addImage(layout.background.imageData, fmt, 0, 0, pageWidth, pageHeight);
+        } catch { /* ignore unsupported images */ }
+      }
     }
 
     // Elements
     for (const el of layout.elements) {
+      // Skip bingo grid entirely in rifaOnly mode
+      if (rifaOnly && el.type === 'bingo_grid') continue;
+
       if (el.type === 'card_number') {
         const num = card.cartelaNumero.toString().padStart(3, '0');
         const text = `${el.prefix ?? 'Cartela '}${num}`;
@@ -294,10 +312,10 @@ export async function exportBingoCardsPDF(
         const align = (el.textAlign ?? 'center') as 'left' | 'center' | 'right';
         const tx = align === 'center' ? el.x + el.width / 2
           : align === 'right' ? el.x + el.width : el.x;
-        doc.text(text, tx, el.y + el.height * 0.72, { align });
+        doc.text(text, tx, el.y + yOffset + el.height * 0.72, { align });
       } else if (el.type === 'bingo_grid') {
         const gridHeight = el.height / numeroPremios;
-        const gridEl = { ...el, height: gridHeight };
+        const gridEl = { ...el, y: el.y + yOffset, height: gridHeight };
         for (let p = 0; p < numeroPremios; p++) {
           const offsetY = p * gridHeight;
           if (numeroPremios > 1) {
@@ -305,7 +323,7 @@ export async function exportBingoCardsPDF(
             doc.setTextColor(...hexToRgb(el.color ?? '#111827'));
             doc.setFontSize(8);
             doc.setFont('helvetica', 'bold');
-            doc.text(`Prêmio ${p + 1}`, el.x, el.y + offsetY - 1);
+            doc.text(`Prêmio ${p + 1}`, el.x, el.y + yOffset + offsetY - 1);
           }
           drawGridPdf(doc, gridEl, card.grids[p], offsetY, gridCols, gridRows);
         }
@@ -316,14 +334,14 @@ export async function exportBingoCardsPDF(
         const align = (el.textAlign ?? 'left') as 'left' | 'center' | 'right';
         const tx = align === 'center' ? el.x + el.width / 2
           : align === 'right' ? el.x + el.width : el.x;
-        doc.text(el.content ?? '', tx, el.y + el.height * 0.72, { align });
+        doc.text(el.content ?? '', tx, el.y + yOffset + el.height * 0.72, { align });
       } else if (el.type === 'barcode') {
         const barcodeValue = card.cartelaNumero.toString().padStart(6, '0');
         const format = el.barcodeFormat ?? 'CODE128';
         const showText = el.showBarcodeText !== false;
         const dataUrl = renderBarcodeToDataUrl(barcodeValue, format, showText);
         if (dataUrl) {
-          doc.addImage(dataUrl, 'PNG', el.x, el.y, el.width, el.height);
+          doc.addImage(dataUrl, 'PNG', el.x, el.y + yOffset, el.width, el.height);
         }
       } else if (el.type === 'buyer_name' || el.type === 'buyer_address' || el.type === 'buyer_city' || el.type === 'buyer_phone') {
         const fieldMap: Record<string, keyof BuyerData> = {
@@ -337,7 +355,7 @@ export async function exportBingoCardsPDF(
           const align = (el.textAlign ?? 'left') as 'left' | 'center' | 'right';
           const tx = align === 'center' ? el.x + el.width / 2
             : align === 'right' ? el.x + el.width : el.x;
-          doc.text(value, tx, el.y + el.height * 0.72, { align });
+          doc.text(value, tx, el.y + yOffset + el.height * 0.72, { align });
         }
       }
     }
