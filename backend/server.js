@@ -2596,7 +2596,8 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         }
         const lojaResult = await client.query(
           `SELECT lc.id, lc.numero_cartela, lc.preco, lc.status, lc.card_data, lc.layout_data,
-                  bcs.sorteio_id, s.nome as sorteio_nome, s.data_sorteio
+                  bcs.sorteio_id, s.nome as sorteio_nome, s.data_sorteio,
+                  s.papel_largura, s.papel_altura
            FROM loja_cartelas lc
            JOIN bingo_card_sets bcs ON lc.card_set_id = bcs.id
            JOIN sorteios s ON bcs.sorteio_id = s.id
@@ -2795,7 +2796,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           return res.status(400).json({ error: 'Sessão inválida.' });
         }
         const lcConfirmResult = await client.query(
-          'SELECT lc.*, bcs.sorteio_id FROM loja_cartelas lc JOIN bingo_card_sets bcs ON lc.card_set_id = bcs.id WHERE lc.id = $1',
+          'SELECT lc.*, bcs.sorteio_id, s.papel_largura, s.papel_altura FROM loja_cartelas lc JOIN bingo_card_sets bcs ON lc.card_set_id = bcs.id JOIN sorteios s ON bcs.sorteio_id = s.id WHERE lc.id = $1',
           [sessionMeta.loja_cartela_id]
         );
         if (lcConfirmResult.rows.length === 0) {
@@ -2875,6 +2876,8 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           comprador_telefone: compradorTelefoneConfirm,
           card_data: lcConfirm.card_data,
           layout_data: lcConfirm.layout_data,
+          papel_largura: lcConfirm.papel_largura,
+          papel_altura: lcConfirm.papel_altura,
         });
       }
 
@@ -2988,7 +2991,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         const purchasedCartelas = [];
         for (const lcId of allMultiIds) {
           const lcMultiResult = await client.query(
-            'SELECT lc.*, bcs.sorteio_id FROM loja_cartelas lc JOIN bingo_card_sets bcs ON lc.card_set_id = bcs.id WHERE lc.id = $1',
+            'SELECT lc.*, bcs.sorteio_id, s.papel_largura, s.papel_altura FROM loja_cartelas lc JOIN bingo_card_sets bcs ON lc.card_set_id = bcs.id JOIN sorteios s ON bcs.sorteio_id = s.id WHERE lc.id = $1',
             [lcId]
           );
           if (lcMultiResult.rows.length === 0) continue;
@@ -3070,7 +3073,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         }
         return res.json({
           success: true,
-          cartelas: purchasedCartelas.map(c => ({ numero_cartela: c.numero_cartela, card_data: c.card_data, layout_data: c.layout_data })),
+          cartelas: purchasedCartelas.map(c => ({ numero_cartela: c.numero_cartela, card_data: c.card_data, layout_data: c.layout_data, papel_largura: c.papel_largura, papel_altura: c.papel_altura })),
           comprador_nome: compradorNomeMulti,
           comprador_endereco: compradorEnderecoMulti,
           comprador_cidade: compradorCidadeMulti,
@@ -3156,7 +3159,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           return res.status(400).json({ error: 'Referência da cartela não encontrada.' });
         }
         const mpCartelaConfirmResult = await client.query(
-          'SELECT lc.*, bcs.sorteio_id FROM loja_cartelas lc JOIN bingo_card_sets bcs ON lc.card_set_id = bcs.id WHERE lc.id = $1',
+          'SELECT lc.*, bcs.sorteio_id, s.papel_largura, s.papel_altura FROM loja_cartelas lc JOIN bingo_card_sets bcs ON lc.card_set_id = bcs.id JOIN sorteios s ON bcs.sorteio_id = s.id WHERE lc.id = $1',
           [mpCartelaId]
         );
         if (mpCartelaConfirmResult.rows.length === 0) {
@@ -3234,6 +3237,8 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           comprador_telefone: mpCompradorTelefone,
           card_data: mpCartelaConfirm.card_data,
           layout_data: mpCartelaConfirm.layout_data,
+          papel_largura: mpCartelaConfirm.papel_largura,
+          papel_altura: mpCartelaConfirm.papel_altura,
         });
       }
 
@@ -3329,7 +3334,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         const mpPurchasedCartelas = [];
         for (const lcId of allMpIds) {
           const mpLcResult = await client.query(
-            'SELECT lc.*, bcs.sorteio_id FROM loja_cartelas lc JOIN bingo_card_sets bcs ON lc.card_set_id = bcs.id WHERE lc.id = $1',
+            'SELECT lc.*, bcs.sorteio_id, s.papel_largura, s.papel_altura FROM loja_cartelas lc JOIN bingo_card_sets bcs ON lc.card_set_id = bcs.id JOIN sorteios s ON bcs.sorteio_id = s.id WHERE lc.id = $1',
             [lcId]
           );
           if (mpLcResult.rows.length === 0) continue;
@@ -3409,7 +3414,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         }
         return res.json({
           success: true,
-          cartelas: mpPurchasedCartelas.map(c => ({ numero_cartela: c.numero_cartela, card_data: c.card_data, layout_data: c.layout_data })),
+          cartelas: mpPurchasedCartelas.map(c => ({ numero_cartela: c.numero_cartela, card_data: c.card_data, layout_data: c.layout_data, papel_largura: c.papel_largura, papel_altura: c.papel_altura })),
           comprador_nome: mpCompradorNomeMulti,
           comprador_endereco: mpCompradorEnderecoMulti,
           comprador_cidade: mpCompradorCidadeMulti,
@@ -3489,7 +3494,8 @@ app.post('/api', checkBasicAuth, async (req, res) => {
                  lc.comprador_nome, lc.comprador_endereco, lc.comprador_cidade, lc.comprador_telefone,
                  lc.created_at, lc.updated_at,
                  u.nome as store_nome, u.titulo_sistema as store_titulo,
-                 s.nome as sorteio_nome, s.data_sorteio
+                 s.nome as sorteio_nome, s.data_sorteio,
+                 s.papel_largura, s.papel_altura
           FROM loja_cartelas lc
           JOIN usuarios u ON lc.user_id = u.id
           JOIN bingo_card_sets bcs ON lc.card_set_id = bcs.id

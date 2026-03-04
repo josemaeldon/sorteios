@@ -25,7 +25,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
-import { generateBingoGrid, exportBingoCardsPDF, DEFAULT_LAYOUT, BINGO_COLS } from '@/lib/utils/bingoCardUtils';
+import { generateBingoGrid, exportBingoCardsPDF, DEFAULT_LAYOUT, BINGO_COLS, A4_W_MM, A4_H_MM } from '@/lib/utils/bingoCardUtils';
 
 // ─── BINGO column ranges (B I N G O) ─────────────────────────────────────────
 const COL_RANGES = [
@@ -286,6 +286,9 @@ const CartelasTab: React.FC = () => {
         [{ cartelaNumero: selectedCartela.numero, grids }],
         DEFAULT_LAYOUT,
         sorteioAtivo?.nome ?? 'bingo',
+        undefined,
+        sorteioAtivo?.papel_largura ?? A4_W_MM,
+        sorteioAtivo?.papel_altura ?? A4_H_MM,
       );
     } catch {
       toast({ title: 'Erro ao exportar PDF', variant: 'destructive' });
