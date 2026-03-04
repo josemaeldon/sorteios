@@ -636,7 +636,31 @@ const BingoCardsBuilderTab: React.FC = () => {
     }
   };
 
-  // ─── Save layout handlers ──────────────────────────────────────────────────
+  // ─── Export PDF A4 multi-per-page ─────────────────────────────────────────
+  const [isExportingA4, setIsExportingA4] = useState(false);
+  // Show option when ticket is not A4 and fits within A4 dimensions
+  const isA4MultiAvailable = (paperW !== A4_W_MM || paperH !== A4_H_MM) && paperW <= A4_W_MM && paperH <= A4_H_MM;
+
+  const handleExportA4MultiPDF = async () => {
+    const exportCards = (rifaOnly && cards.length === 0)
+      ? Array.from<BingoCardGrid>({ length: totalCards }, (_, i) => ({ cartelaNumero: i + 1, grids: [] }))
+      : cards;
+
+    if (exportCards.length === 0) {
+      toast({ title: 'Gere as cartelas primeiro', variant: 'destructive' });
+      return;
+    }
+    setIsExportingA4(true);
+    try {
+      await exportBingoCardsPDF(exportCards, layout, sorteioAtivo?.nome ?? 'bingo', undefined, paperW, paperH, gridCols, gridRows, rifaOnly, true);
+      toast({ title: 'PDF A4 exportado com sucesso!' });
+    } catch {
+      toast({ title: 'Erro ao exportar PDF', variant: 'destructive' });
+    } finally {
+      setIsExportingA4(false);
+    }
+  };
+
   const handleOpenSaveDialog = () => {
     const active = cartelaLayouts.find(l => l.id === activeLayoutId);
     setSaveLayoutName(active?.nome ?? '');
@@ -953,6 +977,12 @@ const BingoCardsBuilderTab: React.FC = () => {
             {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
             Exportar PDF {cards.length > 0 && `(${cards.length})`}
           </Button>
+          {isA4MultiAvailable && (
+            <Button variant="outline" onClick={handleExportA4MultiPDF} disabled={isExportingA4 || (!rifaOnly && cards.length === 0)} className="gap-2">
+              {isExportingA4 ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+              Exportar A4 (múltiplas por página)
+            </Button>
+          )}
           <Button variant="outline" size="sm" className="gap-2" onClick={handleOpenMinhaLoja}>
             <Store className="w-4 h-4" />
             Minha Loja {lojaCartelas.length > 0 && `(${lojaCartelas.length})`}
