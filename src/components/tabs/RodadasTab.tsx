@@ -79,11 +79,11 @@ const RodadasTab: React.FC = () => {
       );
       
       setRodadas(rodadasWithCount);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error loading rodadas:', error);
       toast({
         title: "Erro ao carregar rodadas",
-        description: error.message,
+        description: (error instanceof Error ? error.message : 'Erro inesperado'),
         variant: "destructive"
       });
     } finally {
@@ -131,10 +131,10 @@ const RodadasTab: React.FC = () => {
         description: "A rodada foi excluída com sucesso."
       });
       await loadRodadas();
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast({
         title: "Erro ao excluir rodada",
-        description: error.message,
+        description: (error instanceof Error ? error.message : 'Erro inesperado'),
         variant: "destructive"
       });
     } finally {
@@ -189,10 +189,10 @@ const RodadasTab: React.FC = () => {
       
       setIsModalOpen(false);
       await loadRodadas();
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast({
         title: "Erro ao salvar rodada",
-        description: error.message,
+        description: (error instanceof Error ? error.message : 'Erro inesperado'),
         variant: "destructive"
       });
     }
@@ -393,7 +393,7 @@ const RodadasTab: React.FC = () => {
               <Label htmlFor="status">Status *</Label>
               <Select 
                 value={formData.status} 
-                onValueChange={(value: any) => setFormData({ ...formData, status: value })}
+                onValueChange={(value: string) => setFormData({ ...formData, status: value })}
               >
                 <SelectTrigger>
                   <SelectValue />

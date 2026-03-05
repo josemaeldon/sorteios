@@ -744,8 +744,8 @@ const BingoCardsBuilderTab: React.FC = () => {
       await adicionarCartelaLoja(activeLayoutId, previewCard.cartelaNumero, preco, JSON.stringify(previewCard), JSON.stringify(layout), vendedorId);
       toast({ title: `Cartela ${previewCard.cartelaNumero.toString().padStart(3, '0')} disponibilizada para venda!` });
       setShowVenderModal(false);
-    } catch (err: any) {
-      toast({ title: err.message || 'Erro ao disponibilizar cartela', variant: 'destructive' });
+    } catch (err: unknown) {
+      toast({ title: (err instanceof Error ? err.message : 'Erro inesperado') || 'Erro ao disponibilizar cartela', variant: 'destructive' });
     } finally {
       setIsVendendo(false);
     }
@@ -797,8 +797,8 @@ const BingoCardsBuilderTab: React.FC = () => {
         try {
           await adicionarCartelaLoja(activeLayoutId, card.cartelaNumero, preco, JSON.stringify(card), JSON.stringify(layout), cardVendedorId);
           added++;
-        } catch (cardErr: any) {
-          if (cardErr.code === 'DUPLICATE_CARTELA') {
+        } catch (cardErr: unknown) {
+          if (cardErr && typeof cardErr === 'object' && 'code' in cardErr && (cardErr as { code?: string }).code === 'DUPLICATE_CARTELA') {
             skipped++;
           } else {
             throw cardErr;
@@ -811,8 +811,8 @@ const BingoCardsBuilderTab: React.FC = () => {
         : `${added} cartela${added !== 1 ? 's' : ''} disponibilizada${added !== 1 ? 's' : ''} para venda!`;
       toast({ title: msg });
       setShowBulkVenderModal(false);
-    } catch (err: any) {
-      toast({ title: err.message || 'Erro ao disponibilizar cartelas', variant: 'destructive' });
+    } catch (err: unknown) {
+      toast({ title: (err instanceof Error ? err.message : 'Erro inesperado') || 'Erro ao disponibilizar cartelas', variant: 'destructive' });
     } finally {
       setIsBulkVendendo(false);
     }
@@ -860,8 +860,8 @@ const BingoCardsBuilderTab: React.FC = () => {
         try {
           await adicionarCartelaLoja(activeLayoutId, c.numero, preco, JSON.stringify(cardGrid), JSON.stringify(layout), vendedorLojaId);
           added++;
-        } catch (cardErr: any) {
-          if (cardErr.code === 'DUPLICATE_CARTELA') {
+        } catch (cardErr: unknown) {
+          if (cardErr && typeof cardErr === 'object' && 'code' in cardErr && (cardErr as { code?: string }).code === 'DUPLICATE_CARTELA') {
             skipped++;
           } else {
             throw cardErr;
@@ -874,8 +874,8 @@ const BingoCardsBuilderTab: React.FC = () => {
         : `${added} cartela${added !== 1 ? 's' : ''} do vendedor disponibilizada${added !== 1 ? 's' : ''} para venda!`;
       toast({ title: msg });
       setShowVendedorLojaModal(false);
-    } catch (err: any) {
-      toast({ title: err.message || 'Erro ao disponibilizar cartelas', variant: 'destructive' });
+    } catch (err: unknown) {
+      toast({ title: (err instanceof Error ? err.message : 'Erro inesperado') || 'Erro ao disponibilizar cartelas', variant: 'destructive' });
     } finally {
       setIsVendedorLojaVendendo(false);
     }
@@ -906,8 +906,8 @@ const BingoCardsBuilderTab: React.FC = () => {
       await removerMultiplasCartelasLoja(ids);
       setSelectedLojaIds(new Set());
       toast({ title: `${ids.length} cartela${ids.length !== 1 ? 's' : ''} removida${ids.length !== 1 ? 's' : ''} da loja.` });
-    } catch (err: any) {
-      toast({ title: err.message || 'Erro ao remover cartelas', variant: 'destructive' });
+    } catch (err: unknown) {
+      toast({ title: (err instanceof Error ? err.message : 'Erro inesperado') || 'Erro ao remover cartelas', variant: 'destructive' });
     } finally {
       setIsDeletingLoja(false);
     }

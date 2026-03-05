@@ -33,6 +33,49 @@ export default defineConfig(({ mode }) => {
         "@": path.resolve(__dirname, "./src"),
       },
     },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (!id.includes("node_modules")) return;
+
+            if (id.includes("react") || id.includes("scheduler")) {
+              return "vendor-react";
+            }
+
+            if (id.includes("xlsx")) {
+              return "vendor-export-xlsx";
+            }
+
+            if (id.includes("jspdf") || id.includes("jspdf-autotable")) {
+              return "vendor-export-pdf";
+            }
+
+            if (id.includes("jsbarcode")) {
+              return "vendor-export-barcode";
+            }
+
+            if (id.includes("html2canvas")) {
+              return "vendor-export-html";
+            }
+
+            if (id.includes("recharts")) {
+              return "vendor-charts";
+            }
+
+            if (id.includes("@radix-ui") || id.includes("cmdk") || id.includes("sonner")) {
+              return "vendor-ui";
+            }
+
+            if (id.includes("react-router") || id.includes("@tanstack/react-query")) {
+              return "vendor-router-query";
+            }
+
+            return "vendor";
+          },
+        },
+      },
+    },
     define: runtimeEnvPlaceholders,
   };
 });

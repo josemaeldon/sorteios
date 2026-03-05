@@ -188,7 +188,7 @@ const AtribuicoesTab: React.FC = () => {
             </label>
             <Select 
               value={filtrosAtribuicoes.status} 
-              onValueChange={(value: any) => setFiltrosAtribuicoes({ ...filtrosAtribuicoes, status: value })}
+              onValueChange={(value: string) => setFiltrosAtribuicoes({ ...filtrosAtribuicoes, status: value })}
             >
               <SelectTrigger>
                 <SelectValue />

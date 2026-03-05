@@ -108,6 +108,7 @@ interface BingoContextType {
 }
 
 const BingoContext = createContext<BingoContextType | undefined>(undefined);
+const getErrorMessage = (error: unknown) => (error instanceof Error ? error.message : '');
 
 export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { toast } = useToast();
@@ -152,7 +153,7 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   });
 
   // API call helper (funciona em qualquer modo)
-  const callApi = useCallback(async (action: string, data: Record<string, any> = {}) => {
+  const callApi = useCallback(async (action: string, data: Record<string, unknown> = {}) => {
     return callBackendApi(action, data);
   }, []);
 
@@ -164,11 +165,11 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       setIsLoading(true);
       const result = await callApi('getSorteios', { user_id: user.id });
       setSorteios(result.data || []);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error loading sorteios:', error);
       toast({
         title: "Erro ao carregar sorteios",
-        description: error.message,
+        description: getErrorMessage(error),
         variant: "destructive"
       });
     } finally {
@@ -184,11 +185,11 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       await callApi('createSorteio', { ...sorteio, user_id: user.id, ...(targetUserId ? { target_user_id: targetUserId } : {}) });
       toast({ title: "Sorteio criado com sucesso!" });
       await loadSorteios();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error creating sorteio:', error);
       toast({
         title: "Erro ao criar sorteio",
-        description: error.message,
+        description: getErrorMessage(error),
         variant: "destructive"
       });
     } finally {
@@ -209,11 +210,11 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       if (sorteioAtivo?.id === id) {
         setSorteioAtivoState(prev => prev ? { ...prev, ...updates } : null);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error updating sorteio:', error);
       toast({
         title: "Erro ao atualizar sorteio",
-        description: error.message,
+        description: getErrorMessage(error),
         variant: "destructive"
       });
     } finally {
@@ -231,11 +232,11 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       if (sorteioAtivo?.id === id) {
         setSorteioAtivoState(null);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error deleting sorteio:', error);
       toast({
         title: "Erro ao excluir sorteio",
-        description: error.message,
+        description: getErrorMessage(error),
         variant: "destructive"
       });
     } finally {
@@ -250,7 +251,7 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     try {
       const result = await callApi('getVendedores', { sorteio_id: sorteioAtivo.id });
       setVendedores(result.data || []);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error loading vendedores:', error);
     }
   }, [sorteioAtivo, callApi]);
@@ -262,11 +263,11 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       await callApi('createVendedor', { ...vendedor, sorteio_id: sorteioAtivo.id });
       toast({ title: "Vendedor criado!" });
       await loadVendedores();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error creating vendedor:', error);
       toast({
         title: "Erro ao criar vendedor",
-        description: error.message,
+        description: getErrorMessage(error),
         variant: "destructive"
       });
     }
@@ -280,11 +281,11 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       await callApi('updateVendedor', { id, ...vendedor, ...updates });
       toast({ title: "Vendedor atualizado!" });
       await loadVendedores();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error updating vendedor:', error);
       toast({
         title: "Erro ao atualizar vendedor",
-        description: error.message,
+        description: getErrorMessage(error),
         variant: "destructive"
       });
     }
@@ -295,11 +296,11 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       await callApi('deleteVendedor', { id });
       toast({ title: "Vendedor excluído!" });
       await loadVendedores();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error deleting vendedor:', error);
       toast({
         title: "Erro ao excluir vendedor",
-        description: error.message,
+        description: getErrorMessage(error),
         variant: "destructive"
       });
     }
@@ -312,7 +313,7 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     try {
       const result = await callApi('getCartelas', { sorteio_id: sorteioAtivo.id });
       setCartelas(result.data || []);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error loading cartelas:', error);
     }
   }, [sorteioAtivo, callApi]);
@@ -325,11 +326,11 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       await callApi('gerarCartelas', { sorteio_id: sorteioAtivo.id, quantidade });
       toast({ title: `${quantidade} cartelas geradas!` });
       await loadCartelas();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error generating cartelas:', error);
       toast({
         title: "Erro ao gerar cartelas",
-        description: error.message,
+        description: getErrorMessage(error),
         variant: "destructive"
       });
     } finally {
@@ -348,7 +349,7 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         vendedor_id: vendedorId || null 
       });
       await loadCartelas();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error updating cartela:', error);
     }
   }, [sorteioAtivo, callApi, loadCartelas]);
@@ -358,11 +359,11 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     try {
       await callApi('salvarNumerosCartelas', { sorteio_id: sorteioAtivo.id, cartelas });
       await loadCartelas();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error saving cartela numbers:', error);
       toast({
         title: "Erro ao salvar números das cartelas",
-        description: error.message,
+        description: getErrorMessage(error),
         variant: "destructive"
       });
     }
@@ -374,9 +375,9 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       await callApi('deleteCartela', { sorteio_id: sorteioAtivo.id, numero });
       toast({ title: "Cartela excluída!" });
       await loadCartelas();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error deleting cartela:', error);
-      toast({ title: "Erro ao excluir cartela", description: error.message, variant: "destructive" });
+      toast({ title: "Erro ao excluir cartela", description: getErrorMessage(error), variant: "destructive" });
     }
   }, [sorteioAtivo, callApi, toast, loadCartelas]);
 
@@ -386,9 +387,9 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       await callApi('createCartela', { sorteio_id: sorteioAtivo.id, numeros_grade: numerosGrade });
       toast({ title: "Cartela criada!" });
       await loadCartelas();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error creating cartela:', error);
-      toast({ title: "Erro ao criar cartela", description: error.message, variant: "destructive" });
+      toast({ title: "Erro ao criar cartela", description: getErrorMessage(error), variant: "destructive" });
     }
   }, [sorteioAtivo, callApi, toast, loadCartelas]);
 
@@ -399,7 +400,7 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     try {
       const result = await callApi('getAtribuicoes', { sorteio_id: sorteioAtivo.id });
       setAtribuicoes(result.data || []);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error loading atribuicoes:', error);
     }
   }, [sorteioAtivo, callApi]);
@@ -416,11 +417,11 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       toast({ title: "Atribuição criada!" });
       await loadAtribuicoes();
       await loadCartelas();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error creating atribuicao:', error);
       toast({
         title: "Erro ao criar atribuição",
-        description: error.message,
+        description: getErrorMessage(error),
         variant: "destructive"
       });
     }
@@ -439,11 +440,11 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       toast({ title: "Cartelas adicionadas!" });
       await loadAtribuicoes();
       await loadCartelas();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error adding cartelas:', error);
       toast({
         title: "Erro ao adicionar cartelas",
-        description: error.message,
+        description: getErrorMessage(error),
         variant: "destructive"
       });
     }
@@ -461,7 +462,7 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       toast({ title: "Cartela removida!" });
       await loadAtribuicoes();
       await loadCartelas();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error removing cartela:', error);
     }
   }, [sorteioAtivo, callApi, toast, loadAtribuicoes, loadCartelas]);
@@ -478,7 +479,7 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       });
       await loadAtribuicoes();
       await loadCartelas();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error updating cartela status:', error);
     }
   }, [sorteioAtivo, callApi, loadAtribuicoes, loadCartelas]);
@@ -491,11 +492,11 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       toast({ title: "Atribuição excluída!" });
       await loadAtribuicoes();
       await loadCartelas();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error deleting atribuicao:', error);
       toast({
         title: "Erro ao excluir atribuição",
-        description: error.message,
+        description: getErrorMessage(error),
         variant: "destructive"
       });
     }
@@ -514,11 +515,11 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       toast({ title: `${numerosCartelas.length} cartela(s) transferida(s)!` });
       await loadAtribuicoes();
       await loadCartelas();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error transferring cartelas:', error);
       toast({
         title: "Erro ao transferir cartelas",
-        description: error.message,
+        description: getErrorMessage(error),
         variant: "destructive"
       });
       throw error;
@@ -530,7 +531,7 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     try {
       const result = await callApi('getVendas', { sorteio_id: sorteioAtivo.id });
       setVendas(result.data || []);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error loading vendas:', error);
     }
   }, [sorteioAtivo, callApi]);
@@ -540,7 +541,7 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     try {
       const result = await callApi('getMinhaLoja', sorteioAtivo ? { sorteio_id: sorteioAtivo.id } : {});
       setLojaCartelas(result.data || []);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error loading loja:', error);
     }
   }, [callApi, sorteioAtivo]);
@@ -585,11 +586,11 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       await loadVendas();
       await loadCartelas();
       await loadAtribuicoes();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error creating venda:', error);
       toast({
         title: "Erro ao registrar venda",
-        description: error.message,
+        description: getErrorMessage(error),
         variant: "destructive"
       });
     }
@@ -607,11 +608,11 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       await loadVendas();
       await loadCartelas();
       await loadAtribuicoes();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error updating venda:', error);
       toast({
         title: "Erro ao atualizar venda",
-        description: error.message,
+        description: getErrorMessage(error),
         variant: "destructive"
       });
     }
@@ -625,11 +626,11 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       await loadCartelas();
       await loadAtribuicoes();
       await loadMinhaLoja();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error deleting venda:', error);
       toast({
         title: "Erro ao excluir venda",
-        description: error.message,
+        description: getErrorMessage(error),
         variant: "destructive"
       });
     }
@@ -641,7 +642,7 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     try {
       const result = await callApi('getCartelaLayouts', { sorteio_id: sorteioAtivo.id });
       setCartelaLayouts(result.data || []);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error loading cartela layouts:', error);
     }
   }, [sorteioAtivo, callApi]);
@@ -671,7 +672,7 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     try {
       const result = await callApi('getCartelasValidadas', { sorteio_id: sorteioAtivo.id });
       setCartelasValidadas(result.data || []);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error loading cartelas validadas:', error);
     }
   }, [sorteioAtivo, callApi]);
@@ -681,9 +682,9 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     try {
       await callApi('validarCartela', { sorteio_id: sorteioAtivo.id, numero, comprador_nome: compradorNome || null });
       await loadCartelasValidadas();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error validating cartela:', error);
-      toast({ title: 'Erro ao validar cartela', description: error.message, variant: 'destructive' });
+      toast({ title: 'Erro ao validar cartela', description: getErrorMessage(error), variant: 'destructive' });
       throw error;
     }
   }, [sorteioAtivo, callApi, toast, loadCartelasValidadas]);
@@ -693,9 +694,9 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     try {
       await callApi('removerValidacaoCartela', { sorteio_id: sorteioAtivo.id, numero });
       await loadCartelasValidadas();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error removing cartela validation:', error);
-      toast({ title: 'Erro ao remover validação', description: error.message, variant: 'destructive' });
+      toast({ title: 'Erro ao remover validação', description: getErrorMessage(error), variant: 'destructive' });
     }
   }, [sorteioAtivo, callApi, toast, loadCartelasValidadas]);
 
@@ -704,9 +705,9 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     try {
       await callApi('validarCartelas', { sorteio_id: sorteioAtivo.id, numeros, comprador_nome: compradorNome || null });
       await loadCartelasValidadas();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error validating cartelas:', error);
-      toast({ title: 'Erro ao validar cartelas', description: error.message, variant: 'destructive' });
+      toast({ title: 'Erro ao validar cartelas', description: getErrorMessage(error), variant: 'destructive' });
       throw error;
     }
   }, [sorteioAtivo, callApi, toast, loadCartelasValidadas]);
@@ -716,9 +717,9 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     try {
       await callApi('removerValidacaoLote', { sorteio_id: sorteioAtivo.id, numeros });
       await loadCartelasValidadas();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error removing lote validation:', error);
-      toast({ title: 'Erro ao remover lote', description: error.message, variant: 'destructive' });
+      toast({ title: 'Erro ao remover lote', description: getErrorMessage(error), variant: 'destructive' });
     }
   }, [sorteioAtivo, callApi, toast, loadCartelasValidadas]);
 
@@ -757,14 +758,14 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       setCartelaLayouts([]);
       setCartelasValidadas([]);
     }
-  }, [sorteioAtivo?.id]);
+  }, [sorteioAtivo, refreshData]);
 
   // Load sorteios when user changes
   useEffect(() => {
     if (user) {
       loadSorteios();
     }
-  }, [user?.id]);
+  }, [user, loadSorteios]);
 
   const value: BingoContextType = {
     sorteioAtivo,

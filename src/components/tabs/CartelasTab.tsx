@@ -480,7 +480,7 @@ const CartelasTab: React.FC = () => {
                 </label>
                 <Select
                   value={filtrosCartelas.status}
-                  onValueChange={(value: any) => setFiltrosCartelas({ ...filtrosCartelas, status: value })}
+                  onValueChange={(value: string) => setFiltrosCartelas({ ...filtrosCartelas, status: value })}
                 >
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>

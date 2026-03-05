@@ -155,7 +155,7 @@ const VendaModal: React.FC<VendaModalProps> = ({ isOpen, onClose, editingId }) =
     }
   };
 
-  const updatePagamento = (index: number, field: keyof PagamentoVenda, value: any) => {
+  const updatePagamento = (index: number, field: keyof PagamentoVenda, value: string | number) => {
     setPagamentos(prev => prev.map((p, i) => 
       i === index ? { ...p, [field]: value } : p
     ));
@@ -198,7 +198,7 @@ const VendaModal: React.FC<VendaModalProps> = ({ isOpen, onClose, editingId }) =
       if (editingId) {
         await updateVenda(editingId, vendaData);
       } else {
-        await addVenda(vendaData as any);
+        await addVenda(vendaData);
       }
       onClose();
     } finally {
@@ -363,7 +363,7 @@ const VendaModal: React.FC<VendaModalProps> = ({ isOpen, onClose, editingId }) =
               <div key={index} className="flex gap-2 items-center">
                 <Select 
                   value={pag.forma_pagamento} 
-                  onValueChange={(v: any) => updatePagamento(index, 'forma_pagamento', v)}
+                  onValueChange={(v: string) => updatePagamento(index, 'forma_pagamento', v)}
                 >
                   <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
                   <SelectContent>

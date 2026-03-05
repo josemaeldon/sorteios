@@ -38,7 +38,7 @@ const RelatoriosTab: React.FC = () => {
   const cartelasDisponiveis = cartelas.filter(c => c.status === 'disponivel').length;
   const cartelasAtribuidas = cartelas.filter(c => c.status === 'ativa').length;
 
-  const handleExport = (type: string, format: 'pdf' | 'excel') => {
+  const handleExport = async (type: string, format: 'pdf' | 'excel') => {
     try {
       switch (type) {
         case 'vendas':
@@ -46,39 +46,47 @@ const RelatoriosTab: React.FC = () => {
             toast({ title: 'Sem dados', description: 'Não há vendas para exportar', variant: 'destructive' });
             return;
           }
-          format === 'pdf' 
-            ? exportVendasPDF(vendas, sorteioAtivo, vendedores)
-            : exportVendasExcel(vendas, sorteioAtivo, vendedores);
+          if (format === 'pdf') {
+            await exportVendasPDF(vendas, sorteioAtivo, vendedores);
+          } else {
+            await exportVendasExcel(vendas, sorteioAtivo, vendedores);
+          }
           break;
         case 'cartelas':
           if (cartelas.length === 0) {
             toast({ title: 'Sem dados', description: 'Não há cartelas para exportar', variant: 'destructive' });
             return;
           }
-          format === 'pdf'
-            ? exportCartelasPDF(cartelas, sorteioAtivo)
-            : exportCartelasExcel(cartelas, sorteioAtivo);
+          if (format === 'pdf') {
+            await exportCartelasPDF(cartelas, sorteioAtivo);
+          } else {
+            await exportCartelasExcel(cartelas, sorteioAtivo);
+          }
           break;
         case 'atribuicoes':
           if (atribuicoes.length === 0) {
             toast({ title: 'Sem dados', description: 'Não há atribuições para exportar', variant: 'destructive' });
             return;
           }
-          format === 'pdf'
-            ? exportAtribuicoesPDF(atribuicoes, sorteioAtivo, vendedores)
-            : exportAtribuicoesExcel(atribuicoes, sorteioAtivo, vendedores);
+          if (format === 'pdf') {
+            await exportAtribuicoesPDF(atribuicoes, sorteioAtivo, vendedores);
+          } else {
+            await exportAtribuicoesExcel(atribuicoes, sorteioAtivo, vendedores);
+          }
           break;
         case 'vendedores':
           if (vendedores.length === 0) {
             toast({ title: 'Sem dados', description: 'Não há vendedores para exportar', variant: 'destructive' });
             return;
           }
-          format === 'pdf'
-            ? exportVendedoresPDF(vendedores, atribuicoes, vendas, sorteioAtivo)
-            : exportVendedoresExcel(vendedores, atribuicoes, vendas, sorteioAtivo);
+          if (format === 'pdf') {
+            await exportVendedoresPDF(vendedores, atribuicoes, vendas, sorteioAtivo);
+          } else {
+            await exportVendedoresExcel(vendedores, atribuicoes, vendas, sorteioAtivo);
+          }
           break;
         case 'completo':
-          exportRelatorioCompletoPDF(sorteioAtivo, vendedores, cartelas, atribuicoes, vendas);
+          await exportRelatorioCompletoPDF(sorteioAtivo, vendedores, cartelas, atribuicoes, vendas);
           break;
       }
       toast({ 

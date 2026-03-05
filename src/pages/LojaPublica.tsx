@@ -372,8 +372,8 @@ const LojaPublica: React.FC = () => {
       setCartelas(result.cartelas || []);
       setTotalCartelas(result.total || 0);
       if (result.payment_gateway) setPaymentGateway(result.payment_gateway);
-    } catch (err: any) {
-      setError(err.message || 'Loja não encontrada.');
+    } catch (err: unknown) {
+      setError((err instanceof Error ? err.message : 'Erro inesperado') || 'Loja não encontrada.');
     } finally {
       isFetchingRef.current = false;
       setIsLoading(false);
@@ -429,7 +429,7 @@ const LojaPublica: React.FC = () => {
             }
           })
           .catch((err) => {
-            setPaymentResult({ ok: false, message: err.message || 'Erro ao confirmar pagamento.' });
+            setPaymentResult({ ok: false, message: (err instanceof Error ? err.message : 'Erro inesperado') || 'Erro ao confirmar pagamento.' });
           })
           .finally(() => setConfirmingPayment(false));
       } else {
@@ -461,7 +461,7 @@ const LojaPublica: React.FC = () => {
             }
           })
           .catch((err) => {
-            setPaymentResult({ ok: false, message: err.message || 'Erro ao confirmar pagamento.' });
+            setPaymentResult({ ok: false, message: (err instanceof Error ? err.message : 'Erro inesperado') || 'Erro ao confirmar pagamento.' });
           })
           .finally(() => setConfirmingPayment(false));
       }
@@ -494,7 +494,7 @@ const LojaPublica: React.FC = () => {
           }
         })
         .catch((err) => {
-          setPaymentResult({ ok: false, message: err.message || 'Erro ao confirmar pagamento.' });
+          setPaymentResult({ ok: false, message: (err instanceof Error ? err.message : 'Erro inesperado') || 'Erro ao confirmar pagamento.' });
         })
         .finally(() => setConfirmingPayment(false));
     } else {
@@ -526,7 +526,7 @@ const LojaPublica: React.FC = () => {
           }
         })
         .catch((err) => {
-          setPaymentResult({ ok: false, message: err.message || 'Erro ao confirmar pagamento.' });
+          setPaymentResult({ ok: false, message: (err instanceof Error ? err.message : 'Erro inesperado') || 'Erro ao confirmar pagamento.' });
         })
         .finally(() => setConfirmingPayment(false));
     }
@@ -719,8 +719,8 @@ const LojaPublica: React.FC = () => {
       } else {
         setCheckoutError(result.error || 'Erro ao iniciar pagamento.');
       }
-    } catch (err: any) {
-      setCheckoutError(err.message || 'Erro ao iniciar pagamento.');
+    } catch (err: unknown) {
+      setCheckoutError((err instanceof Error ? err.message : 'Erro inesperado') || 'Erro ao iniciar pagamento.');
     } finally {
       setIsCheckingOut(false);
     }
@@ -751,8 +751,8 @@ const LojaPublica: React.FC = () => {
       } else {
         setCartCheckoutError(result.error || 'Erro ao iniciar pagamento.');
       }
-    } catch (err: any) {
-      setCartCheckoutError(err.message || 'Erro ao iniciar pagamento.');
+    } catch (err: unknown) {
+      setCartCheckoutError((err instanceof Error ? err.message : 'Erro inesperado') || 'Erro ao iniciar pagamento.');
     } finally {
       setIsCartCheckingOut(false);
     }
@@ -800,8 +800,8 @@ const LojaPublica: React.FC = () => {
       setShowAuthModal(false);
       setAuthNome(''); setAuthEmail(''); setAuthSenha('');
       setAuthCpf(''); setAuthEndereco(''); setAuthCidade(''); setAuthTelefone('');
-    } catch (err: any) {
-      setAuthError(err.message || 'Erro ao autenticar.');
+    } catch (err: unknown) {
+      setAuthError((err instanceof Error ? err.message : 'Erro inesperado') || 'Erro ao autenticar.');
     } finally {
       setIsAuthSubmitting(false);
     }
@@ -816,8 +816,8 @@ const LojaPublica: React.FC = () => {
       await callApi('solicitarRecuperacaoSenha', { email: resetEmail.trim(), ...(ownerUserIdRef.current ? { owner_user_id: ownerUserIdRef.current } : {}) });
       setResetSuccess('Se o e-mail estiver cadastrado, você receberá o código em breve.');
       setResetStep('code');
-    } catch (err: any) {
-      setResetError(err.message || 'Erro ao solicitar recuperação.');
+    } catch (err: unknown) {
+      setResetError((err instanceof Error ? err.message : 'Erro inesperado') || 'Erro ao solicitar recuperação.');
     } finally {
       setIsResetSubmitting(false);
     }
@@ -839,8 +839,8 @@ const LojaPublica: React.FC = () => {
         setAuthTab('login');
         setShowAuthModal(true);
       }, 1500);
-    } catch (err: any) {
-      setResetError(err.message || 'Erro ao redefinir senha.');
+    } catch (err: unknown) {
+      setResetError((err instanceof Error ? err.message : 'Erro inesperado') || 'Erro ao redefinir senha.');
     } finally {
       setIsResetSubmitting(false);
     }
@@ -852,7 +852,7 @@ const LojaPublica: React.FC = () => {
     try {
       const result = await callApi('getHistoricoComprador', { token: compradorToken });
       setHistorico(result.data || []);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setHistorico([]);
     } finally {
       setIsLoadingHistorico(false);
@@ -936,8 +936,8 @@ const LojaPublica: React.FC = () => {
       setCompradorInfo(updatedInfo);
       localStorage.setItem(COMPRADOR_INFO_KEY, JSON.stringify(updatedInfo));
       setShowEditProfileModal(false);
-    } catch (err: any) {
-      setEditProfileError(err.message || 'Erro ao salvar perfil.');
+    } catch (err: unknown) {
+      setEditProfileError((err instanceof Error ? err.message : 'Erro inesperado') || 'Erro ao salvar perfil.');
     } finally {
       setIsSavingProfile(false);
     }
@@ -950,8 +950,8 @@ const LojaPublica: React.FC = () => {
       await callApi('deletarComprador', { token: compradorToken });
       handleLogoutComprador();
       setShowEditProfileModal(false);
-    } catch (err: any) {
-      setEditProfileError(err.message || 'Erro ao excluir conta.');
+    } catch (err: unknown) {
+      setEditProfileError((err instanceof Error ? err.message : 'Erro inesperado') || 'Erro ao excluir conta.');
     } finally {
       setIsDeletingAccount(false);
       setShowDeleteAccountConfirm(false);

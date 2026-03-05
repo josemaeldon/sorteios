@@ -17,7 +17,7 @@ interface AuthContextType extends AuthState {
   setupAdmin: (email: string, senha: string, nome: string, titulo_sistema: string) => Promise<{ success: boolean; error?: string }>;
   updateProfile: (data: { nome: string; email: string; titulo_sistema: string; avatar_url?: string; senha_atual?: string; nova_senha?: string }) => Promise<{ success: boolean; error?: string }>;
   getAuthToken: () => string | null;
-  getAllSorteiosAdmin: () => Promise<any[]>;
+  getAllSorteiosAdmin: () => Promise<Sorteio[]>;
   getSorteioUsers: (sorteioId: string) => Promise<{ data: User[]; owner_id: string }>;
   assignSorteioToUser: (sorteioId: string, userId: string) => Promise<{ success: boolean; error?: string }>;
   removeUserFromSorteio: (sorteioId: string, userId: string) => Promise<{ success: boolean; error?: string }>;
@@ -76,11 +76,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       const result = await callApi('checkFirstAccess');
       return result.isFirstAccess === true;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error checking first access:', error);
       // Check if the error is due to database not being configured
-      if (error.message?.includes('Banco de dados não configurado') || 
-          error.message?.includes('503')) {
+      if (getErrorMessage(error)?.includes('Banco de dados não configurado') || 
+          getErrorMessage(error)?.includes('503')) {
         // Redirect to setup page
         window.location.href = '/setup';
         return true;
@@ -104,9 +104,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
       
       return { success: false, error: result.error || 'Erro ao criar administrador' };
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Setup admin error:', error);
-      return { success: false, error: error.message || 'Erro ao criar administrador' };
+      return { success: false, error: getErrorMessage(error) || 'Erro ao criar administrador' };
     }
   }, [toast]);
 
@@ -128,9 +128,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
       
       return { success: false, error: result.error || 'Credenciais inválidas' };
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Login error:', error);
-      return { success: false, error: error.message || 'Erro ao fazer login' };
+      return { success: false, error: getErrorMessage(error) || 'Erro ao fazer login' };
     } finally {
       setIsLoading(false);
     }
@@ -154,8 +154,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return { success: true };
       }
       return { success: false, error: result.error || 'Erro ao realizar cadastro' };
-    } catch (error: any) {
-      return { success: false, error: error.message || 'Erro ao realizar cadastro' };
+    } catch (error: unknown) {
+      return { success: false, error: getErrorMessage(error) || 'Erro ao realizar cadastro' };
     }
   }, []);
 
@@ -168,8 +168,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return { success: true };
       }
       return { success: false, error: result.error || 'Erro ao aprovar usuário' };
-    } catch (error: any) {
-      return { success: false, error: error.message || 'Erro ao aprovar usuário' };
+    } catch (error: unknown) {
+      return { success: false, error: getErrorMessage(error) || 'Erro ao aprovar usuário' };
     }
   }, [user, toast]);
 
@@ -182,8 +182,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return { success: true };
       }
       return { success: false, error: result.error || 'Erro ao rejeitar usuário' };
-    } catch (error: any) {
-      return { success: false, error: error.message || 'Erro ao rejeitar usuário' };
+    } catch (error: unknown) {
+      return { success: false, error: getErrorMessage(error) || 'Erro ao rejeitar usuário' };
     }
   }, [user, toast]);
 
@@ -204,9 +204,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
       
       return { success: false, error: result.error || 'Erro ao criar usuário' };
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Create user error:', error);
-      return { success: false, error: error.message || 'Erro ao criar usuário' };
+      return { success: false, error: getErrorMessage(error) || 'Erro ao criar usuário' };
     }
   }, [user, toast]);
 
@@ -227,9 +227,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
       
       return { success: false, error: result.error || 'Erro ao atualizar usuário' };
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Update user error:', error);
-      return { success: false, error: error.message || 'Erro ao atualizar usuário' };
+      return { success: false, error: getErrorMessage(error) || 'Erro ao atualizar usuário' };
     }
   }, [user, toast]);
 
@@ -254,9 +254,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
       
       return { success: false, error: result.error || 'Erro ao excluir usuário' };
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Delete user error:', error);
-      return { success: false, error: error.message || 'Erro ao excluir usuário' };
+      return { success: false, error: getErrorMessage(error) || 'Erro ao excluir usuário' };
     }
   }, [user, toast]);
 
@@ -304,13 +304,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
       
       return { success: false, error: result.error || 'Erro ao atualizar perfil' };
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Update profile error:', error);
-      return { success: false, error: error.message || 'Erro ao atualizar perfil' };
+      return { success: false, error: getErrorMessage(error) || 'Erro ao atualizar perfil' };
     }
   }, [user]);
 
-  const getAllSorteiosAdmin = useCallback(async (): Promise<any[]> => {
+  const getAllSorteiosAdmin = useCallback(async (): Promise<Sorteio[]> => {
     if (user?.role !== 'admin') return [];
     try {
       const result = await callApi('getAllSorteiosAdmin');
@@ -336,8 +336,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       await callApi('assignSorteioToUser', { sorteio_id: sorteioId, user_id: userId });
       return { success: true };
-    } catch (error: any) {
-      return { success: false, error: error.message || 'Erro ao atribuir sorteio' };
+    } catch (error: unknown) {
+      return { success: false, error: getErrorMessage(error) || 'Erro ao atribuir sorteio' };
     }
   }, [user]);
 
@@ -346,8 +346,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       await callApi('removeUserFromSorteio', { sorteio_id: sorteioId, user_id: userId });
       return { success: true };
-    } catch (error: any) {
-      return { success: false, error: error.message || 'Erro ao remover atribuição' };
+    } catch (error: unknown) {
+      return { success: false, error: getErrorMessage(error) || 'Erro ao remover atribuição' };
     }
   }, [user]);
 
@@ -356,8 +356,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       await callApi('changeSorteioOwner', { sorteio_id: sorteioId, new_owner_id: newOwnerId });
       return { success: true };
-    } catch (error: any) {
-      return { success: false, error: error.message || 'Erro ao alterar proprietário' };
+    } catch (error: unknown) {
+      return { success: false, error: getErrorMessage(error) || 'Erro ao alterar proprietário' };
     }
   }, [user]);
 
@@ -391,8 +391,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return { success: true };
       }
       return { success: false, error: result.error || 'Erro ao criar plano' };
-    } catch (error: any) {
-      return { success: false, error: error.message || 'Erro ao criar plano' };
+    } catch (error: unknown) {
+      return { success: false, error: getErrorMessage(error) || 'Erro ao criar plano' };
     }
   }, [user, toast]);
 
@@ -405,8 +405,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return { success: true };
       }
       return { success: false, error: result.error || 'Erro ao atualizar plano' };
-    } catch (error: any) {
-      return { success: false, error: error.message || 'Erro ao atualizar plano' };
+    } catch (error: unknown) {
+      return { success: false, error: getErrorMessage(error) || 'Erro ao atualizar plano' };
     }
   }, [user, toast]);
 
@@ -419,8 +419,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return { success: true };
       }
       return { success: false, error: result.error || 'Erro ao excluir plano' };
-    } catch (error: any) {
-      return { success: false, error: error.message || 'Erro ao excluir plano' };
+    } catch (error: unknown) {
+      return { success: false, error: getErrorMessage(error) || 'Erro ao excluir plano' };
     }
   }, [user, toast]);
 
@@ -433,8 +433,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return { success: true };
       }
       return { success: false, error: result.error || 'Erro ao atribuir plano' };
-    } catch (error: any) {
-      return { success: false, error: error.message || 'Erro ao atribuir plano' };
+    } catch (error: unknown) {
+      return { success: false, error: getErrorMessage(error) || 'Erro ao atribuir plano' };
     }
   }, [user, toast]);
 
@@ -450,8 +450,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return { success: true };
       }
       return { success: false, error: result.error || 'Erro ao alterar gratuidade' };
-    } catch (error: any) {
-      return { success: false, error: error.message || 'Erro ao alterar gratuidade' };
+    } catch (error: unknown) {
+      return { success: false, error: getErrorMessage(error) || 'Erro ao alterar gratuidade' };
     }
   }, [user, toast]);
 
@@ -475,8 +475,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return { success: true };
       }
       return { success: false, error: result.error || 'Erro ao salvar configurações' };
-    } catch (error: any) {
-      return { success: false, error: error.message || 'Erro ao salvar configurações' };
+    } catch (error: unknown) {
+      return { success: false, error: getErrorMessage(error) || 'Erro ao salvar configurações' };
     }
   }, [user, toast]);
 
@@ -498,12 +498,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return { success: true };
       }
       return { success: false, error: result.error || 'Erro ao salvar configurações' };
-    } catch (error: any) {
-      return { success: false, error: error.message || 'Erro ao salvar configurações' };
+    } catch (error: unknown) {
+      return { success: false, error: getErrorMessage(error) || 'Erro ao salvar configurações' };
     }
   }, [toast]);
 
-  const getLojaCompradores = useCallback(async (): Promise<any[]> => {
+  const getLojaCompradores = useCallback(async (): Promise<Sorteio[]> => {
     try {
       const result = await callApi('getLojaCompradores');
       return result.data || [];
@@ -531,8 +531,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return { success: true };
       }
       return { success: false, error: result.error || 'Erro ao adicionar cliente' };
-    } catch (error: any) {
-      return { success: false, error: error.message || 'Erro ao adicionar cliente' };
+    } catch (error: unknown) {
+      return { success: false, error: getErrorMessage(error) || 'Erro ao adicionar cliente' };
     }
   }, [toast]);
 
@@ -544,8 +544,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return { success: true };
       }
       return { success: false, error: result.error || 'Erro ao atualizar cliente' };
-    } catch (error: any) {
-      return { success: false, error: error.message || 'Erro ao atualizar cliente' };
+    } catch (error: unknown) {
+      return { success: false, error: getErrorMessage(error) || 'Erro ao atualizar cliente' };
     }
   }, [toast]);
 
@@ -557,8 +557,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return { success: true };
       }
       return { success: false, error: result.error || 'Erro ao remover cliente' };
-    } catch (error: any) {
-      return { success: false, error: error.message || 'Erro ao remover cliente' };
+    } catch (error: unknown) {
+      return { success: false, error: getErrorMessage(error) || 'Erro ao remover cliente' };
     }
   }, [toast]);
 
@@ -573,8 +573,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return { url: result.url };
       }
       return { error: result.error || 'Erro ao iniciar checkout' };
-    } catch (error: any) {
-      return { error: error.message || 'Erro ao iniciar checkout' };
+    } catch (error: unknown) {
+      return { error: getErrorMessage(error) || 'Erro ao iniciar checkout' };
     }
   }, []);
 
@@ -600,8 +600,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return { success: true };
       }
       return { success: false, error: result.error || 'Erro ao confirmar pagamento' };
-    } catch (error: any) {
-      return { success: false, error: error.message || 'Erro ao confirmar pagamento' };
+    } catch (error: unknown) {
+      return { success: false, error: getErrorMessage(error) || 'Erro ao confirmar pagamento' };
     }
   }, []);
 

@@ -107,10 +107,10 @@ const TransferenciaModal: React.FC<TransferenciaModalProps> = ({
       });
 
       onClose();
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast({
         title: "Erro ao transferir",
-        description: error.message || "Não foi possível transferir as cartelas.",
+        description: (error instanceof Error ? error.message : 'Erro inesperado') || "Não foi possível transferir as cartelas.",
         variant: "destructive"
       });
     } finally {

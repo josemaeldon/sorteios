@@ -9,7 +9,7 @@ interface ApiConfig {
 const isPlaceholder = (value: string): boolean => value.startsWith('__') && value.endsWith('__');
 
 const getEnv = (key: string): string => {
-  const v = (import.meta as any).env?.[key] ?? '';
+  const v = import.meta.env?.[key as keyof ImportMetaEnv] ?? '';
   return typeof v === 'string' && !isPlaceholder(v) ? v : '';
 };
 
@@ -67,7 +67,7 @@ const getAuthHeaders = (): Record<string, string> => {
 };
 
 // API call function
-export const callApi = async (action: string, data: Record<string, any> = {}): Promise<any> => {
+export const callApi = async (action: string, data: Record<string, unknown> = {}): Promise<unknown> => {
   console.log(`API Call: ${action}`, data);
   
   // Direct HTTP call to backend API
@@ -84,7 +84,7 @@ export const callApi = async (action: string, data: Record<string, any> = {}): P
     }
     const errorData = await response.json().catch(() => ({ error: 'Erro desconhecido' }));
     const err = new Error(errorData.error || `HTTP ${response.status}`);
-    if (errorData.code) (err as any).code = errorData.code;
+    if (errorData.code) (err as Error & { code?: string }).code = errorData.code;
     throw err;
   }
   

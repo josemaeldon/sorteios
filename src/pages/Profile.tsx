@@ -285,11 +285,11 @@ const Profile: React.FC = () => {
         setIsUploading(false);
       };
       reader.readAsDataURL(file);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Upload error:', error);
       toast({
         title: "Erro ao carregar imagem",
-        description: error.message || "Tente novamente.",
+        description: (error instanceof Error ? error.message : 'Erro inesperado') || "Tente novamente.",
         variant: "destructive",
       });
       setIsUploading(false);
@@ -312,7 +312,7 @@ const Profile: React.FC = () => {
         const newErrors: Record<string, string> = {};
         error.errors.forEach((err) => {
           if (err.path[0]) {
-            newErrors[err.path[0] as string] = err.message;
+            newErrors[err.path[0] as string] = (err instanceof Error ? err.message : 'Erro inesperado');
           }
         });
         setErrors(newErrors);
@@ -329,7 +329,7 @@ const Profile: React.FC = () => {
           const newErrors: Record<string, string> = {};
           error.errors.forEach((err) => {
             if (err.path[0]) {
-              newErrors[err.path[0] as string] = err.message;
+              newErrors[err.path[0] as string] = (err instanceof Error ? err.message : 'Erro inesperado');
             }
           });
           setErrors(newErrors);
@@ -340,7 +340,7 @@ const Profile: React.FC = () => {
     
     setIsSubmitting(true);
     
-    const updateData: any = {
+    const updateData: Record<string, unknown> = {
       nome: formData.nome,
       email: formData.email,
       titulo_sistema: formData.titulo_sistema,

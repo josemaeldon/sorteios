@@ -1,8 +1,31 @@
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
-import * as XLSX from 'xlsx';
 import { Venda, Cartela, Vendedor, Atribuicao, Sorteio } from '@/types/bingo';
 import { formatarMoeda, formatarDataHora, getStatusLabel, formatarNumeroCartela } from './formatters';
+
+type JsPdfCtor = (typeof import('jspdf'))['default'];
+type AutoTableFn = (typeof import('jspdf-autotable'))['default'];
+type XlsxModule = typeof import('xlsx');
+
+let pdfToolsPromise: Promise<{ jsPDF: JsPdfCtor; autoTable: AutoTableFn }> | null = null;
+let xlsxPromise: Promise<XlsxModule> | null = null;
+
+const loadPdfTools = async (): Promise<{ jsPDF: JsPdfCtor; autoTable: AutoTableFn }> => {
+  if (!pdfToolsPromise) {
+    pdfToolsPromise = Promise.all([import('jspdf'), import('jspdf-autotable')]).then(
+      ([jspdfModule, autoTableModule]) => ({
+        jsPDF: jspdfModule.default,
+        autoTable: autoTableModule.default,
+      }),
+    );
+  }
+  return pdfToolsPromise;
+};
+
+const loadXlsx = async (): Promise<XlsxModule> => {
+  if (!xlsxPromise) {
+    xlsxPromise = import('xlsx');
+  }
+  return xlsxPromise;
+};
 
 // Helper function to parse cartelas string to array
 const parseCartelas = (numeros_cartelas: string): number[] => {
@@ -18,7 +41,8 @@ const formatPremio = (premio: string | number): string => {
 };
 
 // PDF Export Functions
-export const exportVendasPDF = (vendas: Venda[], sorteio: Sorteio, vendedores: Vendedor[]) => {
+export const exportVendasPDF = async (vendas: Venda[], sorteio: Sorteio, vendedores: Vendedor[]) => {
+  const { jsPDF, autoTable } = await loadPdfTools();
   const doc = new jsPDF();
   
   // Header
@@ -73,7 +97,8 @@ export const exportVendasPDF = (vendas: Venda[], sorteio: Sorteio, vendedores: V
   doc.save(`vendas-${sorteio.nome.replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.pdf`);
 };
 
-export const exportCartelasPDF = (cartelas: Cartela[], sorteio: Sorteio) => {
+export const exportCartelasPDF = async (cartelas: Cartela[], sorteio: Sorteio) => {
+  const { jsPDF, autoTable } = await loadPdfTools();
   const doc = new jsPDF();
   
   // Header
@@ -118,7 +143,8 @@ export const exportCartelasPDF = (cartelas: Cartela[], sorteio: Sorteio) => {
   doc.save(`cartelas-${sorteio.nome.replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.pdf`);
 };
 
-export const exportAtribuicoesPDF = (atribuicoes: Atribuicao[], sorteio: Sorteio, vendedores: Vendedor[]) => {
+export const exportAtribuicoesPDF = async (atribuicoes: Atribuicao[], sorteio: Sorteio, vendedores: Vendedor[]) => {
+  const { jsPDF, autoTable } = await loadPdfTools();
   const doc = new jsPDF();
   
   // Header
@@ -170,7 +196,8 @@ export const exportAtribuicoesPDF = (atribuicoes: Atribuicao[], sorteio: Sorteio
   doc.save(`atribuicoes-${sorteio.nome.replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.pdf`);
 };
 
-export const exportVendedoresPDF = (vendedores: Vendedor[], atribuicoes: Atribuicao[], vendas: Venda[], sorteio: Sorteio) => {
+export const exportVendedoresPDF = async (vendedores: Vendedor[], atribuicoes: Atribuicao[], vendas: Venda[], sorteio: Sorteio) => {
+  const { jsPDF, autoTable } = await loadPdfTools();
   const doc = new jsPDF();
   
   // Header
@@ -212,7 +239,8 @@ export const exportVendedoresPDF = (vendedores: Vendedor[], atribuicoes: Atribui
 };
 
 // Excel Export Functions
-export const exportVendasExcel = (vendas: Venda[], sorteio: Sorteio, vendedores: Vendedor[]) => {
+export const exportVendasExcel = async (vendas: Venda[], sorteio: Sorteio, vendedores: Vendedor[]) => {
+  const XLSX = await loadXlsx();
   const data = vendas.map(venda => {
     const vendedor = vendedores.find(v => v.id === venda.vendedor_id);
     const cartelas = parseCartelas(venda.numeros_cartelas);
@@ -245,7 +273,8 @@ export const exportVendasExcel = (vendas: Venda[], sorteio: Sorteio, vendedores:
   XLSX.writeFile(wb, `vendas-${sorteio.nome.replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.xlsx`);
 };
 
-export const exportCartelasExcel = (cartelas: Cartela[], sorteio: Sorteio) => {
+export const exportCartelasExcel = async (cartelas: Cartela[], sorteio: Sorteio) => {
+  const XLSX = await loadXlsx();
   const data = cartelas.map(cartela => ({
     'Número': formatarNumeroCartela(cartela.numero),
     'Status': getStatusLabel(cartela.status),
@@ -262,7 +291,8 @@ export const exportCartelasExcel = (cartelas: Cartela[], sorteio: Sorteio) => {
   XLSX.writeFile(wb, `cartelas-${sorteio.nome.replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.xlsx`);
 };
 
-export const exportAtribuicoesExcel = (atribuicoes: Atribuicao[], sorteio: Sorteio, vendedores: Vendedor[]) => {
+export const exportAtribuicoesExcel = async (atribuicoes: Atribuicao[], sorteio: Sorteio, vendedores: Vendedor[]) => {
+  const XLSX = await loadXlsx();
   const data = atribuicoes.flatMap(atrib => {
     const vendedor = vendedores.find(v => v.id === atrib.vendedor_id);
     return atrib.cartelas.map(cartela => ({
@@ -284,7 +314,8 @@ export const exportAtribuicoesExcel = (atribuicoes: Atribuicao[], sorteio: Sorte
   XLSX.writeFile(wb, `atribuicoes-${sorteio.nome.replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.xlsx`);
 };
 
-export const exportVendedoresExcel = (vendedores: Vendedor[], atribuicoes: Atribuicao[], vendas: Venda[], sorteio: Sorteio) => {
+export const exportVendedoresExcel = async (vendedores: Vendedor[], atribuicoes: Atribuicao[], vendas: Venda[], sorteio: Sorteio) => {
+  const XLSX = await loadXlsx();
   const data = vendedores.map(vendedor => {
     const atribuicao = atribuicoes.find(a => a.vendedor_id === vendedor.id);
     const vendasVendedor = vendas.filter(v => v.vendedor_id === vendedor.id);
@@ -313,13 +344,14 @@ export const exportVendedoresExcel = (vendedores: Vendedor[], atribuicoes: Atrib
 };
 
 // Complete Report PDF
-export const exportRelatorioCompletoPDF = (
+export const exportRelatorioCompletoPDF = async (
   sorteio: Sorteio,
   vendedores: Vendedor[],
   cartelas: Cartela[],
   atribuicoes: Atribuicao[],
   vendas: Venda[]
 ) => {
+  const { jsPDF, autoTable } = await loadPdfTools();
   const doc = new jsPDF();
   
   // Cover page

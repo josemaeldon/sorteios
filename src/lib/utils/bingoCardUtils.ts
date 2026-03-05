@@ -1,5 +1,23 @@
-import jsPDF from 'jspdf';
-import JsBarcode from 'jsbarcode';
+type JsPdfCtor = (typeof import('jspdf'))['default'];
+type JsBarcodeFn = (typeof import('jsbarcode'))['default'];
+type JsPdfInstance = InstanceType<JsPdfCtor>;
+
+let jsPdfCtorPromise: Promise<JsPdfCtor> | null = null;
+let jsBarcodeFnPromise: Promise<JsBarcodeFn> | null = null;
+
+const loadJsPdfCtor = async (): Promise<JsPdfCtor> => {
+  if (!jsPdfCtorPromise) {
+    jsPdfCtorPromise = import('jspdf').then((module) => module.default);
+  }
+  return jsPdfCtorPromise;
+};
+
+const loadJsBarcodeFn = async (): Promise<JsBarcodeFn> => {
+  if (!jsBarcodeFnPromise) {
+    jsBarcodeFnPromise = import('jsbarcode').then((module) => module.default);
+  }
+  return jsBarcodeFnPromise;
+};
 
 export const BINGO_COLS = ['B', 'I', 'N', 'G', 'O'] as const;
 export const A4_W_MM = 210;
@@ -174,10 +192,15 @@ function hexToRgb(hex: string): [number, number, number] {
 }
 
 /** Render a barcode for `value` to a PNG data-URL using JsBarcode on a canvas */
-function renderBarcodeToDataUrl(value: string, format: string, showText: boolean): string | null {
+function renderBarcodeToDataUrl(
+  value: string,
+  format: string,
+  showText: boolean,
+  jsBarcode: JsBarcodeFn,
+): string | null {
   try {
     const canvas = document.createElement('canvas');
-    JsBarcode(canvas, value, {
+    jsBarcode(canvas, value, {
       format: format,
       displayValue: showText,
       margin: 4,
@@ -192,7 +215,7 @@ function renderBarcodeToDataUrl(value: string, format: string, showText: boolean
 
 /** Render all elements of one card onto the doc at an (offsetX, offsetY) position (in mm). */
 async function renderCardToPdf(
-  doc: jsPDF,
+  doc: JsPdfInstance,
   card: BingoCardGrid,
   layout: CanvasLayout,
   offsetX: number,
@@ -202,6 +225,7 @@ async function renderCardToPdf(
   gridCols: number,
   gridRows: number,
   rifaOnly: boolean,
+  jsBarcode: JsBarcodeFn,
   buyerData?: BuyerData,
 ) {
   const numeroPremios = card.grids.length;
@@ -259,7 +283,7 @@ async function renderCardToPdf(
       const barcodeValue = card.cartelaNumero.toString().padStart(6, '0');
       const format = oel.barcodeFormat ?? 'CODE128';
       const showText = oel.showBarcodeText !== false;
-      const dataUrl = renderBarcodeToDataUrl(barcodeValue, format, showText);
+      const dataUrl = renderBarcodeToDataUrl(barcodeValue, format, showText, jsBarcode);
       if (dataUrl) {
         doc.addImage(dataUrl, 'PNG', oel.x, oel.y, oel.width, oel.height);
       }
@@ -282,7 +306,7 @@ async function renderCardToPdf(
 }
 
 function drawGridPdf(
-  doc: jsPDF,
+  doc: JsPdfInstance,
   el: CanvasElement,
   grid: number[][],
   offsetY: number = 0,
@@ -367,6 +391,7 @@ export async function exportBingoCardsPDF(
   rifaOnly: boolean = false,
   a4MultiPerPage: boolean = false,
 ): Promise<Blob> {
+  const [jsPDF, jsBarcode] = await Promise.all([loadJsPdfCtor(), loadJsBarcodeFn()]);
   const ticketW = Number(paperWidthMm);
   const ticketH = Number(paperHeightMm);
 
@@ -394,7 +419,20 @@ export async function exportBingoCardsPDF(
       const offsetX = startX + col * (ticketW + GAP);
       const offsetY = startY + row * (ticketH + GAP);
 
-      await renderCardToPdf(doc, cards[i], layout, offsetX, offsetY, ticketW, ticketH, gridCols, gridRows, rifaOnly, buyerData);
+      await renderCardToPdf(
+        doc,
+        cards[i],
+        layout,
+        offsetX,
+        offsetY,
+        ticketW,
+        ticketH,
+        gridCols,
+        gridRows,
+        rifaOnly,
+        jsBarcode,
+        buyerData,
+      );
     }
 
     doc.save(
@@ -412,7 +450,20 @@ export async function exportBingoCardsPDF(
 
   for (let i = 0; i < cards.length; i++) {
     if (i > 0) doc.addPage();
-    await renderCardToPdf(doc, cards[i], layout, 0, 0, pageWidth, pageHeight, gridCols, gridRows, rifaOnly, buyerData);
+    await renderCardToPdf(
+      doc,
+      cards[i],
+      layout,
+      0,
+      0,
+      pageWidth,
+      pageHeight,
+      gridCols,
+      gridRows,
+      rifaOnly,
+      jsBarcode,
+      buyerData,
+    );
   }
 
   doc.save(

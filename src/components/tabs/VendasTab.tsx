@@ -159,7 +159,7 @@ const VendasTab: React.FC = () => {
             </label>
             <Select 
               value={filtrosVendas.status} 
-              onValueChange={(value: any) => setFiltrosVendas({ ...filtrosVendas, status: value })}
+              onValueChange={(value: string) => setFiltrosVendas({ ...filtrosVendas, status: value })}
             >
               <SelectTrigger>
                 <SelectValue />
@@ -198,7 +198,7 @@ const VendasTab: React.FC = () => {
             </label>
             <Select 
               value={filtrosVendas.periodo} 
-              onValueChange={(value: any) => setFiltrosVendas({ ...filtrosVendas, periodo: value })}
+              onValueChange={(value: string) => setFiltrosVendas({ ...filtrosVendas, periodo: value })}
             >
               <SelectTrigger>
                 <SelectValue />

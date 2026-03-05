@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { User, CreateUserData, UserRole, Plan } from '@/types/auth';
@@ -134,41 +134,24 @@ const Admin: React.FC = () => {
     titulo_sistema: 'Sorteios',
   });
 
-  useEffect(() => {
-    if (!isAuthenticated) {
-      navigate('/auth');
-      return;
-    }
-    
-    if (user?.role !== 'admin') {
-      navigate('/');
-      return;
-    }
-    
-    loadUsers();
-    loadSorteios();
-    loadPlanos();
-    loadConfig();
-  }, [isAuthenticated, user, navigate]);
-
-  const loadUsers = async () => {
+  const loadUsers = useCallback(async () => {
     setIsLoading(true);
     const data = await getAllUsers();
     setUsers(data);
     setIsLoading(false);
-  };
+  }, [getAllUsers]);
 
-  const loadSorteios = async () => {
+  const loadSorteios = useCallback(async () => {
     const data = await getAllSorteiosAdmin();
     setSorteios(data);
-  };
+  }, [getAllSorteiosAdmin]);
 
-  const loadPlanos = async () => {
+  const loadPlanos = useCallback(async () => {
     const data = await getPlanos();
     setPlanos(data);
-  };
+  }, [getPlanos]);
 
-  const loadConfig = async () => {
+  const loadConfig = useCallback(async () => {
     setIsLoadingConfig(true);
     const config = await getConfiguracoes();
     setPaymentGateway((config['payment_gateway'] as 'stripe' | 'mercado_pago') || 'stripe');
@@ -203,7 +186,24 @@ const Admin: React.FC = () => {
     if (config['email_redefinicao_assunto'])          setTplResetSubject(config['email_redefinicao_assunto']);
     if (config['email_redefinicao_corpo'])            setTplResetBody(config['email_redefinicao_corpo']);
     setIsLoadingConfig(false);
-  };
+  }, [getConfiguracoes]);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      navigate('/auth');
+      return;
+    }
+
+    if (user?.role !== 'admin') {
+      navigate('/');
+      return;
+    }
+
+    loadUsers();
+    loadSorteios();
+    loadPlanos();
+    loadConfig();
+  }, [isAuthenticated, user, navigate, loadUsers, loadSorteios, loadPlanos, loadConfig]);
 
   const handleSaveConfig = async () => {
     setIsSavingConfig(true);
@@ -466,7 +466,7 @@ const Admin: React.FC = () => {
     }
   };
 
-  const handleOpenAssignModal = async (sorteio: any) => {
+  const handleOpenAssignModal = async (sorteio: Sorteio) => {
     setSelectedSorteio(sorteio);
     setAssignUserId('');
     setIsLoadingAssign(true);

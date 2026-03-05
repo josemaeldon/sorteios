@@ -84,19 +84,19 @@ const DrawTab: React.FC = () => {
       const historyResult = await callApi('getRodadaHistorico', { rodada_id: rodadaId });
       
       if (historyResult.data && historyResult.data.length > 0) {
-        const sortedHistory = historyResult.data.sort((a: any, b: any) => a.ordem - b.ordem);
-        const numbers = sortedHistory.map((item: any) => item.numero_sorteado);
+        const sortedHistory = (historyResult.data as Array<{ ordem: number; numero_sorteado: number }>).sort((a, b) => a.ordem - b.ordem);
+        const numbers = sortedHistory.map((item) => item.numero_sorteado);
         setDrawnNumbers(numbers);
         
         if (numbers.length > 0) {
           setCurrentNumber(numbers[numbers.length - 1]);
         }
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error loading rodada:', error);
       toast({
         title: "Erro ao carregar rodada",
-        description: error.message,
+        description: (error instanceof Error ? error.message : 'Erro inesperado'),
         variant: "destructive"
       });
     } finally {
@@ -113,11 +113,11 @@ const DrawTab: React.FC = () => {
         numero_sorteado: numero,
         ordem: ordem
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error saving drawn number:', error);
       toast({
         title: "Erro ao salvar número",
-        description: error.message,
+        description: (error instanceof Error ? error.message : 'Erro inesperado'),
         variant: "destructive"
       });
     }
@@ -128,11 +128,11 @@ const DrawTab: React.FC = () => {
     
     try {
       await callApi('clearRodadaHistorico', { rodada_id: selectedRodada.id });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error clearing draw history:', error);
       toast({
         title: "Erro ao limpar histórico",
-        description: error.message,
+        description: (error instanceof Error ? error.message : 'Erro inesperado'),
         variant: "destructive"
       });
     }
