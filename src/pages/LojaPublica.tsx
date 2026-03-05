@@ -215,7 +215,14 @@ const LojaPublica: React.FC = () => {
 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [owner, setOwner] = useState<{ id?: string; nome: string; titulo_sistema: string } | null>(null);
+  const [owner, setOwner] = useState<{
+    id?: string;
+    nome: string;
+    titulo_sistema: string;
+    favicon_url?: string | null;
+    logo_url?: string | null;
+    hero_image_url?: string | null;
+  } | null>(null);
   // The resolved owner user ID (from URL or from loaded store data)
   const ownerUserIdRef = useRef<string | undefined>(userId);
   const [cartelas, setCartelas] = useState<LojaCartela[]>([]);
@@ -384,6 +391,21 @@ const LojaPublica: React.FC = () => {
   useEffect(() => {
     loadLoja();
   }, [loadLoja]);
+
+  useEffect(() => {
+    if (!owner) return;
+
+    document.title = owner.titulo_sistema || owner.nome || 'Loja de Cartelas';
+
+    if (!owner.favicon_url) return;
+    let link = document.querySelector("link[rel*='icon']") as HTMLLinkElement | null;
+    if (!link) {
+      link = document.createElement('link');
+      link.rel = 'icon';
+      document.head.appendChild(link);
+    }
+    link.href = owner.favicon_url;
+  }, [owner]);
 
   // Load buyer auth from localStorage
   useEffect(() => {
@@ -962,11 +984,26 @@ const LojaPublica: React.FC = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       {/* Header */}
-      <div className="bg-gradient-to-r from-blue-900 to-blue-700 text-white py-10 px-4 text-center shadow-lg">
+      <div
+        className="text-white py-10 px-4 text-center shadow-lg bg-gradient-to-r from-blue-900 to-blue-700"
+        style={owner?.hero_image_url ? {
+          backgroundImage: `linear-gradient(rgba(30, 58, 138, 0.80), rgba(29, 78, 216, 0.75)), url(${owner.hero_image_url})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+        } : undefined}
+      >
         <div className="flex justify-center mb-3">
-          <div className="bg-white/20 p-3 rounded-2xl">
-            <Ticket className="w-10 h-10" />
-          </div>
+          {owner?.logo_url ? (
+            <img
+              src={owner.logo_url}
+              alt={owner.titulo_sistema || owner.nome}
+              className="h-14 w-auto max-w-[220px] object-contain rounded-lg bg-white/90 p-2"
+            />
+          ) : (
+            <div className="bg-white/20 p-3 rounded-2xl">
+              <Ticket className="w-10 h-10" />
+            </div>
+          )}
         </div>
         {owner ? (
           <>

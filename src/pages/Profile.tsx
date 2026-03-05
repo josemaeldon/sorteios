@@ -17,7 +17,7 @@ import {
   ArrowLeft, User, Loader2, Save, Camera, X, Lock, Mail, Type,
   CreditCard, CheckCircle, Settings, Users, Plus, Pencil, Trash2,
   HelpCircle, Dice5, BarChart3, Shuffle, Grid3X3, LayoutGrid,
-  ListTodo, ShoppingCart, PieChart, Store, Eye,
+  ListTodo, ShoppingCart, PieChart, Store, Eye, Image as ImageIcon,
 } from 'lucide-react';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
@@ -71,6 +71,7 @@ const Profile: React.FC = () => {
   const paymentSuccess = searchParams.get('payment') === 'success';
   const defaultTab = searchParams.get('tab') === 'assinatura' ? 'assinatura'
     : searchParams.get('tab') === 'pagamentos' ? 'pagamentos'
+    : searchParams.get('tab') === 'aparencia' ? 'aparencia'
     : searchParams.get('tab') === 'clientes' ? 'clientes'
     : searchParams.get('tab') === 'ajuda' ? 'ajuda'
     : 'dados';
@@ -79,6 +80,15 @@ const Profile: React.FC = () => {
   const [gatewayConfig, setGatewayConfig] = useState<Record<string, string>>({});
   const [isLoadingGateway, setIsLoadingGateway] = useState(false);
   const [isSavingGateway, setIsSavingGateway] = useState(false);
+
+  // Store branding state
+  const [brandingConfig, setBrandingConfig] = useState<Record<string, string>>({
+    loja_favicon_url: '',
+    loja_logo_url: '',
+    loja_hero_image_url: '',
+  });
+  const [isLoadingBranding, setIsLoadingBranding] = useState(false);
+  const [isSavingBranding, setIsSavingBranding] = useState(false);
 
   // Store clients state
   const [lojaCompradores, setLojaCompradores] = useState<LojaComprador[]>([]);
@@ -146,6 +156,17 @@ const Profile: React.FC = () => {
     setIsLoadingGateway(false);
   };
 
+  const loadBrandingConfig = async () => {
+    setIsLoadingBranding(true);
+    const cfg = await getUserConfiguracoes();
+    setBrandingConfig({
+      loja_favicon_url: cfg['loja_favicon_url'] || '',
+      loja_logo_url: cfg['loja_logo_url'] || '',
+      loja_hero_image_url: cfg['loja_hero_image_url'] || '',
+    });
+    setIsLoadingBranding(false);
+  };
+
   const handleSaveGateway = async () => {
     setIsSavingGateway(true);
     const result = await updateUserConfiguracoes(gatewayConfig);
@@ -153,6 +174,50 @@ const Profile: React.FC = () => {
     if (!result.success) {
       toast({ title: 'Erro', description: result.error || 'Erro ao salvar configurações.', variant: 'destructive' });
     }
+  };
+
+  const readFileAsDataUrl = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(new Error('Falha ao ler arquivo.'));
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleBrandingUpload = async (
+    field: 'loja_favicon_url' | 'loja_logo_url' | 'loja_hero_image_url',
+    file: File | null,
+  ) => {
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      toast({ title: 'Arquivo inválido', description: 'Selecione uma imagem válida.', variant: 'destructive' });
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      toast({ title: 'Arquivo muito grande', description: 'Use imagens de até 2MB.', variant: 'destructive' });
+      return;
+    }
+
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      setBrandingConfig((prev) => ({ ...prev, [field]: dataUrl }));
+    } catch {
+      toast({ title: 'Erro', description: 'Não foi possível carregar a imagem.', variant: 'destructive' });
+    }
+  };
+
+  const handleSaveBranding = async () => {
+    setIsSavingBranding(true);
+    const result = await updateUserConfiguracoes(brandingConfig);
+    setIsSavingBranding(false);
+    if (!result.success) {
+      toast({ title: 'Erro', description: result.error || 'Erro ao salvar aparência da loja.', variant: 'destructive' });
+      return;
+    }
+    toast({ title: 'Aparência atualizada', description: 'As personalizações da loja foram salvas.' });
   };
 
   const loadLojaCompradores = async () => {
@@ -416,6 +481,10 @@ const Profile: React.FC = () => {
             <TabsTrigger value="pagamentos" className="flex items-center gap-2" onClick={loadGatewayConfig}>
               <Settings className="h-4 w-4" />
               Gateway de Pagamento
+            </TabsTrigger>
+            <TabsTrigger value="aparencia" className="flex items-center gap-2" onClick={loadBrandingConfig}>
+              <ImageIcon className="h-4 w-4" />
+              Aparência da Loja
             </TabsTrigger>
             <TabsTrigger value="clientes" className="flex items-center gap-2" onClick={loadLojaCompradores}>
               <Users className="h-4 w-4" />
@@ -1025,6 +1094,97 @@ const Profile: React.FC = () => {
                   <Button onClick={handleSaveGateway} disabled={isSavingGateway}>
                     {isSavingGateway ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
                     Salvar Configurações
+                  </Button>
+                </div>
+              </>
+            )}
+          </TabsContent>
+
+          {/* ========== APARÊNCIA DA LOJA ========== */}
+          <TabsContent value="aparencia" className="space-y-6">
+            {isLoadingBranding ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : (
+              <>
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <ImageIcon className="h-5 w-5" />
+                      Aparência da Loja Pública
+                    </CardTitle>
+                    <CardDescription>
+                      Personalize o favicon, a logo e a imagem de destaque do topo da sua loja. Cada usuário mantém sua própria identidade visual.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    <div className="space-y-2">
+                      <Label htmlFor="loja_favicon_url">Favicon da Plataforma</Label>
+                      <Input
+                        id="loja_favicon_url"
+                        value={brandingConfig.loja_favicon_url || ''}
+                        onChange={(e) => setBrandingConfig((prev) => ({ ...prev, loja_favicon_url: e.target.value }))}
+                        placeholder="Cole uma URL ou envie uma imagem"
+                      />
+                      <div className="flex gap-2">
+                        <Input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => handleBrandingUpload('loja_favicon_url', e.target.files?.[0] || null)}
+                        />
+                        <Button type="button" variant="outline" onClick={() => setBrandingConfig((prev) => ({ ...prev, loja_favicon_url: '' }))}>
+                          Limpar
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="loja_logo_url">Logo da Loja</Label>
+                      <Input
+                        id="loja_logo_url"
+                        value={brandingConfig.loja_logo_url || ''}
+                        onChange={(e) => setBrandingConfig((prev) => ({ ...prev, loja_logo_url: e.target.value }))}
+                        placeholder="Cole uma URL ou envie uma imagem"
+                      />
+                      <div className="flex gap-2">
+                        <Input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => handleBrandingUpload('loja_logo_url', e.target.files?.[0] || null)}
+                        />
+                        <Button type="button" variant="outline" onClick={() => setBrandingConfig((prev) => ({ ...prev, loja_logo_url: '' }))}>
+                          Limpar
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="loja_hero_image_url">Imagem de Destaque no Topo</Label>
+                      <Input
+                        id="loja_hero_image_url"
+                        value={brandingConfig.loja_hero_image_url || ''}
+                        onChange={(e) => setBrandingConfig((prev) => ({ ...prev, loja_hero_image_url: e.target.value }))}
+                        placeholder="Cole uma URL ou envie uma imagem"
+                      />
+                      <div className="flex gap-2">
+                        <Input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => handleBrandingUpload('loja_hero_image_url', e.target.files?.[0] || null)}
+                        />
+                        <Button type="button" variant="outline" onClick={() => setBrandingConfig((prev) => ({ ...prev, loja_hero_image_url: '' }))}>
+                          Limpar
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <div className="flex justify-end">
+                  <Button onClick={handleSaveBranding} disabled={isSavingBranding}>
+                    {isSavingBranding ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+                    Salvar Aparência
                   </Button>
                 </div>
               </>

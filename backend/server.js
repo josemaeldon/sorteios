@@ -2583,6 +2583,14 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           return res.status(404).json({ error: 'Loja não encontrada.' });
         }
         const owner = ownerResult.rows[0];
+        const ownerConfigResult = await client.query(
+          "SELECT chave, valor FROM user_configuracoes WHERE user_id = $1 AND chave IN ('loja_favicon_url', 'loja_logo_url', 'loja_hero_image_url')",
+          [lojaUserId]
+        );
+        const ownerConfig = {};
+        ownerConfigResult.rows.forEach((row) => {
+          ownerConfig[row.chave] = row.valor;
+        });
 
         // Build WHERE clause: filter by user_id, optionally by sorteio
         const lojaParams = [lojaUserId, 'disponivel'];
@@ -2603,7 +2611,14 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           lojaParams
         );
         return res.json({
-          owner: { id: owner.id, nome: owner.nome, titulo_sistema: owner.titulo_sistema },
+          owner: {
+            id: owner.id,
+            nome: owner.nome,
+            titulo_sistema: owner.titulo_sistema,
+            favicon_url: ownerConfig.loja_favicon_url || null,
+            logo_url: ownerConfig.loja_logo_url || null,
+            hero_image_url: ownerConfig.loja_hero_image_url || null,
+          },
           cartelas: lojaResult.rows,
           total: lojaResult.rows.length,
           payment_gateway: await getUserPaymentGateway(client, lojaUserId),
