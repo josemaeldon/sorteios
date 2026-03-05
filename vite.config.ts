@@ -39,7 +39,7 @@ export default defineConfig(({ mode }) => {
           manualChunks(id) {
             if (!id.includes("node_modules")) return;
 
-            if (id.includes("react") || id.includes("scheduler")) {
+            if (/node_modules\/(react|react-dom|scheduler)\//.test(id)) {
               return "vendor-react";
             }
 
@@ -61,10 +61,6 @@ export default defineConfig(({ mode }) => {
 
             if (id.includes("recharts")) {
               return "vendor-charts";
-            }
-
-            if (id.includes("@radix-ui") || id.includes("cmdk") || id.includes("sonner")) {
-              return "vendor-ui";
             }
 
             if (id.includes("react-router") || id.includes("@tanstack/react-query")) {
