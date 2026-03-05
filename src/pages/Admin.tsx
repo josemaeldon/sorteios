@@ -538,7 +538,7 @@ const Admin: React.FC = () => {
                 <Users className="h-6 w-6" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold">Administração de Usuários</h1>
+                <h1 className="text-2xl font-bold">Configurações</h1>
                 <p className="text-primary-foreground/80 text-sm">Gerencie os acessos do sistema</p>
               </div>
             </div>
