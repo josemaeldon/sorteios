@@ -36,6 +36,57 @@ const mm = (v: number) => v * SCALE;   // mm → px
 const px = (v: number) => v / SCALE;   // px → mm
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
+const BUYER_FIELDS_ORDER: Array<'buyer_name' | 'buyer_address' | 'buyer_city' | 'buyer_phone'> = [
+  'buyer_name',
+  'buyer_address',
+  'buyer_city',
+  'buyer_phone',
+];
+
+const getElementMinSize = (type: CanvasElement['type']) => {
+  if (type === 'bingo_grid') return { width: 20, height: 20 };
+  if (type === 'barcode') return { width: 20, height: 8 };
+  return { width: 5, height: 4 };
+};
+
+const normalizeElementBounds = (el: CanvasElement, paperW: number, paperH: number): CanvasElement => {
+  const min = getElementMinSize(el.type);
+  const width = clamp(el.width, min.width, paperW);
+  const height = clamp(el.height, min.height, paperH);
+  const x = clamp(el.x, 0, Math.max(0, paperW - width));
+  const y = clamp(el.y, 0, Math.max(0, paperH - height));
+  return { ...el, x, y, width, height };
+};
+
+const buildBuyerElement = (
+  type: 'buyer_name' | 'buyer_address' | 'buyer_city' | 'buyer_phone',
+  paperW: number,
+  paperH: number,
+): CanvasElement => {
+  const margin = 10;
+  const rowHeight = 8;
+  const rowGap = 2;
+  const blockHeight = BUYER_FIELDS_ORDER.length * rowHeight + (BUYER_FIELDS_ORDER.length - 1) * rowGap;
+  const startY = clamp(paperH - margin - blockHeight, 0, Math.max(0, paperH - rowHeight));
+  const typeIndex = BUYER_FIELDS_ORDER.indexOf(type);
+
+  const el: CanvasElement = {
+    id: `${type}_${Date.now()}`,
+    type,
+    x: margin,
+    y: startY + Math.max(0, typeIndex) * (rowHeight + rowGap),
+    width: Math.max(40, paperW - margin * 2),
+    height: rowHeight,
+    fontSize: 11,
+    fontWeight: 'normal',
+    color: '#111827',
+    backgroundColor: 'transparent',
+    textAlign: 'left',
+  };
+
+  return normalizeElementBounds(el, paperW, paperH);
+};
+
 // ─── Drag / resize state ──────────────────────────────────────────────────────
 interface DragState {
   id: string;
@@ -408,9 +459,18 @@ const BingoCardsBuilderTab: React.FC = () => {
   const updateElement = useCallback((id: string, patch: Partial<CanvasElement>) => {
     setLayout((prev) => ({
       ...prev,
-      elements: prev.elements.map((el) => el.id === id ? { ...el, ...patch } : el),
+      elements: prev.elements.map((el) => el.id === id
+        ? normalizeElementBounds({ ...el, ...patch }, paperW, paperH)
+        : el),
     }));
-  }, []);
+  }, [paperW, paperH]);
+
+  useEffect(() => {
+    setLayout((prev) => ({
+      ...prev,
+      elements: prev.elements.map((el) => normalizeElementBounds(el, paperW, paperH)),
+    }));
+  }, [paperW, paperH]);
 
   const updateBackground = useCallback((patch: Partial<CanvasLayout['background']>) => {
     setLayout((prev) => ({ ...prev, background: { ...prev.background, ...patch } }));
@@ -459,16 +519,9 @@ const BingoCardsBuilderTab: React.FC = () => {
   };
 
   const addBuyerElement = (type: 'buyer_name' | 'buyer_address' | 'buyer_city' | 'buyer_phone') => {
-    const id = `${type}_${Date.now()}`;
-    const el: CanvasElement = {
-      id, type,
-      x: 10, y: 290, width: 190, height: 8,
-      fontSize: 11, fontWeight: 'normal',
-      color: '#111827', backgroundColor: 'transparent',
-      textAlign: 'left',
-    };
+    const el = buildBuyerElement(type, paperW, paperH);
     setLayout((prev) => ({ ...prev, elements: [...prev.elements, el] }));
-    setSelectedId(id);
+    setSelectedId(el.id);
   };
 
   const duplicateCardNumber = (sourceId: string) => {
@@ -513,7 +566,11 @@ const BingoCardsBuilderTab: React.FC = () => {
             ...prev,
             elements: prev.elements.map((el) =>
               el.id === d.id
-                ? { ...el, x: clamp(d.origX + dx, 0, paperDimsRef.current.paperW - el.width), y: clamp(d.origY + dy, 0, paperDimsRef.current.paperH - el.height) }
+                ? {
+                  ...el,
+                  x: clamp(d.origX + dx, 0, Math.max(0, paperDimsRef.current.paperW - el.width)),
+                  y: clamp(d.origY + dy, 0, Math.max(0, paperDimsRef.current.paperH - el.height)),
+                }
                 : el,
             ),
           };
@@ -522,17 +579,28 @@ const BingoCardsBuilderTab: React.FC = () => {
         const r = resizingRef.current;
         const dx = px(e.clientX - r.startX);
         const dy = px(e.clientY - r.startY);
-        let { origX: newX, origY: newY, origW: newW, origH: newH } = r;
-        if (r.handle.includes('e')) newW = Math.max(20, r.origW + dx);
-        if (r.handle.includes('w')) { newW = Math.max(20, r.origW - dx); newX = r.origX + (r.origW - newW); }
-        if (r.handle.includes('s')) newH = Math.max(10, r.origH + dy);
-        if (r.handle.includes('n')) { newH = Math.max(10, r.origH - dy); newY = r.origY + (r.origH - newH); }
-        setLayout((prev) => ({
-          ...prev,
-          elements: prev.elements.map((el) =>
-            el.id === r.id ? { ...el, x: newX, y: newY, width: newW, height: newH } : el,
-          ),
-        }));
+        setLayout((prev) => {
+          const target = prev.elements.find((el) => el.id === r.id);
+          if (!target) return prev;
+          const min = getElementMinSize(target.type);
+
+          let { origX: newX, origY: newY, origW: newW, origH: newH } = r;
+          if (r.handle.includes('e')) newW = Math.max(min.width, r.origW + dx);
+          if (r.handle.includes('w')) { newW = Math.max(min.width, r.origW - dx); newX = r.origX + (r.origW - newW); }
+          if (r.handle.includes('s')) newH = Math.max(min.height, r.origH + dy);
+          if (r.handle.includes('n')) { newH = Math.max(min.height, r.origH - dy); newY = r.origY + (r.origH - newH); }
+
+          const normalized = normalizeElementBounds(
+            { ...target, x: newX, y: newY, width: newW, height: newH },
+            paperDimsRef.current.paperW,
+            paperDimsRef.current.paperH,
+          );
+
+          return {
+            ...prev,
+            elements: prev.elements.map((el) => (el.id === r.id ? normalized : el)),
+          };
+        });
       }
     };
 
@@ -1391,13 +1459,13 @@ const BingoCardsBuilderTab: React.FC = () => {
               {/* Position & size */}
               <div className="grid grid-cols-2 gap-2">
                 <NumberInput label="X (mm)" value={Math.round(selectedEl.x * 10) / 10}
-                  onChange={(v) => updateElement(selectedEl.id, { x: v })} min={0} max={A4_W_MM} step={0.5} />
+                  onChange={(v) => updateElement(selectedEl.id, { x: v })} min={0} max={paperW} step={0.5} />
                 <NumberInput label="Y (mm)" value={Math.round(selectedEl.y * 10) / 10}
-                  onChange={(v) => updateElement(selectedEl.id, { y: v })} min={0} max={A4_H_MM} step={0.5} />
+                  onChange={(v) => updateElement(selectedEl.id, { y: v })} min={0} max={paperH} step={0.5} />
                 <NumberInput label="Largura (mm)" value={Math.round(selectedEl.width * 10) / 10}
-                  onChange={(v) => updateElement(selectedEl.id, { width: Math.max(10, v) })} min={10} max={A4_W_MM} step={0.5} />
+                  onChange={(v) => updateElement(selectedEl.id, { width: v })} min={5} max={paperW} step={0.5} />
                 <NumberInput label="Altura (mm)" value={Math.round(selectedEl.height * 10) / 10}
-                  onChange={(v) => updateElement(selectedEl.id, { height: Math.max(5, v) })} min={5} max={A4_H_MM} step={0.5} />
+                  onChange={(v) => updateElement(selectedEl.id, { height: v })} min={4} max={paperH} step={0.5} />
               </div>
 
               {/* Text content (text element only) */}
