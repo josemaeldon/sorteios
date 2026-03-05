@@ -39,10 +39,6 @@ export default defineConfig(({ mode }) => {
           manualChunks(id) {
             if (!id.includes("node_modules")) return;
 
-            if (/node_modules\/(react|react-dom|scheduler)\//.test(id)) {
-              return "vendor-react";
-            }
-
             if (id.includes("xlsx")) {
               return "vendor-export-xlsx";
             }
@@ -59,15 +55,9 @@ export default defineConfig(({ mode }) => {
               return "vendor-export-html";
             }
 
-            if (id.includes("recharts")) {
-              return "vendor-charts";
-            }
-
-            if (id.includes("react-router") || id.includes("@tanstack/react-query")) {
-              return "vendor-router-query";
-            }
-
-            return "vendor";
+            // Let Rollup determine safe chunk boundaries for the rest to avoid
+            // runtime initialization-order issues between framework/UI modules.
+            return undefined;
           },
         },
       },
