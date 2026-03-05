@@ -735,12 +735,6 @@ async function initSchema() {
             CONSTRAINT check_sorteio_or_rodada CHECK (sorteio_id IS NOT NULL OR rodada_id IS NOT NULL)
           )
         `);
-        // Insert default admin user if not exists (first-run)
-        await client.query(`
-          INSERT INTO public.usuarios (nome, email, senha_hash, role, ativo)
-          VALUES ('Administrador', 'admin@bingo.local', '$2a$10$N9qo8uLOickgx2ZMRZoMy.MQDOqKzFoXaZAKDxcj9kNxbD5e7B5I.', 'admin', true)
-          ON CONFLICT (email) DO NOTHING
-        `);
         await client.query(`
           CREATE TABLE IF NOT EXISTS public.sorteio_compartilhado (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1277,11 +1271,11 @@ app.post('/api', checkBasicAuth, async (req, res) => {
     switch (action) {
       // ================== AUTH ==================
       case 'checkFirstAccess':
-        result = await client.query('SELECT COUNT(*) as count FROM usuarios');
+        result = await client.query("SELECT COUNT(*) as count FROM usuarios WHERE role = 'admin'");
         return res.json({ isFirstAccess: parseInt(result.rows[0].count) === 0 });
 
       case 'setupAdmin': {
-        const existingCheck = await client.query('SELECT COUNT(*) as count FROM usuarios');
+        const existingCheck = await client.query("SELECT COUNT(*) as count FROM usuarios WHERE role = 'admin'");
         if (parseInt(existingCheck.rows[0].count) > 0) {
           return res.json({ error: 'Administrador já existe' });
         }

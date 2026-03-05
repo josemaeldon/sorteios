@@ -323,20 +323,6 @@ COMMENT ON COLUMN public.rodadas_sorteio.range_end IS 'Fim da faixa de números'
 COMMENT ON COLUMN public.rodadas_sorteio.status IS 'Status da rodada (ativo, concluido, cancelado)';
 
 -- =====================================================
--- USUÁRIO ADMIN PADRÃO
--- Senha: admin123 (hash bcrypt)
--- =====================================================
-INSERT INTO public.usuarios (id, nome, email, senha_hash, role, ativo)
-VALUES (
-    gen_random_uuid(),
-    'Administrador',
-    'admin@bingo.local',
-    '$2a$10$N9qo8uLOickgx2ZMRZoMy.MQDOqKzFoXaZAKDxcj9kNxbD5e7B5I.',
-    'admin',
-    true
-) ON CONFLICT (email) DO NOTHING;
-
--- =====================================================
 -- MENSAGEM DE CONCLUSÃO
 -- =====================================================
 DO $$
@@ -344,7 +330,8 @@ BEGIN
     RAISE NOTICE '=====================================================';
     RAISE NOTICE 'Banco de dados inicializado com sucesso!';
     RAISE NOTICE 'Sistema: Bingo PGM - Gestão Completa de Bingo';
-    RAISE NOTICE 'Usuário admin padrão: admin@bingo.local / admin123';
+    RAISE NOTICE 'Nenhum administrador padrão foi criado automaticamente.';
+    RAISE NOTICE 'No primeiro acesso, use o autoinstalador para cadastrar o administrador.';
     RAISE NOTICE '=====================================================';
     RAISE NOTICE 'Tabelas criadas:';
     RAISE NOTICE '  - usuarios (autenticação)';
