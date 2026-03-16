@@ -14,6 +14,7 @@ const Profile = lazy(() => import("./pages/Profile"));
 const Planos = lazy(() => import("./pages/Planos"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const LojaPublica = lazy(() => import("./pages/LojaPublica"));
+const PublicDraw = lazy(() => import("./pages/PublicDraw"));
 
 const queryClient = new QueryClient();
 
@@ -29,6 +30,7 @@ const App = () => (
           <Suspense fallback={<RouteFallback />}>
             <Routes>
               <Route path="/auth" element={<Auth />} />
+              <Route path="/sorteador" element={<PublicDraw />} />
               <Route path="/loja/:userId" element={<LojaPublica />} />
               <Route path="/loja/:sorteioSlug/:shortId" element={<LojaPublica />} />
               <Route
