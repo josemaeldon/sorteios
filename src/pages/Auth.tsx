@@ -323,6 +323,14 @@ const Auth: React.FC = () => {
                     )}
                     Entrar
                   </Button>
+
+                  <Button asChild variant="outline" className="w-full">
+                    <Link to="/sorteador">
+                      <Shuffle className="mr-2 h-4 w-4" />
+                      Sorteio Rápido
+                    </Link>
+                  </Button>
+                  <p className="text-center text-xs text-muted-foreground">Acesso público, sem precisar entrar na conta.</p>
                 </form>
               </TabsContent>
 
@@ -416,12 +424,6 @@ const Auth: React.FC = () => {
         </CardContent>
       </Card>
 
-      <Button asChild variant="outline" className="mt-4">
-        <Link to="/sorteador">
-          <Shuffle className="mr-2 h-4 w-4" />
-          Ir para sorteador público
-        </Link>
-      </Button>
     </div>
   );
 };
