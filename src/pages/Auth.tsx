@@ -330,6 +330,7 @@ const Auth: React.FC = () => {
                       Sorteio Rápido
                     </Link>
                   </Button>
+                  <p className="text-center text-xs text-muted-foreground">Acesso público, sem precisar entrar na conta.</p>
                 </form>
               </TabsContent>
 

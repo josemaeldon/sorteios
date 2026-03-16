@@ -1,14 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { ArrowLeft, Expand, Loader2, Minimize, RotateCcw, Shuffle, ZoomIn, ZoomOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ArrowLeft, Expand, Loader2, Minimize, RotateCcw, Shuffle, ZoomIn, ZoomOut } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
-const ANIMATION_INTERVAL_MS = 80;
-const ANIMATION_STEPS = 20;
+const ANIMATION_INTERVAL_MS = 85;
+const ANIMATION_CYCLES = 22;
 const MIN_ZOOM = 0.75;
 const MAX_ZOOM = 2.5;
 const ZOOM_STEP = 0.25;
@@ -16,17 +16,19 @@ const ZOOM_STEP = 0.25;
 const PublicDraw: React.FC = () => {
   const { toast } = useToast();
   const drawAreaRef = useRef<HTMLDivElement>(null);
-  const animationRef = useRef<NodeJS.Timeout | null>(null);
+  const animationTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [rangeStart, setRangeStart] = useState('1');
   const [rangeEnd, setRangeEnd] = useState('100');
   const [quantity, setQuantity] = useState('1');
-  const [drawnNumbers, setDrawnNumbers] = useState<number[]>([]);
-  const [currentNumber, setCurrentNumber] = useState<number | null>(null);
-  const [displayNumber, setDisplayNumber] = useState<number | null>(null);
+
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isDrawing, setIsDrawing] = useState(false);
   const [zoom, setZoom] = useState(1);
+
+  const [drawnNumbers, setDrawnNumbers] = useState<number[]>([]);
+  const [currentNumber, setCurrentNumber] = useState<number | null>(null);
+  const [animatedNumber, setAnimatedNumber] = useState<number | null>(null);
 
   const availableNumbers = useMemo(() => {
     const start = Number.parseInt(rangeStart, 10);
@@ -36,21 +38,22 @@ const PublicDraw: React.FC = () => {
       return [];
     }
 
-    const fullRange = Array.from({ length: end - start + 1 }, (_, index) => start + index);
-    const used = new Set(drawnNumbers);
-    return fullRange.filter((num) => !used.has(num));
+    const usedNumbers = new Set(drawnNumbers);
+    const range = Array.from({ length: end - start + 1 }, (_, index) => start + index);
+    return range.filter((number) => !usedNumbers.has(number));
   }, [rangeStart, rangeEnd, drawnNumbers]);
 
   useEffect(() => {
-    const onFullscreenChange = () => {
+    const handleFullscreenChange = () => {
       setIsFullscreen(document.fullscreenElement === drawAreaRef.current);
     };
 
-    document.addEventListener('fullscreenchange', onFullscreenChange);
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+
     return () => {
-      document.removeEventListener('fullscreenchange', onFullscreenChange);
-      if (animationRef.current) {
-        clearInterval(animationRef.current);
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      if (animationTimerRef.current) {
+        clearInterval(animationTimerRef.current);
       }
     };
   }, []);
@@ -58,53 +61,54 @@ const PublicDraw: React.FC = () => {
   const validate = () => {
     const start = Number.parseInt(rangeStart, 10);
     const end = Number.parseInt(rangeEnd, 10);
-    const totalToDraw = Number.parseInt(quantity, 10);
+    const quantityToDraw = Number.parseInt(quantity, 10);
 
-    if ([start, end, totalToDraw].some(Number.isNaN)) {
-      toast({ title: 'Valores inválidos', description: 'Preencha apenas números inteiros.', variant: 'destructive' });
+    if ([start, end, quantityToDraw].some(Number.isNaN)) {
+      toast({ title: 'Valores inválidos', description: 'Use apenas números inteiros.', variant: 'destructive' });
       return null;
     }
 
     if (start > end) {
-      toast({ title: 'Faixa inválida', description: 'O início da faixa deve ser menor ou igual ao final.', variant: 'destructive' });
+      toast({ title: 'Faixa inválida', description: 'O número inicial deve ser menor ou igual ao final.', variant: 'destructive' });
       return null;
     }
 
-    if (totalToDraw < 1) {
-      toast({ title: 'Quantidade inválida', description: 'Informe ao menos 1 número para sortear.', variant: 'destructive' });
+    if (quantityToDraw < 1) {
+      toast({ title: 'Quantidade inválida', description: 'A quantidade deve ser no mínimo 1.', variant: 'destructive' });
       return null;
     }
 
-    if (totalToDraw > availableNumbers.length) {
+    if (quantityToDraw > availableNumbers.length) {
       toast({
-        title: 'Sem números suficientes',
-        description: `Restam apenas ${availableNumbers.length} números disponíveis nessa faixa.`,
+        title: 'Números insuficientes',
+        description: `Existem apenas ${availableNumbers.length} números restantes na faixa informada.`,
         variant: 'destructive',
       });
       return null;
     }
 
-    return { totalToDraw };
+    return { quantityToDraw };
   };
 
-  const animateResult = (pool: number[], finalNumber: number) => {
-    if (animationRef.current) {
-      clearInterval(animationRef.current);
+  const runAnimation = (pool: number[], finalNumber: number) => {
+    if (animationTimerRef.current) {
+      clearInterval(animationTimerRef.current);
     }
 
-    let steps = 0;
     setIsDrawing(true);
 
-    animationRef.current = setInterval(() => {
+    let cycle = 0;
+    animationTimerRef.current = setInterval(() => {
       const randomIndex = Math.floor(Math.random() * pool.length);
-      setDisplayNumber(pool[randomIndex]);
-      steps += 1;
+      setAnimatedNumber(pool[randomIndex]);
+      cycle += 1;
 
-      if (steps >= ANIMATION_STEPS) {
-        if (animationRef.current) {
-          clearInterval(animationRef.current);
+      if (cycle >= ANIMATION_CYCLES) {
+        if (animationTimerRef.current) {
+          clearInterval(animationTimerRef.current);
         }
-        setDisplayNumber(finalNumber);
+
+        setAnimatedNumber(finalNumber);
         setCurrentNumber(finalNumber);
         setIsDrawing(false);
       }
@@ -114,31 +118,31 @@ const PublicDraw: React.FC = () => {
   const handleDraw = () => {
     if (isDrawing) return;
 
-    const data = validate();
-    if (!data) return;
+    const parsed = validate();
+    if (!parsed) return;
 
     const pool = [...availableNumbers];
-    const selected: number[] = [];
+    const pickedNumbers: number[] = [];
 
-    for (let i = 0; i < data.totalToDraw; i += 1) {
+    for (let i = 0; i < parsed.quantityToDraw; i += 1) {
       const randomIndex = Math.floor(Math.random() * pool.length);
       const [picked] = pool.splice(randomIndex, 1);
-      selected.push(picked);
+      pickedNumbers.push(picked);
     }
 
-    const finalNumber = selected[selected.length - 1];
-    animateResult(availableNumbers, finalNumber);
-    setDrawnNumbers((previous) => [...previous, ...selected]);
+    const finalNumber = pickedNumbers[pickedNumbers.length - 1];
+    runAnimation(availableNumbers, finalNumber);
+    setDrawnNumbers((previous) => [...previous, ...pickedNumbers]);
   };
 
   const handleReset = () => {
-    if (animationRef.current) {
-      clearInterval(animationRef.current);
+    if (animationTimerRef.current) {
+      clearInterval(animationTimerRef.current);
     }
 
     setIsDrawing(false);
     setCurrentNumber(null);
-    setDisplayNumber(null);
+    setAnimatedNumber(null);
     setDrawnNumbers([]);
   };
 
@@ -153,21 +157,13 @@ const PublicDraw: React.FC = () => {
     await drawAreaRef.current.requestFullscreen();
   };
 
-  const handleZoomIn = () => {
-    setZoom((prev) => Math.min(MAX_ZOOM, prev + ZOOM_STEP));
-  };
-
-  const handleZoomOut = () => {
-    setZoom((prev) => Math.max(MIN_ZOOM, prev - ZOOM_STEP));
-  };
-
   return (
     <div className="min-h-screen bg-background p-4 md:p-8">
       <div className="mx-auto max-w-6xl space-y-6">
         <div className="flex items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold">Sorteador público</h1>
-            <p className="text-muted-foreground">Ferramenta independente para qualquer usuário realizar sorteios rápidos.</p>
+            <p className="text-muted-foreground">Ferramenta rápida e independente para qualquer usuário.</p>
           </div>
           <Button asChild variant="outline">
             <Link to="/auth">
@@ -180,21 +176,21 @@ const PublicDraw: React.FC = () => {
         <Card>
           <CardHeader>
             <CardTitle>Configuração do sorteio</CardTitle>
-            <CardDescription>Defina faixa e quantidade de números antes de sortear.</CardDescription>
+            <CardDescription>Informe faixa e quantidade de números para sortear.</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid gap-4 md:grid-cols-3">
               <div className="space-y-2">
                 <Label htmlFor="range-start">Faixa inicial</Label>
-                <Input id="range-start" type="number" min={1} value={rangeStart} onChange={(e) => setRangeStart(e.target.value)} />
+                <Input id="range-start" type="number" min={1} value={rangeStart} onChange={(event) => setRangeStart(event.target.value)} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="range-end">Faixa final</Label>
-                <Input id="range-end" type="number" min={1} value={rangeEnd} onChange={(e) => setRangeEnd(e.target.value)} />
+                <Input id="range-end" type="number" min={1} value={rangeEnd} onChange={(event) => setRangeEnd(event.target.value)} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="quantity">Quantidade a sortear</Label>
-                <Input id="quantity" type="number" min={1} value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+                <Input id="quantity" type="number" min={1} value={quantity} onChange={(event) => setQuantity(event.target.value)} />
               </div>
             </div>
           </CardContent>
@@ -219,11 +215,11 @@ const PublicDraw: React.FC = () => {
                 </>
               )}
             </Button>
-            <Button onClick={handleZoomOut} variant="outline" size="lg" disabled={zoom <= MIN_ZOOM}>
+            <Button onClick={() => setZoom((value) => Math.max(MIN_ZOOM, value - ZOOM_STEP))} variant="outline" size="lg" disabled={zoom <= MIN_ZOOM}>
               <ZoomOut className="mr-2 h-4 w-4" />
               Zoom -
             </Button>
-            <Button onClick={handleZoomIn} variant="outline" size="lg" disabled={zoom >= MAX_ZOOM}>
+            <Button onClick={() => setZoom((value) => Math.min(MAX_ZOOM, value + ZOOM_STEP))} variant="outline" size="lg" disabled={zoom >= MAX_ZOOM}>
               <ZoomIn className="mr-2 h-4 w-4" />
               Zoom +
             </Button>
@@ -243,7 +239,7 @@ const PublicDraw: React.FC = () => {
                 transition: 'transform 0.08s ease-in-out',
               }}
             >
-              {displayNumber ?? currentNumber ?? '-'}
+              {animatedNumber ?? currentNumber ?? '-'}
             </div>
             <p className="text-sm text-muted-foreground">Números restantes: {availableNumbers.length} • Zoom: {Math.round(zoom * 100)}%</p>
           </div>
@@ -251,7 +247,7 @@ const PublicDraw: React.FC = () => {
           <Card className="mt-6">
             <CardHeader>
               <CardTitle>Histórico</CardTitle>
-              <CardDescription>Ordem dos números já sorteados nesta sessão.</CardDescription>
+              <CardDescription>Ordem dos números sorteados nesta sessão.</CardDescription>
             </CardHeader>
             <CardContent>
               {drawnNumbers.length === 0 ? (
