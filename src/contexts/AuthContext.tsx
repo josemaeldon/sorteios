@@ -47,6 +47,12 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const AUTH_KEY = 'bingo_auth_user';
 
+const getErrorMessage = (error: unknown): string => {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  return '';
+};
+
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { toast } = useToast();
   const [user, setUser] = useState<User | null>(null);
