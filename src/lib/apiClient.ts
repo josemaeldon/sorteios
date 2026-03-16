@@ -69,24 +69,61 @@ const getAuthHeaders = (): Record<string, string> => {
 // API call function
 export const callApi = async (action: string, data: Record<string, unknown> = {}): Promise<unknown> => {
   console.log(`API Call: ${action}`, data);
-  
-  // Direct HTTP call to backend API
-  const response = await fetch(`${apiConfig.baseUrl}/api`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    body: JSON.stringify({ action, data }),
-  });
-  
-  if (!response.ok) {
-    if (response.status === 401) {
-      clearStoredToken();
-      throw new Error('Não autorizado. Faça login novamente.');
+
+  const endpoints = buildApiEndpoints();
+  let lastError: unknown;
+
+  for (const endpoint of endpoints) {
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ action, data }),
+      });
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          clearStoredToken();
+          throw new Error('Não autorizado. Faça login novamente.');
+        }
+
+        const errorData = await response.json().catch(() => ({ error: 'Erro desconhecido' }));
+        const err = new Error(errorData.error || `HTTP ${response.status}`);
+        if (errorData.code) (err as Error & { code?: string }).code = errorData.code;
+
+        // Retry next endpoint when the API gateway is unavailable.
+        if (response.status >= 500 && endpoint !== '/api') {
+          lastError = err;
+          continue;
+        }
+
+        throw err;
+      }
+
+      return response.json();
+    } catch (error) {
+      // CORS/network errors from a different API origin can be recovered by
+      // retrying against the same-origin /api route.
+      if (endpoint !== '/api') {
+        lastError = error;
+        continue;
+      }
+      throw error;
     }
-    const errorData = await response.json().catch(() => ({ error: 'Erro desconhecido' }));
-    const err = new Error(errorData.error || `HTTP ${response.status}`);
-    if (errorData.code) (err as Error & { code?: string }).code = errorData.code;
-    throw err;
   }
-  
-  return response.json();
+
+  throw lastError instanceof Error ? lastError : new Error('Falha ao conectar com a API.');
+};
+
+const buildApiEndpoints = (): string[] => {
+  if (!apiConfig.baseUrl) {
+    return ['/api'];
+  }
+
+  const configuredEndpoint = `${apiConfig.baseUrl.replace(/\/$/, '')}/api`;
+
+  // If API is in another origin, keep a same-origin fallback to avoid CORS/proxy outages.
+  const isCrossOrigin = configuredEndpoint.startsWith('http://') || configuredEndpoint.startsWith('https://');
+
+  return isCrossOrigin ? [configuredEndpoint, '/api'] : [configuredEndpoint];
 };

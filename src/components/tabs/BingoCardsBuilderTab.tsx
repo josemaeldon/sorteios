@@ -682,6 +682,8 @@ const BingoCardsBuilderTab: React.FC = () => {
     }
   };
 
+  const [exportMode, setExportMode] = useState<'padrao' | 'a4' | null>(null);
+
   // ─── Export PDF ────────────────────────────────────────────────────────────
   const handleExportPDF = async () => {
     // In rifaOnly mode cards are just numbers — generate them on-the-fly if needed
@@ -694,13 +696,21 @@ const BingoCardsBuilderTab: React.FC = () => {
       return;
     }
     setIsExporting(true);
+    setExportMode('padrao');
+    const loadingToast = toast({
+      title: 'Preparando PDF…',
+      description: 'Aguarde enquanto as cartelas são renderizadas para download.',
+    });
     try {
       await exportBingoCardsPDF(exportCards, layout, sorteioAtivo?.nome ?? 'bingo', undefined, paperW, paperH, gridCols, gridRows, rifaOnly);
+      loadingToast.dismiss();
       toast({ title: 'PDF exportado com sucesso!' });
     } catch {
+      loadingToast.dismiss();
       toast({ title: 'Erro ao exportar PDF', variant: 'destructive' });
     } finally {
       setIsExporting(false);
+      setExportMode(null);
     }
   };
 
@@ -719,13 +729,21 @@ const BingoCardsBuilderTab: React.FC = () => {
       return;
     }
     setIsExportingA4(true);
+    setExportMode('a4');
+    const loadingToast = toast({
+      title: 'Preparando PDF A4…',
+      description: 'Aguarde enquanto montamos várias cartelas por página para download.',
+    });
     try {
       await exportBingoCardsPDF(exportCards, layout, sorteioAtivo?.nome ?? 'bingo', undefined, paperW, paperH, gridCols, gridRows, rifaOnly, true);
+      loadingToast.dismiss();
       toast({ title: 'PDF A4 exportado com sucesso!' });
     } catch {
+      loadingToast.dismiss();
       toast({ title: 'Erro ao exportar PDF', variant: 'destructive' });
     } finally {
       setIsExportingA4(false);
+      setExportMode(null);
     }
   };
 
@@ -1063,6 +1081,19 @@ const BingoCardsBuilderTab: React.FC = () => {
           <X className="w-5 h-5 text-destructive flex-shrink-0" />
           <span className="text-destructive">
             Existem <strong>{cartelasValidadas.length}</strong> cartela(s) validada(s). Novos números só podem ser gerados após a exclusão das cartelas validadas.
+          </span>
+        </div>
+      )}
+
+      {(isExporting || isExportingA4) && (
+        <div className="flex items-center gap-3 p-4 bg-primary/10 border border-primary/30 rounded-xl text-sm">
+          <Loader2 className="w-5 h-5 text-primary flex-shrink-0 animate-spin" />
+          <span className="text-primary">
+            <strong>Preparando PDF para download…</strong>
+            {' '}
+            {exportMode === 'a4'
+              ? 'Montando o formato A4 com múltiplas cartelas por página.'
+              : 'Renderizando as cartelas selecionadas. Isso pode levar alguns segundos.'}
           </span>
         </div>
       )}
