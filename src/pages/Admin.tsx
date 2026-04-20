@@ -16,6 +16,7 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { ArrowLeft, Plus, Pencil, Trash2, Users, Loader2, ShieldCheck, User as UserIcon, UserPlus, UserMinus, Ticket, CreditCard, Settings, Gift, Mail, Check, X, Clock } from 'lucide-react';
 import { z } from 'zod';
+import { applyFavicon } from '@/hooks/useFavicon';
 
 interface SorteioAdmin extends Sorteio {
   owner_nome: string;
@@ -98,6 +99,7 @@ const Admin: React.FC = () => {
   const [mpWebhookSecret, setMpWebhookSecret] = useState('');
   const [isLoadingConfig, setIsLoadingConfig] = useState(false);
   const [isSavingConfig, setIsSavingConfig] = useState(false);
+  const [faviconUrl, setFaviconUrl] = useState('');
 
   // SMTP state
   const [smtpHost, setSmtpHost] = useState('');
@@ -170,6 +172,7 @@ const Admin: React.FC = () => {
     setMpSandboxAccessToken(config['mp_sandbox_access_token'] || '');
     setMpSandboxMode(config['mp_sandbox_mode'] === 'true');
     setMpWebhookSecret(config['mp_webhook_secret'] || '');
+    setFaviconUrl(config['favicon_url'] || '');
     // SMTP
     setSmtpHost(config['smtp_host'] || '');
     setSmtpPort(config['smtp_port'] || '587');
@@ -224,7 +227,9 @@ const Admin: React.FC = () => {
       mp_sandbox_access_token: mpSandboxAccessToken,
       mp_sandbox_mode: mpSandboxMode ? 'true' : 'false',
       mp_webhook_secret: mpWebhookSecret,
+      favicon_url: faviconUrl,
     });
+    applyFavicon(faviconUrl || null);
     setIsSavingConfig(false);
   };
 
@@ -884,6 +889,53 @@ const Admin: React.FC = () => {
 
           {/* ========== CONFIGURAÇÕES TAB ========== */}
           <TabsContent value="configuracoes">
+            <div className="space-y-6">
+            {/* Favicon Card */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Settings className="h-5 w-5" />
+                  Favicon do Sistema
+                </CardTitle>
+                <CardDescription>Configure o ícone exibido na aba do navegador em todas as páginas</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {isLoadingConfig ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  </div>
+                ) : (
+                  <div className="space-y-4 max-w-lg">
+                    <div className="space-y-2">
+                      <Label htmlFor="favicon_url">URL do Favicon</Label>
+                      <div className="flex items-center gap-3">
+                        {faviconUrl && (
+                          <img
+                            src={faviconUrl}
+                            alt="Favicon"
+                            className="h-8 w-8 rounded object-contain border"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                          />
+                        )}
+                        <Input
+                          id="favicon_url"
+                          value={faviconUrl}
+                          onChange={(e) => setFaviconUrl(e.target.value)}
+                          placeholder="https://exemplo.com/favicon.ico"
+                          disabled={isSavingConfig}
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground">URL pública de uma imagem (.ico, .png, .svg). Deixe em branco para remover o favicon.</p>
+                    </div>
+                    <Button onClick={handleSaveConfig} disabled={isSavingConfig}>
+                      {isSavingConfig && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                      Salvar Favicon
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -1139,9 +1191,8 @@ const Admin: React.FC = () => {
                 )}
               </CardContent>
             </Card>
+            </div>
           </TabsContent>
-
-          {/* ========== EMAIL / SMTP TAB ========== */}
           <TabsContent value="email" className="space-y-6">
             {isLoadingConfig ? (
               <div className="flex items-center justify-center py-16">
