@@ -1197,7 +1197,7 @@ function checkBasicAuth(req, res, next) {
 
 // JWT Auth middleware
 async function checkAuth(req, action) {
-  const publicActions = ['checkFirstAccess', 'setupAdmin', 'login', 'publicRegister', 'getPublicPlanos', 'getLojaPublica', 'createStripeCheckoutCartela', 'confirmStripeCheckoutCartela', 'createStripeCheckoutMultiCartela', 'confirmStripeCheckoutMultiCartela', 'createMercadoPagoCheckoutCartela', 'confirmMercadoPagoCheckoutCartela', 'createMercadoPagoCheckoutMultiCartela', 'confirmMercadoPagoCheckoutMultiCartela', 'cadastrarComprador', 'loginComprador', 'getHistoricoComprador', 'emailCartelasPDF', 'solicitarRecuperacaoSenha', 'resetarSenha', 'atualizarComprador', 'deletarComprador'];
+  const publicActions = ['checkFirstAccess', 'setupAdmin', 'login', 'publicRegister', 'getPublicPlanos', 'getLojaPublica', 'getPublicConfiguracoes', 'createStripeCheckoutCartela', 'confirmStripeCheckoutCartela', 'createStripeCheckoutMultiCartela', 'confirmStripeCheckoutMultiCartela', 'createMercadoPagoCheckoutCartela', 'confirmMercadoPagoCheckoutCartela', 'createMercadoPagoCheckoutMultiCartela', 'confirmMercadoPagoCheckoutMultiCartela', 'cadastrarComprador', 'loginComprador', 'getHistoricoComprador', 'emailCartelasPDF', 'solicitarRecuperacaoSenha', 'resetarSenha', 'atualizarComprador', 'deletarComprador'];
   const adminActions = [
     // User management
     'getUsers', 'createUser', 'updateUser', 'deleteUser', 'approveUser', 'rejectUser',
@@ -2560,6 +2560,12 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         return res.json({ success: true });
 
       // ================== CONFIGURACOES ==================
+      case 'getPublicConfiguracoes': {
+        result = await client.query("SELECT valor FROM configuracoes WHERE chave = 'favicon_url'");
+        const faviconUrl = result.rows.length > 0 ? result.rows[0].valor : null;
+        return res.json({ data: { favicon_url: faviconUrl } });
+      }
+
       case 'getConfiguracoes': {
         result = await client.query('SELECT chave, valor FROM configuracoes');
         const config = {};
