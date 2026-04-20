@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { User, CreateUserData, UserRole, Plan } from '@/types/auth';
@@ -17,6 +17,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { ArrowLeft, Plus, Pencil, Trash2, Users, Loader2, ShieldCheck, User as UserIcon, UserPlus, UserMinus, Ticket, CreditCard, Settings, Gift, Mail, Check, X, Clock } from 'lucide-react';
 import { z } from 'zod';
 import { applyFavicon } from '@/hooks/useFavicon';
+import { useToast } from '@/hooks/use-toast';
 
 interface SorteioAdmin extends Sorteio {
   owner_nome: string;
@@ -43,6 +44,7 @@ const planSchema = z.object({
 const Admin: React.FC = () => {
   const navigate = useNavigate();
   const { user, getAllUsers, createUser, updateUser, deleteUser, approveUser, rejectUser, isAuthenticated, getAllSorteiosAdmin, getSorteioUsers, assignSorteioToUser, removeUserFromSorteio, changeSorteioOwner, getPlanos, createPlano, updatePlano, deletePlano, assignUserPlan, grantLifetimeAccess, getConfiguracoes, updateConfiguracoes } = useAuth();
+  const { toast } = useToast();
   
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -100,6 +102,7 @@ const Admin: React.FC = () => {
   const [isLoadingConfig, setIsLoadingConfig] = useState(false);
   const [isSavingConfig, setIsSavingConfig] = useState(false);
   const [faviconUrl, setFaviconUrl] = useState('');
+  const faviconFileInputRef = useRef<HTMLInputElement>(null);
 
   // SMTP state
   const [smtpHost, setSmtpHost] = useState('');
@@ -231,6 +234,27 @@ const Admin: React.FC = () => {
     });
     applyFavicon(faviconUrl || null);
     setIsSavingConfig(false);
+  };
+
+  const handleFaviconUpload = (file: File | null) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast({ title: 'Arquivo inválido', description: 'Selecione uma imagem válida.', variant: 'destructive' });
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      toast({ title: 'Arquivo muito grande', description: 'Use imagens de até 2MB.', variant: 'destructive' });
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setFaviconUrl(reader.result as string);
+    reader.onerror = () => toast({ title: 'Erro', description: 'Não foi possível carregar a imagem.', variant: 'destructive' });
+    reader.readAsDataURL(file);
+  };
+
+  const handleClearFavicon = () => {
+    setFaviconUrl('');
+    if (faviconFileInputRef.current) faviconFileInputRef.current.value = '';
   };
 
   const handleSaveSmtp = async () => {
@@ -925,7 +949,19 @@ const Admin: React.FC = () => {
                           disabled={isSavingConfig}
                         />
                       </div>
-                      <p className="text-xs text-muted-foreground">URL pública de uma imagem (.ico, .png, .svg). Deixe em branco para remover o favicon.</p>
+                      <div className="flex gap-2">
+                        <Input
+                          ref={faviconFileInputRef}
+                          type="file"
+                          accept="image/*"
+                          disabled={isSavingConfig}
+                          onChange={(e) => handleFaviconUpload(e.target.files?.[0] || null)}
+                        />
+                        <Button type="button" variant="outline" disabled={isSavingConfig} onClick={handleClearFavicon}>
+                          Limpar
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground">Cole uma URL pública ou envie uma imagem (.ico, .png, .svg). Deixe em branco para remover o favicon.</p>
                     </div>
                     <Button onClick={handleSaveConfig} disabled={isSavingConfig}>
                       {isSavingConfig && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
