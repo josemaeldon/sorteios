@@ -822,7 +822,7 @@ const DrawTab: React.FC = () => {
                 {isFullscreen && (
                   <div className="mt-8 flex gap-6 flex-shrink-0 items-start">
                     <div className="flex-1 space-y-6">
-                      <div className="flex justify-center gap-4">
+                      <div className="flex flex-wrap justify-center gap-4 items-center">
                         <Button
                           onClick={drawNumber}
                           disabled={isDrawing || remainingNumbers.length === 0}
@@ -832,6 +832,30 @@ const DrawTab: React.FC = () => {
                           <Shuffle className="w-8 h-8" />
                           Sortear Próximo
                         </Button>
+                        <div className="flex gap-2 items-center">
+                          <Input
+                            type="number"
+                            value={manualNumberInput}
+                            onChange={(e) => setManualNumberInput(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') addManualNumber(); }}
+                            placeholder="Nº manual"
+                            className="w-36 h-16 text-xl text-center"
+                            min={selectedRodada.range_start}
+                            max={selectedRodada.range_end}
+                            disabled={isDrawing}
+                          />
+                          <Button
+                            onClick={addManualNumber}
+                            disabled={isDrawing || !manualNumberInput}
+                            size="lg"
+                            variant="outline"
+                            className="gap-2 text-xl px-8 py-8 h-auto"
+                            title="Adicionar número manualmente"
+                          >
+                            <Plus className="w-8 h-8" />
+                            Adicionar
+                          </Button>
+                        </div>
                       </div>
                     
                       {drawnNumbers.length > 0 && (
@@ -873,11 +897,14 @@ const DrawTab: React.FC = () => {
                             Top 10 Cartelas
                           </h3>
                         </div>
-                        <div className="space-y-3 max-h-[200px] overflow-y-auto">
+                        <div className="divide-y divide-border max-h-[200px] overflow-y-auto">
                           {topScoringCartelas.map((entry, idx) => (
-                            <div key={entry.score} className="flex items-center gap-3">
-                              <span className="text-lg font-bold text-muted-foreground w-6">{idx + 1}º</span>
-                              <span className="text-lg font-semibold text-primary w-20">{entry.score} pts</span>
+                            <div key={entry.score} className="py-3 first:pt-0 last:pb-0">
+                              <div className="flex items-center gap-2 mb-1.5">
+                                <span className="text-lg font-bold text-muted-foreground w-6">{idx + 1}º</span>
+                                <span className="text-lg font-semibold text-primary">{entry.score} pts</span>
+                                <span className="ml-auto text-sm text-muted-foreground">{entry.cartelas.length} cartela{entry.cartelas.length !== 1 ? 's' : ''}</span>
+                              </div>
                               <div className="flex flex-wrap gap-2">
                                 {entry.cartelas.map(({ numero, nome }) => (
                                   <button
@@ -1006,10 +1033,36 @@ const DrawTab: React.FC = () => {
             </Card>
           </div>
 
+          {cartelasSorteadasHistory.length > 0 && (
+            <Card className="border-2 border-primary">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-primary">
+                  <Ticket className="w-5 h-5" />
+                  Cartelas Sorteadas
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <div className="space-y-1 max-h-[300px] overflow-y-auto">
+                  {cartelasSorteadasHistory.map((cartela, idx) => (
+                    <div key={idx} className={cn("flex items-center gap-2 py-1.5 px-2 rounded", idx === 0 && "bg-primary/10")}>
+                      <span className="text-xs text-muted-foreground w-5">{idx + 1}º</span>
+                      <span className={cn("font-black text-primary", idx === 0 ? "text-2xl" : "text-base")}>
+                        {cartela.numero.toString().padStart(3, '0')}
+                      </span>
+                      {cartela.nome && (
+                        <span className="text-xs text-muted-foreground truncate">{cartela.nome}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           </div>
 
           {/* RIGHT SIDEBAR */}
-          {(topScoringCartelas.length > 0 || vencedoras.length > 0 || cartelasSorteadasHistory.length > 0) && (
+          {(topScoringCartelas.length > 0 || vencedoras.length > 0) && (
             <div className="w-80 flex-shrink-0">
               {/* Winner results */}
               {vencedoras.length > 0 && (
@@ -1040,11 +1093,14 @@ const DrawTab: React.FC = () => {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-2">
+                  <div className="divide-y divide-border">
                     {topScoringCartelas.map((entry, idx) => (
-                      <div key={entry.score} className="flex items-center gap-3">
-                        <span className="text-sm font-bold text-muted-foreground w-5">{idx + 1}º</span>
-                        <span className="text-sm font-semibold text-primary w-16">{entry.score} pts</span>
+                      <div key={entry.score} className="py-2.5 first:pt-0 last:pb-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-sm font-bold text-muted-foreground">{idx + 1}º</span>
+                          <span className="text-sm font-semibold text-primary">{entry.score} pts</span>
+                          <span className="ml-auto text-xs text-muted-foreground">{entry.cartelas.length} cartela{entry.cartelas.length !== 1 ? 's' : ''}</span>
+                        </div>
                         <div className="flex flex-wrap gap-1">
                           {entry.cartelas.map(({ numero, nome }) => (
                             <button
@@ -1062,31 +1118,6 @@ const DrawTab: React.FC = () => {
                   </div>
                 </CardContent>
               </Card>
-              )}
-              {cartelasSorteadasHistory.length > 0 && (
-                <Card className="border-2 border-primary">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="flex items-center gap-2 text-primary">
-                      <Ticket className="w-5 h-5" />
-                      Cartelas Sorteadas
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    <div className="space-y-1 max-h-[300px] overflow-y-auto">
-                      {cartelasSorteadasHistory.map((cartela, idx) => (
-                        <div key={idx} className={cn("flex items-center gap-2 py-1.5 px-2 rounded", idx === 0 && "bg-primary/10")}>
-                          <span className="text-xs text-muted-foreground w-5">{idx + 1}º</span>
-                          <span className={cn("font-black text-primary", idx === 0 ? "text-2xl" : "text-base")}>
-                            {cartela.numero.toString().padStart(3, '0')}
-                          </span>
-                          {cartela.nome && (
-                            <span className="text-xs text-muted-foreground truncate">{cartela.nome}</span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
               )}
             </div>
           )}
@@ -1130,7 +1161,7 @@ const DrawTab: React.FC = () => {
               })()}
             </div>
 
-            <div className="flex gap-3">
+            <div className="flex gap-3 flex-wrap">
               <Button
                 onClick={handleSortearCartela}
                 disabled={isCartelaSorteioAnimating || cartelasValidadas.length === 0}
@@ -1143,6 +1174,18 @@ const DrawTab: React.FC = () => {
                 )}
                 Sortear
               </Button>
+              {cartelasSorteadasHistory.length > 0 && (
+                <Button
+                  variant="outline"
+                  onClick={() => { setCartelasSorteadasHistory([]); setCartelaSorteioPreview(null); }}
+                  disabled={isCartelaSorteioAnimating}
+                  className="gap-2"
+                  title="Reiniciar histórico para que as mesmas cartelas possam participar novamente"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  Reiniciar
+                </Button>
+              )}
               <Button
                 variant="outline"
                 onClick={() => setIsCartelaSorteioModalOpen(false)}
@@ -1449,7 +1492,7 @@ const DrawTab: React.FC = () => {
               })()}
             </div>
 
-            <div className="flex gap-3">
+            <div className="flex gap-3 flex-wrap">
               <Button
                 onClick={handleSortearCartela}
                 disabled={isCartelaSorteioAnimating || cartelasValidadas.length === 0}
@@ -1462,6 +1505,18 @@ const DrawTab: React.FC = () => {
                 )}
                 Sortear
               </Button>
+              {cartelasSorteadasHistory.length > 0 && (
+                <Button
+                  variant="outline"
+                  onClick={() => { setCartelasSorteadasHistory([]); setCartelaSorteioPreview(null); }}
+                  disabled={isCartelaSorteioAnimating}
+                  className="gap-2"
+                  title="Reiniciar histórico para que as mesmas cartelas possam participar novamente"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  Reiniciar
+                </Button>
+              )}
               <Button
                 variant="outline"
                 onClick={() => setIsCartelaSorteioModalOpen(false)}
