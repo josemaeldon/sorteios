@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { generateBingoGrid, exportBingoCardsPDF, DEFAULT_LAYOUT, BINGO_COLS, A4_W_MM, A4_H_MM } from '@/lib/utils/bingoCardUtils';
+import { Checkbox } from '@/components/ui/checkbox';
 
 // ─── BINGO column ranges (B I N G O) ─────────────────────────────────────────
 const COL_RANGES = [
@@ -125,6 +126,8 @@ const CartelasTab: React.FC = () => {
     validarCartelas,
     removerValidacaoCartela,
     removerValidacaoLote,
+    removerTodasValidacoes,
+    updateCartelaValidada,
   } = useBingo();
   const { toast } = useToast();
 
@@ -149,6 +152,7 @@ const CartelasTab: React.FC = () => {
   const [validacaoNumero, setValidacaoNumero] = useState('');
   const [validacaoNome, setValidacaoNome] = useState('');
   const [isValidando, setIsValidando] = useState(false);
+  const [nomeObrigatorio, setNomeObrigatorio] = useState(false);
   const [tamanhoLote, setTamanhoLoteState] = useState<number>(() => {
     const saved = localStorage.getItem(LOTE_STORAGE_KEY);
     if (saved !== null) {
@@ -167,6 +171,14 @@ const CartelasTab: React.FC = () => {
   // ─── Delete lote confirmation ──────────────────────────────────────────────
   const [loteToDelete, setLoteToDelete] = useState<number[] | null>(null);
   const [isDeletingLote, setIsDeletingLote] = useState(false);
+
+  // ─── Remove all validations confirmation ──────────────────────────────────
+  const [showRemoverTodas, setShowRemoverTodas] = useState(false);
+  const [isRemovingTodas, setIsRemovingTodas] = useState(false);
+
+  // ─── Edit validated cartela ────────────────────────────────────────────────
+  const [editingValidada, setEditingValidada] = useState<{ numero: number; nome: string } | null>(null);
+  const [isSavingValidada, setIsSavingValidada] = useState(false);
 
   // Group validated cartelas into batches for display (must be before early return)
   const lotes = React.useMemo(() => {
@@ -334,6 +346,10 @@ const CartelasTab: React.FC = () => {
       toast({ title: 'Entrada inválida', description: 'Digite um número, faixa (ex: 1-50) ou lista (ex: 1,2,5).', variant: 'destructive' });
       return;
     }
+    if (nomeObrigatorio && !validacaoNome.trim()) {
+      toast({ title: 'Nome obrigatório', description: 'Preencha o Nome do Comprador antes de validar.', variant: 'destructive' });
+      return;
+    }
     const numeros = parseValidacaoInput(trimmed);
     if (!numeros || numeros.length === 0) {
       toast({ title: 'Entrada inválida', description: 'Formato inválido. Use número único (42), faixa (1-50) ou lista separada por vírgula (1,2,5).', variant: 'destructive' });
@@ -366,6 +382,29 @@ const CartelasTab: React.FC = () => {
       setLoteToDelete(null);
     } finally {
       setIsDeletingLote(false);
+    }
+  };
+
+  const handleRemoverTodas = async () => {
+    setIsRemovingTodas(true);
+    try {
+      await removerTodasValidacoes();
+      toast({ title: 'Todas as validações foram removidas!' });
+      setShowRemoverTodas(false);
+    } finally {
+      setIsRemovingTodas(false);
+    }
+  };
+
+  const handleSaveValidada = async () => {
+    if (!editingValidada) return;
+    setIsSavingValidada(true);
+    try {
+      await updateCartelaValidada(editingValidada.numero, editingValidada.nome.trim() || null);
+      toast({ title: `Cartela ${formatarNumeroCartela(editingValidada.numero)} atualizada!` });
+      setEditingValidada(null);
+    } finally {
+      setIsSavingValidada(false);
     }
   };
 
@@ -603,7 +642,9 @@ const CartelasTab: React.FC = () => {
                 </p>
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-foreground">Nome do Comprador (opcional)</label>
+                <label className="text-sm font-medium text-foreground">
+                  Nome do Comprador {nomeObrigatorio ? '*' : '(opcional)'}
+                </label>
                 <Input
                   placeholder="Nome de quem comprou..."
                   value={validacaoNome}
@@ -616,6 +657,16 @@ const CartelasTab: React.FC = () => {
                 {isValidando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
                 Validar
               </Button>
+            </div>
+            <div className="mt-4 flex items-center gap-2">
+              <Checkbox
+                id="nome-obrigatorio"
+                checked={nomeObrigatorio}
+                onCheckedChange={(checked) => setNomeObrigatorio(!!checked)}
+              />
+              <label htmlFor="nome-obrigatorio" className="text-sm font-medium text-foreground cursor-pointer select-none">
+                Nome do Comprador obrigatório
+              </label>
             </div>
           </div>
 
@@ -632,9 +683,22 @@ const CartelasTab: React.FC = () => {
                 className="w-20"
               />
             </div>
-            <div className="text-sm text-muted-foreground">
-              {cartelasValidadas.length} cartela(s) validada(s)
-              {lotes.length > 0 && ` em ${lotes.length} lote(s)`}
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-muted-foreground">
+                {cartelasValidadas.length} cartela(s) validada(s)
+                {lotes.length > 0 && ` em ${lotes.length} lote(s)`}
+              </span>
+              {cartelasValidadas.length > 0 && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="gap-1"
+                  onClick={() => setShowRemoverTodas(true)}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Remover Todas
+                </Button>
+              )}
             </div>
           </div>
 
@@ -679,8 +743,15 @@ const CartelasTab: React.FC = () => {
                             <span className="text-xs text-muted-foreground">— {cv.comprador_nome}</span>
                           )}
                           <button
+                            onClick={() => setEditingValidada({ numero: cv.numero, nome: cv.comprador_nome || '' })}
+                            className="ml-1 text-muted-foreground hover:text-primary transition-colors opacity-0 group-hover:opacity-100"
+                            title="Editar nome do comprador"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
                             onClick={() => removerValidacaoCartela(cv.numero)}
-                            className="ml-1 text-muted-foreground hover:text-destructive transition-colors opacity-0 group-hover:opacity-100"
+                            className="text-muted-foreground hover:text-destructive transition-colors opacity-0 group-hover:opacity-100"
                             title="Remover validação"
                           >
                             <X className="w-3.5 h-3.5" />
@@ -857,6 +928,57 @@ const CartelasTab: React.FC = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* ── Remove all validations confirmation ── */}
+      <AlertDialog open={showRemoverTodas} onOpenChange={(open) => { if (!open) setShowRemoverTodas(false); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remover todas as validações?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Todas as {cartelasValidadas.length} cartela(s) validada(s) serão removidas permanentemente. Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isRemovingTodas}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleRemoverTodas} disabled={isRemovingTodas} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              {isRemovingTodas ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              Remover Todas
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── Edit validated cartela ── */}
+      <Dialog open={!!editingValidada} onOpenChange={(open) => { if (!open) setEditingValidada(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>
+              Editar Cartela {editingValidada ? formatarNumeroCartela(editingValidada.numero) : ''}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground">Nome do Comprador</label>
+              <Input
+                placeholder="Nome de quem comprou..."
+                value={editingValidada?.nome ?? ''}
+                onChange={(e) => setEditingValidada(prev => prev ? { ...prev, nome: e.target.value } : null)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSaveValidada()}
+                autoFocus
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" size="sm" onClick={() => setEditingValidada(null)} disabled={isSavingValidada}>
+              Cancelar
+            </Button>
+            <Button size="sm" className="gap-2" onClick={handleSaveValidada} disabled={isSavingValidada}>
+              {isSavingValidada ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+              Salvar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ── Modal: Nova Cartela ── */}
       <Dialog open={showNewModal} onOpenChange={(open) => { if (!open) setShowNewModal(false); }}>

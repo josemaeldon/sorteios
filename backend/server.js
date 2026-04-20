@@ -1979,6 +1979,28 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         return res.json({ data: [{ success: true, count: numeros.length }] });
       }
 
+      case 'removerTodasValidacoes': {
+        // data.sorteio_id
+        const delResult = await client.query(
+          'DELETE FROM cartelas_validadas WHERE sorteio_id = $1',
+          [data.sorteio_id]
+        );
+        return res.json({ data: [{ success: true, count: delResult.rowCount }] });
+      }
+
+      case 'updateCartelaValidada': {
+        // data.sorteio_id, data.numero, data.comprador_nome
+        const numero = Number(data.numero);
+        if (!numero || numero < 1) {
+          return res.status(400).json({ error: 'Número de cartela inválido' });
+        }
+        await client.query(
+          'UPDATE cartelas_validadas SET comprador_nome = $1 WHERE sorteio_id = $2 AND numero = $3',
+          [data.comprador_nome || null, data.sorteio_id, numero]
+        );
+        return res.json({ data: [{ success: true, numero }] });
+      }
+
       case 'verificarVencedor': {
         // data.sorteio_id, data.numeros_sorteados: number[]
         // Only considers validated cartelas (cartelas_validadas table)
@@ -2216,6 +2238,17 @@ app.post('/api', checkBasicAuth, async (req, res) => {
               SELECT id FROM atribuicoes WHERE sorteio_id = $3 AND vendedor_id = $4
             )
           `, [vendaId, numero, data.sorteio_id, data.vendedor_id]);
+        }
+
+        // Auto-assign cliente_nome to validated cartelas when a name is provided
+        if (data.cliente_nome) {
+          for (const numero of numerosVenda) {
+            await client.query(
+              `UPDATE cartelas_validadas SET comprador_nome = $1
+               WHERE sorteio_id = $2 AND numero = $3 AND (comprador_nome IS NULL OR comprador_nome = '')`,
+              [data.cliente_nome, data.sorteio_id, numero]
+            );
+          }
         }
         
         return res.json({ data: vendaResult.rows });
