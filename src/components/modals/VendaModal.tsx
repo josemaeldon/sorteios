@@ -168,7 +168,7 @@ const VendaModal: React.FC<VendaModalProps> = ({ isOpen, onClose, editingId }) =
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!vendedorId || !clienteNome || cartelasSelecionadas.length === 0) {
+    if (!vendedorId || cartelasSelecionadas.length === 0) {
       toast({ title: "Erro", description: "Preencha todos os campos obrigatórios.", variant: "destructive" });
       return;
     }
@@ -233,8 +233,8 @@ const VendaModal: React.FC<VendaModalProps> = ({ isOpen, onClose, editingId }) =
           
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Nome do Cliente *</Label>
-              <Input value={clienteNome} onChange={(e) => setClienteNome(e.target.value)} placeholder="Nome completo" required />
+              <Label>Nome do Cliente</Label>
+              <Input value={clienteNome} onChange={(e) => setClienteNome(e.target.value)} placeholder="Nome completo (opcional)" />
             </div>
             <div className="space-y-2">
               <Label>Telefone</Label>

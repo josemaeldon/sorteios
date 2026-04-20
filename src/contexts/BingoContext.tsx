@@ -79,6 +79,8 @@ interface BingoContextType {
   validarCartelas: (numeros: number[], compradorNome?: string) => Promise<void>;
   removerValidacaoCartela: (numero: number) => Promise<void>;
   removerValidacaoLote: (numeros: number[]) => Promise<void>;
+  removerTodasValidacoes: () => Promise<void>;
+  updateCartelaValidada: (numero: number, compradorNome: string | null) => Promise<void>;
   
   // CRUD Operations - Atribuicoes
   loadAtribuicoes: () => Promise<void>;
@@ -723,6 +725,28 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   }, [sorteioAtivo, callApi, toast, loadCartelasValidadas]);
 
+  const removerTodasValidacoes = useCallback(async () => {
+    if (!sorteioAtivo) return;
+    try {
+      await callApi('removerTodasValidacoes', { sorteio_id: sorteioAtivo.id });
+      await loadCartelasValidadas();
+    } catch (error: unknown) {
+      console.error('Error removing all validations:', error);
+      toast({ title: 'Erro ao remover validações', description: getErrorMessage(error), variant: 'destructive' });
+    }
+  }, [sorteioAtivo, callApi, toast, loadCartelasValidadas]);
+
+  const updateCartelaValidada = useCallback(async (numero: number, compradorNome: string | null) => {
+    if (!sorteioAtivo) return;
+    try {
+      await callApi('updateCartelaValidada', { sorteio_id: sorteioAtivo.id, numero, comprador_nome: compradorNome });
+      await loadCartelasValidadas();
+    } catch (error: unknown) {
+      console.error('Error updating cartela validada:', error);
+      toast({ title: 'Erro ao atualizar cartela', description: getErrorMessage(error), variant: 'destructive' });
+    }
+  }, [sorteioAtivo, callApi, toast, loadCartelasValidadas]);
+
   // ================== REFRESH & SET SORTEIO ATIVO ==================
   const refreshData = useCallback(async () => {
     if (!sorteioAtivo) return;
@@ -811,6 +835,8 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     validarCartelas,
     removerValidacaoCartela,
     removerValidacaoLote,
+    removerTodasValidacoes,
+    updateCartelaValidada,
     loadAtribuicoes,
     addAtribuicao,
     addCartelasToAtribuicao,
