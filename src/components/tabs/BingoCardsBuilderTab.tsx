@@ -347,6 +347,7 @@ const BingoCardsBuilderTab: React.FC = () => {
   const [previewIndex, setPreviewIndex] = useState(0);
   const [isExporting, setIsExporting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [exportProgress, setExportProgress] = useState<{ done: number; total: number } | null>(null);
   const numeroPremios = 1;
   const hasValidatedCards = cartelasValidadas.length > 0;
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
@@ -697,20 +698,20 @@ const BingoCardsBuilderTab: React.FC = () => {
     }
     setIsExporting(true);
     setExportMode('padrao');
-    const loadingToast = toast({
-      title: 'Preparando PDF…',
-      description: 'Aguarde enquanto as cartelas são renderizadas para download.',
-    });
+    setExportProgress({ done: 0, total: exportCards.length });
     try {
-      await exportBingoCardsPDF(exportCards, layout, sorteioAtivo?.nome ?? 'bingo', undefined, paperW, paperH, gridCols, gridRows, rifaOnly);
-      loadingToast.dismiss();
+      await exportBingoCardsPDF(
+        exportCards, layout, sorteioAtivo?.nome ?? 'bingo', undefined,
+        paperW, paperH, gridCols, gridRows, rifaOnly, false,
+        (done, total) => setExportProgress({ done, total }),
+      );
       toast({ title: 'PDF exportado com sucesso!' });
     } catch {
-      loadingToast.dismiss();
       toast({ title: 'Erro ao exportar PDF', variant: 'destructive' });
     } finally {
       setIsExporting(false);
       setExportMode(null);
+      setExportProgress(null);
     }
   };
 
@@ -730,20 +731,20 @@ const BingoCardsBuilderTab: React.FC = () => {
     }
     setIsExportingA4(true);
     setExportMode('a4');
-    const loadingToast = toast({
-      title: 'Preparando PDF A4…',
-      description: 'Aguarde enquanto montamos várias cartelas por página para download.',
-    });
+    setExportProgress({ done: 0, total: exportCards.length });
     try {
-      await exportBingoCardsPDF(exportCards, layout, sorteioAtivo?.nome ?? 'bingo', undefined, paperW, paperH, gridCols, gridRows, rifaOnly, true);
-      loadingToast.dismiss();
+      await exportBingoCardsPDF(
+        exportCards, layout, sorteioAtivo?.nome ?? 'bingo', undefined,
+        paperW, paperH, gridCols, gridRows, rifaOnly, true,
+        (done, total) => setExportProgress({ done, total }),
+      );
       toast({ title: 'PDF A4 exportado com sucesso!' });
     } catch {
-      loadingToast.dismiss();
       toast({ title: 'Erro ao exportar PDF', variant: 'destructive' });
     } finally {
       setIsExportingA4(false);
       setExportMode(null);
+      setExportProgress(null);
     }
   };
 
@@ -1086,15 +1087,34 @@ const BingoCardsBuilderTab: React.FC = () => {
       )}
 
       {(isExporting || isExportingA4) && (
-        <div className="flex items-center gap-3 p-4 bg-primary/10 border border-primary/30 rounded-xl text-sm">
-          <Loader2 className="w-5 h-5 text-primary flex-shrink-0 animate-spin" />
-          <span className="text-primary">
-            <strong>Preparando PDF para download…</strong>
-            {' '}
-            {exportMode === 'a4'
-              ? 'Montando o formato A4 com múltiplas cartelas por página.'
-              : 'Renderizando as cartelas selecionadas. Isso pode levar alguns segundos.'}
-          </span>
+        <div className="flex items-start gap-3 p-4 bg-primary/10 border border-primary/30 rounded-xl text-sm">
+          <Loader2 className="w-5 h-5 text-primary flex-shrink-0 animate-spin mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-primary font-semibold">
+              Preparando PDF para download…
+              {' '}
+              {exportMode === 'a4'
+                ? 'Montando o formato A4 com múltiplas cartelas por página.'
+                : 'Renderizando as cartelas. Isso pode levar alguns minutos para grandes volumes.'}
+            </p>
+            {exportProgress && (() => {
+                const remaining = exportProgress.total - exportProgress.done;
+                return (
+                  <div className="mt-2">
+                    <p className="text-primary text-xs mb-1">
+                      {exportProgress.done} de {exportProgress.total} cartelas geradas
+                      {remaining > 0 ? ` — ${remaining} restantes` : ' — Finalizando download…'}
+                    </p>
+                    <div className="h-2.5 bg-primary/20 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-primary transition-all duration-300 rounded-full"
+                        style={{ width: `${exportProgress.total > 0 ? (exportProgress.done / exportProgress.total) * 100 : 0}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })()}
+          </div>
         </div>
       )}
 

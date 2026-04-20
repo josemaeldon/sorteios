@@ -390,10 +390,12 @@ export async function exportBingoCardsPDF(
   gridRows: number = 5,
   rifaOnly: boolean = false,
   a4MultiPerPage: boolean = false,
+  onProgress?: (done: number, total: number) => void,
 ): Promise<Blob> {
   const [jsPDF, jsBarcode] = await Promise.all([loadJsPdfCtor(), loadJsBarcodeFn()]);
   const ticketW = Number(paperWidthMm);
   const ticketH = Number(paperHeightMm);
+  const BATCH_SIZE = 100; // yield to the browser every N cards
 
   if (a4MultiPerPage) {
     // ── A4 multi-per-page mode ────────────────────────────────────────────────
@@ -408,7 +410,7 @@ export async function exportBingoCardsPDF(
     const startX = (A4_W_MM - gridW) / 2;
     const startY = (A4_H_MM - gridH) / 2;
 
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [A4_W_MM, A4_H_MM] });
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [A4_W_MM, A4_H_MM], compress: true });
 
     for (let i = 0; i < cards.length; i++) {
       const posInPage = i % cardsPerPage;
@@ -433,6 +435,12 @@ export async function exportBingoCardsPDF(
         jsBarcode,
         buyerData,
       );
+
+      // Yield to the browser periodically to avoid freezing
+      if ((i + 1) % BATCH_SIZE === 0 || i === cards.length - 1) {
+        onProgress?.(i + 1, cards.length);
+        await new Promise<void>(resolve => setTimeout(resolve, 0));
+      }
     }
 
     doc.save(
@@ -446,7 +454,7 @@ export async function exportBingoCardsPDF(
   const pageHeight = ticketH;
   const orientation = pageWidth > pageHeight ? 'landscape' : 'portrait';
 
-  const doc = new jsPDF({ orientation, unit: 'mm', format: [pageWidth, pageHeight] });
+  const doc = new jsPDF({ orientation, unit: 'mm', format: [pageWidth, pageHeight], compress: true });
 
   for (let i = 0; i < cards.length; i++) {
     if (i > 0) doc.addPage();
@@ -464,6 +472,12 @@ export async function exportBingoCardsPDF(
       jsBarcode,
       buyerData,
     );
+
+    // Yield to the browser periodically to avoid freezing
+    if ((i + 1) % BATCH_SIZE === 0 || i === cards.length - 1) {
+      onProgress?.(i + 1, cards.length);
+      await new Promise<void>(resolve => setTimeout(resolve, 0));
+    }
   }
 
   doc.save(
