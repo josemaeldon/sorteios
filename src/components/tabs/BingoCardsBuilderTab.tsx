@@ -1097,22 +1097,23 @@ const BingoCardsBuilderTab: React.FC = () => {
                 ? 'Montando o formato A4 com múltiplas cartelas por página.'
                 : 'Renderizando as cartelas. Isso pode levar alguns minutos para grandes volumes.'}
             </p>
-            {exportProgress && (
-              <div className="mt-2">
-                <p className="text-primary text-xs mb-1">
-                  {exportProgress.done} de {exportProgress.total} cartelas geradas
-                  {exportProgress.total - exportProgress.done > 0
-                    ? ` — ${exportProgress.total - exportProgress.done} restantes`
-                    : ' — Finalizando download…'}
-                </p>
-                <div className="h-2.5 bg-primary/20 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-primary transition-all duration-300 rounded-full"
-                    style={{ width: `${exportProgress.total > 0 ? (exportProgress.done / exportProgress.total) * 100 : 0}%` }}
-                  />
-                </div>
-              </div>
-            )}
+            {exportProgress && (() => {
+                const remaining = exportProgress.total - exportProgress.done;
+                return (
+                  <div className="mt-2">
+                    <p className="text-primary text-xs mb-1">
+                      {exportProgress.done} de {exportProgress.total} cartelas geradas
+                      {remaining > 0 ? ` — ${remaining} restantes` : ' — Finalizando download…'}
+                    </p>
+                    <div className="h-2.5 bg-primary/20 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-primary transition-all duration-300 rounded-full"
+                        style={{ width: `${exportProgress.total > 0 ? (exportProgress.done / exportProgress.total) * 100 : 0}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })()}
           </div>
         </div>
       )}
