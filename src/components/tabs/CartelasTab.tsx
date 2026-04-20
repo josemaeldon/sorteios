@@ -746,6 +746,7 @@ const CartelasTab: React.FC = () => {
                             onClick={() => setEditingValidada({ numero: cv.numero, nome: cv.comprador_nome || '' })}
                             className="ml-1 text-muted-foreground hover:text-primary transition-colors opacity-0 group-hover:opacity-100"
                             title="Editar nome do comprador"
+                            aria-label="Editar nome do comprador"
                           >
                             <Edit2 className="w-3.5 h-3.5" />
                           </button>
@@ -753,6 +754,7 @@ const CartelasTab: React.FC = () => {
                             onClick={() => removerValidacaoCartela(cv.numero)}
                             className="text-muted-foreground hover:text-destructive transition-colors opacity-0 group-hover:opacity-100"
                             title="Remover validação"
+                            aria-label="Remover validação"
                           >
                             <X className="w-3.5 h-3.5" />
                           </button>

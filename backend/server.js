@@ -2245,7 +2245,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           for (const numero of numerosVenda) {
             await client.query(
               `UPDATE cartelas_validadas SET comprador_nome = $1
-               WHERE sorteio_id = $2 AND numero = $3 AND (comprador_nome IS NULL OR comprador_nome = '')`,
+               WHERE sorteio_id = $2 AND numero = $3 AND (comprador_nome IS NULL OR trim(comprador_nome) = '')`,
               [data.cliente_nome, data.sorteio_id, numero]
             );
           }
