@@ -230,11 +230,12 @@ const CartelasTab: React.FC = () => {
 
   const getCartelaStatusClass = (status: string) => {
     switch (status) {
-      case 'disponivel': return 'bg-card border-border text-muted-foreground';
-      case 'ativa':      return 'status-atribuida';
-      case 'vendida':    return 'status-vendida';
-      case 'devolvida':  return 'status-devolvida';
-      default:           return 'bg-card border-border';
+      case 'disponivel':  return 'bg-card border-border text-muted-foreground';
+      case 'ativa':       return 'status-atribuida';
+      case 'vendida':     return 'status-vendida';
+      case 'devolvida':   return 'status-devolvida';
+      case 'extraviada':  return 'bg-black border-black text-white';
+      default:            return 'bg-card border-border';
     }
   };
 
@@ -242,11 +243,12 @@ const CartelasTab: React.FC = () => {
     const vendedor = cartela.vendedor_id ? vendedores.find(v => v.id === cartela.vendedor_id) : null;
     const nome = vendedor?.nome || cartela.vendedor_nome || cartela.comprador_nome || 'N/A';
     switch (cartela.status) {
-      case 'disponivel': return 'Disponível';
-      case 'ativa':      return `Atribuída: ${nome}`;
-      case 'vendida':    return `Vendida: ${nome}`;
-      case 'devolvida':  return `Devolvida: ${nome}`;
-      default:           return '';
+      case 'disponivel':  return 'Disponível';
+      case 'ativa':       return `Atribuída: ${nome}`;
+      case 'vendida':     return `Vendida: ${nome}`;
+      case 'devolvida':   return `Devolvida: ${nome}`;
+      case 'extraviada':  return 'Extraviada';
+      default:            return '';
     }
   };
 
@@ -528,6 +530,7 @@ const CartelasTab: React.FC = () => {
                     <SelectItem value="ativa">Atribuídas</SelectItem>
                     <SelectItem value="vendida">Vendidas</SelectItem>
                     <SelectItem value="devolvida">Devolvidas</SelectItem>
+                    <SelectItem value="extraviada">Extraviadas</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -577,6 +580,10 @@ const CartelasTab: React.FC = () => {
               <div className="flex items-center gap-2">
                 <div className="w-6 h-6 rounded status-devolvida" />
                 <span className="text-sm text-muted-foreground">Devolvida</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded bg-black border border-black" />
+                <span className="text-sm text-muted-foreground">Extraviada</span>
               </div>
             </div>
           </div>
@@ -780,9 +787,10 @@ const CartelasTab: React.FC = () => {
               <span>Cartela {selectedCartela ? formatarNumeroCartela(selectedCartela.numero) : ''}</span>
               <span className={cn(
                 'text-xs font-medium px-2 py-0.5 rounded-full border',
-                selectedCartela?.status === 'disponivel' ? 'bg-muted text-muted-foreground border-border' :
-                selectedCartela?.status === 'ativa'      ? 'status-atribuida' :
-                selectedCartela?.status === 'vendida'    ? 'status-vendida' :
+                selectedCartela?.status === 'disponivel'  ? 'bg-muted text-muted-foreground border-border' :
+                selectedCartela?.status === 'ativa'       ? 'status-atribuida' :
+                selectedCartela?.status === 'vendida'     ? 'status-vendida' :
+                selectedCartela?.status === 'extraviada'  ? 'bg-black text-white border-black' :
                 'status-devolvida',
               )}>
                 {getStatusLabel(selectedCartela?.status ?? '')}
