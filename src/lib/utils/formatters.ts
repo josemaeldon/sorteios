@@ -40,6 +40,7 @@ export const getStatusLabel = (status: string): string => {
     'ativa': 'Atribuída',
     'vendida': 'Vendida',
     'devolvida': 'Devolvida',
+    'extraviada': 'Extraviada',
     'concluida': 'Concluída'
   };
   return labels[status] || status;

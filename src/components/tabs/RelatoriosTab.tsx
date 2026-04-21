@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useBingo } from '@/contexts/BingoContext';
 import { PieChart, FileText, FileSpreadsheet, Download, Users, ShoppingCart, CreditCard, Package } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { formatarMoeda } from '@/lib/utils/formatters';
 import {
@@ -14,12 +15,15 @@ import {
   exportAtribuicoesExcel,
   exportVendedoresPDF,
   exportVendedoresExcel,
-  exportRelatorioCompletoPDF
+  exportRelatorioCompletoPDF,
+  exportRelatorioVendedorPDF,
+  exportRelatorioVendedorExcel,
 } from '@/lib/utils/exportUtils';
 
 const RelatoriosTab: React.FC = () => {
   const { sorteioAtivo, vendedores, cartelas, atribuicoes, vendas } = useBingo();
   const { toast } = useToast();
+  const [selectedVendedorId, setSelectedVendedorId] = useState<string>('todos');
 
   if (!sorteioAtivo) {
     return (
@@ -85,6 +89,20 @@ const RelatoriosTab: React.FC = () => {
             await exportVendedoresExcel(vendedores, atribuicoes, vendas, sorteioAtivo);
           }
           break;
+        case 'vendedor': {
+          if (selectedVendedorId === 'todos') {
+            toast({ title: 'Selecione um vendedor', description: 'Escolha um vendedor para gerar o relatório individual', variant: 'destructive' });
+            return;
+          }
+          const vendedor = vendedores.find(v => v.id === selectedVendedorId);
+          if (!vendedor) return;
+          if (format === 'pdf') {
+            await exportRelatorioVendedorPDF(vendedor, atribuicoes, vendas, sorteioAtivo);
+          } else {
+            await exportRelatorioVendedorExcel(vendedor, atribuicoes, vendas, sorteioAtivo);
+          }
+          break;
+        }
         case 'completo':
           await exportRelatorioCompletoPDF(sorteioAtivo, vendedores, cartelas, atribuicoes, vendas);
           break;
@@ -294,6 +312,52 @@ const RelatoriosTab: React.FC = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* Relatório por Vendedor */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Users className="w-5 h-5 text-primary" />
+            Relatório por Vendedor
+          </CardTitle>
+          <CardDescription>
+            Relatório individual com cartelas atribuídas e vendas realizadas por vendedor
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Select value={selectedVendedorId} onValueChange={setSelectedVendedorId}>
+            <SelectTrigger>
+              <SelectValue placeholder="Selecione um vendedor" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Selecione um vendedor...</SelectItem>
+              {vendedores.map(v => (
+                <SelectItem key={v.id} value={v.id}>{v.nome}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <div className="flex gap-3">
+            <Button
+              onClick={() => handleExport('vendedor', 'pdf')}
+              className="flex-1"
+              variant="outline"
+              disabled={selectedVendedorId === 'todos'}
+            >
+              <FileText className="w-4 h-4 mr-2" />
+              PDF
+            </Button>
+            <Button
+              onClick={() => handleExport('vendedor', 'excel')}
+              className="flex-1"
+              variant="outline"
+              disabled={selectedVendedorId === 'todos'}
+            >
+              <FileSpreadsheet className="w-4 h-4 mr-2" />
+              Excel
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Relatório Completo */}
       <Card className="bg-gradient-to-r from-primary/5 via-primary/10 to-primary/5 border-primary/20">

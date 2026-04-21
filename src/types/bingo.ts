@@ -59,7 +59,7 @@ export interface Vendedor {
 
 export interface Cartela {
   numero: number;
-  status: 'disponivel' | 'ativa' | 'vendida' | 'devolvida';
+  status: 'disponivel' | 'ativa' | 'vendida' | 'devolvida' | 'extraviada';
   vendedor_id?: string;
   vendedor_nome?: string;
   comprador_nome?: string;
@@ -93,7 +93,7 @@ export interface LojaCartela {
 
 export interface CartelaAtribuida {
   numero: number;
-  status: 'ativa' | 'vendida' | 'devolvida';
+  status: 'ativa' | 'vendida' | 'devolvida' | 'extraviada';
   data_atribuicao: string;
   data_devolucao?: string;
   venda_id?: string;
@@ -166,13 +166,13 @@ export interface FiltrosVendedores {
 
 export interface FiltrosCartelas {
   busca: string;
-  status: 'todos' | 'disponivel' | 'ativa' | 'vendida' | 'devolvida';
+  status: 'todos' | 'disponivel' | 'ativa' | 'vendida' | 'devolvida' | 'extraviada';
   vendedor: string;
 }
 
 export interface FiltrosAtribuicoes {
   busca: string;
-  status: 'todos' | 'ativa' | 'vendida' | 'devolvida';
+  status: 'todos' | 'ativa' | 'vendida' | 'devolvida' | 'extraviada';
   vendedor: string;
 }
 

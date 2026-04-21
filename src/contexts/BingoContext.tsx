@@ -85,9 +85,11 @@ interface BingoContextType {
   // CRUD Operations - Atribuicoes
   loadAtribuicoes: () => Promise<void>;
   addAtribuicao: (vendedorId: string, cartelas: number[]) => Promise<void>;
+  addAtribuicaoComProgresso: (vendedorId: string, cartelas: number[], onProgress: (done: number, total: number) => void) => Promise<void>;
+  addCartelasToAtribuicaoComProgresso: (atribuicaoId: string, vendedorId: string, cartelas: number[], onProgress: (done: number, total: number) => void) => Promise<void>;
   addCartelasToAtribuicao: (atribuicaoId: string, vendedorId: string, cartelas: number[]) => Promise<void>;
   removeCartelaFromAtribuicao: (atribuicaoId: string, numeroCartela: number) => Promise<void>;
-  updateCartelaStatusInAtribuicao: (atribuicaoId: string, numeroCartela: number, status: 'ativa' | 'vendida' | 'devolvida') => Promise<void>;
+  updateCartelaStatusInAtribuicao: (atribuicaoId: string, numeroCartela: number, status: 'ativa' | 'vendida' | 'devolvida' | 'extraviada') => Promise<void>;
   deleteAtribuicao: (id: string) => Promise<void>;
   transferirCartelas: (atribuicaoOrigemId: string, numerosCartelas: number[], vendedorDestinoId: string) => Promise<void>;
   
@@ -429,6 +431,61 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   }, [sorteioAtivo, callApi, toast, loadAtribuicoes, loadCartelas]);
 
+  const ATRIB_BATCH_SIZE = 50;
+
+  const addAtribuicaoComProgresso = useCallback(async (
+    vendedorId: string,
+    cartelasNums: number[],
+    onProgress: (done: number, total: number) => void,
+  ) => {
+    if (!sorteioAtivo) return;
+    const total = cartelasNums.length;
+    const firstBatch = cartelasNums.slice(0, ATRIB_BATCH_SIZE);
+    const result = await callApi('createAtribuicao', {
+      sorteio_id: sorteioAtivo.id,
+      vendedor_id: vendedorId,
+      cartelas: firstBatch,
+    }) as { data: { id: string }[] };
+    const atribuicaoId = result.data[0].id;
+    onProgress(Math.min(ATRIB_BATCH_SIZE, total), total);
+
+    for (let i = ATRIB_BATCH_SIZE; i < total; i += ATRIB_BATCH_SIZE) {
+      const batch = cartelasNums.slice(i, i + ATRIB_BATCH_SIZE);
+      await callApi('addCartelasToAtribuicao', {
+        atribuicao_id: atribuicaoId,
+        vendedor_id: vendedorId,
+        sorteio_id: sorteioAtivo.id,
+        cartelas: batch,
+      });
+      onProgress(Math.min(i + ATRIB_BATCH_SIZE, total), total);
+    }
+
+    await loadAtribuicoes();
+    await loadCartelas();
+  }, [sorteioAtivo, callApi, loadAtribuicoes, loadCartelas]);
+
+  const addCartelasToAtribuicaoComProgresso = useCallback(async (
+    atribuicaoId: string,
+    vendedorId: string,
+    cartelasNums: number[],
+    onProgress: (done: number, total: number) => void,
+  ) => {
+    if (!sorteioAtivo) return;
+    const total = cartelasNums.length;
+    for (let i = 0; i < total; i += ATRIB_BATCH_SIZE) {
+      const batch = cartelasNums.slice(i, i + ATRIB_BATCH_SIZE);
+      await callApi('addCartelasToAtribuicao', {
+        atribuicao_id: atribuicaoId,
+        vendedor_id: vendedorId,
+        sorteio_id: sorteioAtivo.id,
+        cartelas: batch,
+      });
+      onProgress(Math.min(i + ATRIB_BATCH_SIZE, total), total);
+    }
+    await loadAtribuicoes();
+    await loadCartelas();
+  }, [sorteioAtivo, callApi, loadAtribuicoes, loadCartelas]);
+
   const addCartelasToAtribuicao = useCallback(async (atribuicaoId: string, vendedorId: string, cartelasNums: number[]) => {
     if (!sorteioAtivo) return;
     
@@ -469,7 +526,7 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   }, [sorteioAtivo, callApi, toast, loadAtribuicoes, loadCartelas]);
 
-  const updateCartelaStatusInAtribuicao = useCallback(async (atribuicaoId: string, numeroCartela: number, status: 'ativa' | 'vendida' | 'devolvida') => {
+  const updateCartelaStatusInAtribuicao = useCallback(async (atribuicaoId: string, numeroCartela: number, status: 'ativa' | 'vendida' | 'devolvida' | 'extraviada') => {
     if (!sorteioAtivo) return;
     
     try {
@@ -839,6 +896,8 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     updateCartelaValidada,
     loadAtribuicoes,
     addAtribuicao,
+    addAtribuicaoComProgresso,
+    addCartelasToAtribuicaoComProgresso,
     addCartelasToAtribuicao,
     removeCartelaFromAtribuicao,
     updateCartelaStatusInAtribuicao,
