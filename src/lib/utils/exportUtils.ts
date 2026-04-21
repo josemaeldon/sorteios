@@ -638,7 +638,8 @@ export const exportRelatorioVendedorExcel = async (
   });
 
   const wsVendas = XLSX.utils.json_to_sheet(vendasData);
-  wsVendas['!cols'] = Object.keys(vendasData[0] || {}).map(k => ({ wch: Math.max(k.length, 15) }));
+  const defaultVendasCols = ['Cliente', 'Cartelas', 'Valor Total', 'Valor Pago', 'Valor Pendente', 'Forma Pagamento', 'Status', 'Data'];
+  wsVendas['!cols'] = (vendasData.length > 0 ? Object.keys(vendasData[0]) : defaultVendasCols).map(k => ({ wch: Math.max(k.length, 15) }));
   XLSX.utils.book_append_sheet(wb, wsVendas, 'Vendas');
 
   const safeName = vendedor.nome.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9-]/g, '');
