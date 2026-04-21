@@ -362,6 +362,13 @@ const BingoCardsBuilderTab: React.FC = () => {
   const [selectedLojaIds, setSelectedLojaIds] = useState<Set<string>>(new Set());
   const [isDeletingLoja, setIsDeletingLoja] = useState(false);
 
+  // Export range state
+  const [showExportRangeModal, setShowExportRangeModal] = useState(false);
+  const [exportRangeFrom, setExportRangeFrom] = useState(1);
+  const [exportRangeTo, setExportRangeTo] = useState(1);
+  const [isExportingRange, setIsExportingRange] = useState(false);
+  const [exportRangeA4, setExportRangeA4] = useState(false);
+
   // Bulk publish state
   const [showBulkVenderModal, setShowBulkVenderModal] = useState(false);
   const [bulkFrom, setBulkFrom] = useState(1);
@@ -748,6 +755,52 @@ const BingoCardsBuilderTab: React.FC = () => {
     }
   };
 
+  // ─── Export PDF range ─────────────────────────────────────────────────────
+  const handleOpenExportRangeModal = () => {
+    const maxCard = cards.length > 0 ? cards[cards.length - 1].cartelaNumero : totalCards;
+    setExportRangeFrom(1);
+    setExportRangeTo(maxCard);
+    setExportRangeA4(false);
+    setShowExportRangeModal(true);
+  };
+
+  const handleExportRange = async () => {
+    const from = Math.max(1, Math.round(exportRangeFrom));
+    const maxCard = cards.length > 0 ? cards[cards.length - 1].cartelaNumero : totalCards;
+    const to = Math.min(maxCard, Math.round(exportRangeTo));
+    if (from > to) {
+      toast({ title: 'Intervalo inválido', variant: 'destructive' });
+      return;
+    }
+    let exportCards: BingoCardGrid[];
+    if (rifaOnly && cards.length === 0) {
+      exportCards = Array.from({ length: to - from + 1 }, (_, i) => ({ cartelaNumero: from + i, grids: [] }));
+    } else {
+      exportCards = cards.filter(c => c.cartelaNumero >= from && c.cartelaNumero <= to);
+    }
+    if (exportCards.length === 0) {
+      toast({ title: 'Nenhuma cartela encontrada no intervalo', variant: 'destructive' });
+      return;
+    }
+    setIsExportingRange(true);
+    setExportProgress({ done: 0, total: exportCards.length });
+    try {
+      await exportBingoCardsPDF(
+        exportCards, layout, sorteioAtivo?.nome ?? 'bingo', undefined,
+        paperW, paperH, gridCols, gridRows, rifaOnly, exportRangeA4,
+        (done, total) => setExportProgress({ done, total }),
+      );
+      const n = exportCards.length;
+      toast({ title: `PDF exportado com sucesso! (${n} cartela${n !== 1 ? 's' : ''})` });
+      setShowExportRangeModal(false);
+    } catch {
+      toast({ title: 'Erro ao exportar PDF', variant: 'destructive' });
+    } finally {
+      setIsExportingRange(false);
+      setExportProgress(null);
+    }
+  };
+
   const handleOpenSaveDialog = () => {
     const active = cartelaLayouts.find(l => l.id === activeLayoutId);
     setSaveLayoutName(active?.nome ?? '');
@@ -1064,6 +1117,10 @@ const BingoCardsBuilderTab: React.FC = () => {
             {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
             Exportar PDF {cards.length > 0 && `(${cards.length})`}
           </Button>
+          <Button variant="outline" onClick={handleOpenExportRangeModal} disabled={!rifaOnly && cards.length === 0} className="gap-2">
+            <Download className="w-4 h-4" />
+            Exportar Faixa…
+          </Button>
           {isA4MultiAvailable && (
             <Button variant="outline" onClick={handleExportA4MultiPDF} disabled={isExportingA4 || (!rifaOnly && cards.length === 0)} className="gap-2">
               {isExportingA4 ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
@@ -1086,7 +1143,7 @@ const BingoCardsBuilderTab: React.FC = () => {
         </div>
       )}
 
-      {(isExporting || isExportingA4) && (
+      {(isExporting || isExportingA4 || isExportingRange) && (
         <div className="flex items-start gap-3 p-4 bg-primary/10 border border-primary/30 rounded-xl text-sm">
           <Loader2 className="w-5 h-5 text-primary flex-shrink-0 animate-spin mt-0.5" />
           <div className="flex-1 min-w-0">
@@ -2047,6 +2104,91 @@ const BingoCardsBuilderTab: React.FC = () => {
             <Button onClick={handleBulkVender} disabled={isBulkVendendo} className="gap-2">
               {isBulkVendendo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Store className="w-4 h-4" />}
               Disponibilizar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Exportar Faixa dialog ── */}
+      <Dialog open={showExportRangeModal} onOpenChange={(open) => { if (!open && !isExportingRange) setShowExportRangeModal(false); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Download className="w-5 h-5" />
+              Exportar Faixa de Cartelas
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Informe o intervalo de cartelas que deseja exportar. Para uma única cartela, preencha o mesmo número nos dois campos.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-sm">Da cartela</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={cards.length > 0 ? cards[cards.length - 1].cartelaNumero : totalCards}
+                  value={exportRangeFrom}
+                  onChange={(e) => setExportRangeFrom(Number(e.target.value))}
+                  className="h-9"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-sm">Até a cartela</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={cards.length > 0 ? cards[cards.length - 1].cartelaNumero : totalCards}
+                  value={exportRangeTo}
+                  onChange={(e) => setExportRangeTo(Number(e.target.value))}
+                  className="h-9"
+                />
+              </div>
+            </div>
+            {isA4MultiAvailable && (
+              <div className="space-y-1.5">
+                <Label className="text-sm">Formato</Label>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant={!exportRangeA4 ? 'default' : 'outline'}
+                    className="flex-1 text-xs"
+                    onClick={() => setExportRangeA4(false)}
+                  >
+                    Uma por página
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={exportRangeA4 ? 'default' : 'outline'}
+                    className="flex-1 text-xs"
+                    onClick={() => setExportRangeA4(true)}
+                  >
+                    Múltiplas por página (A4)
+                  </Button>
+                </div>
+              </div>
+            )}
+            {isExportingRange && exportProgress && (
+              <div className="space-y-1">
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>Exportando cartelas…</span>
+                  <span>{exportProgress.done} / {exportProgress.total}</span>
+                </div>
+                <div className="w-full bg-muted rounded-full h-2">
+                  <div
+                    className="bg-primary h-2 rounded-full transition-all"
+                    style={{ width: `${exportProgress.total > 0 ? (exportProgress.done / exportProgress.total) * 100 : 0}%` }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowExportRangeModal(false)} disabled={isExportingRange}>Cancelar</Button>
+            <Button onClick={handleExportRange} disabled={isExportingRange} className="gap-2">
+              {isExportingRange ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+              Exportar PDF
             </Button>
           </DialogFooter>
         </DialogContent>
