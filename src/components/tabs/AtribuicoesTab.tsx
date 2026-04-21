@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useBingo } from '@/contexts/BingoContext';
-import { ListTodo, Plus, Search, Filter, Eraser, Edit, Trash2, ChevronDown, ChevronUp, RotateCcw, ArrowRightLeft, DollarSign } from 'lucide-react';
+import { ListTodo, Plus, Search, Filter, Eraser, Edit, Trash2, ChevronDown, ChevronUp, RotateCcw, ArrowRightLeft, DollarSign, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -44,7 +44,7 @@ const AtribuicoesTab: React.FC = () => {
   const [expandedAtribuicao, setExpandedAtribuicao] = useState<string | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deletingAtribuicao, setDeletingAtribuicao] = useState<{ id: string; vendedorId: string; cartela?: number } | null>(null);
-  const [actionType, setActionType] = useState<'devolver' | 'excluir-cartela' | 'excluir-atribuicao'>('excluir-atribuicao');
+  const [actionType, setActionType] = useState<'devolver' | 'excluir-cartela' | 'excluir-atribuicao' | 'extraviar'>('excluir-atribuicao');
   
   // Transfer modal state
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
@@ -84,6 +84,12 @@ const AtribuicoesTab: React.FC = () => {
     setDeleteDialogOpen(true);
   };
 
+  const handleExtraviada = (atribuicaoId: string, numeroCartela: number) => {
+    setDeletingAtribuicao({ id: atribuicaoId, vendedorId: '', cartela: numeroCartela });
+    setActionType('extraviar');
+    setDeleteDialogOpen(true);
+  };
+
   const handleExcluirCartela = (atribuicaoId: string, numeroCartela: number) => {
     setDeletingAtribuicao({ id: atribuicaoId, vendedorId: '', cartela: numeroCartela });
     setActionType('excluir-cartela');
@@ -120,6 +126,12 @@ const AtribuicoesTab: React.FC = () => {
         title: "Cartela devolvida",
         description: `A cartela ${formatarNumeroCartela(deletingAtribuicao.cartela)} foi devolvida e está disponível para novas atribuições.`
       });
+    } else if (actionType === 'extraviar' && deletingAtribuicao.cartela) {
+      await updateCartelaStatusInAtribuicao(deletingAtribuicao.id, deletingAtribuicao.cartela, 'extraviada');
+      toast({
+        title: "Cartela marcada como Extraviada",
+        description: `A cartela ${formatarNumeroCartela(deletingAtribuicao.cartela)} foi marcada como extraviada.`
+      });
     } else if (actionType === 'excluir-cartela' && deletingAtribuicao.cartela) {
       await removeCartelaFromAtribuicao(deletingAtribuicao.id, deletingAtribuicao.cartela);
       toast({
@@ -151,6 +163,7 @@ const AtribuicoesTab: React.FC = () => {
       ativas: cartelas.filter(c => c.status === 'ativa').length,
       vendidas: cartelas.filter(c => c.status === 'vendida').length,
       devolvidas: cartelas.filter(c => c.status === 'devolvida').length,
+      extraviadas: cartelas.filter(c => c.status === 'extraviada').length,
     };
   };
 
@@ -198,6 +211,7 @@ const AtribuicoesTab: React.FC = () => {
                 <SelectItem value="ativa">Ativas</SelectItem>
                 <SelectItem value="vendida">Vendidas</SelectItem>
                 <SelectItem value="devolvida">Devolvidas</SelectItem>
+                <SelectItem value="extraviada">Extraviadas</SelectItem>
               </SelectContent>
             </Select>
           </div>

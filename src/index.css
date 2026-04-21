@@ -72,6 +72,8 @@
     --status-vendida-text: 142 76% 20%;
     --status-devolvida: 0 84% 92%;
     --status-devolvida-text: 0 84% 35%;
+    --status-extraviada: 25 95% 87%;
+    --status-extraviada-text: 25 80% 30%;
 
     /* Gradients */
     --gradient-primary: linear-gradient(135deg, hsl(217, 91%, 60%) 0%, hsl(217, 91%, 50%) 100%);
@@ -212,6 +214,12 @@
     background: hsl(var(--status-devolvida));
     color: hsl(var(--status-devolvida-text));
     @apply border-2 border-danger;
+  }
+
+  .status-extraviada {
+    background: hsl(var(--status-extraviada));
+    color: hsl(var(--status-extraviada-text));
+    @apply border-2 border-orange-400;
   }
 
   /* Sorteio Card */
