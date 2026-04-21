@@ -37,8 +37,8 @@ const AtribuicaoModal: React.FC<AtribuicaoModalProps> = ({ isOpen, onClose, edit
     vendedores, 
     cartelas, 
     atribuicoes,
-    addAtribuicao, 
-    addCartelasToAtribuicao,
+    addAtribuicaoComProgresso, 
+    addCartelasToAtribuicaoComProgresso,
     removeCartelaFromAtribuicao,
     atualizarStatusCartela 
   } = useBingo();
@@ -176,40 +176,50 @@ const AtribuicaoModal: React.FC<AtribuicaoModalProps> = ({ isOpen, onClose, edit
         const removidas = cartelasAnteriores.filter(n => !cartelasSelecionadas.includes(n));
         const adicionadas = cartelasSelecionadas.filter(n => !cartelasAnteriores.includes(n));
 
-        setProgress(30);
+        setProgress(10);
 
         // Remove cartelas
         for (const num of removidas) {
           await removeCartelaFromAtribuicao(editingAtribuicao.id, num);
         }
 
-        setProgress(60);
+        setProgress(30);
 
         // Add new cartelas
         if (adicionadas.length > 0) {
-          await addCartelasToAtribuicao(editingAtribuicao.id, vendedorId, adicionadas);
+          await addCartelasToAtribuicaoComProgresso(
+            editingAtribuicao.id,
+            vendedorId,
+            adicionadas,
+            (done, total) => setProgress(30 + Math.round((done / total) * 70)),
+          );
+        } else {
+          setProgress(100);
         }
-
-        setProgress(100);
 
         toast({
           title: "Atribuição atualizada",
           description: `Atribuição atualizada com sucesso.`
         });
       } else if (atribuicaoExistente) {
-        setProgress(40);
         // Add cartelas to existing attribution
-        await addCartelasToAtribuicao(atribuicaoExistente.id, vendedorId, cartelasSelecionadas);
-        setProgress(100);
+        await addCartelasToAtribuicaoComProgresso(
+          atribuicaoExistente.id,
+          vendedorId,
+          cartelasSelecionadas,
+          (done, total) => setProgress(Math.round((done / total) * 100)),
+        );
         toast({
           title: "Cartelas adicionadas",
           description: `${cartelasSelecionadas.length} cartela(s) adicionada(s) à atribuição existente.`
         });
       } else {
-        setProgress(40);
         // Create new attribution
-        await addAtribuicao(vendedorId, cartelasSelecionadas);
-        setProgress(100);
+        await addAtribuicaoComProgresso(
+          vendedorId,
+          cartelasSelecionadas,
+          (done, total) => setProgress(Math.round((done / total) * 100)),
+        );
 
         toast({
           title: "Atribuição realizada",

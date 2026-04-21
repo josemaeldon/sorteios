@@ -290,6 +290,11 @@ const AtribuicoesTab: React.FC = () => {
                               {counts.devolvidas} devolvida(s)
                             </span>
                           )}
+                          {counts.extraviadas > 0 && (
+                            <span className="status-badge status-extraviada">
+                              {counts.extraviadas} extraviada(s)
+                            </span>
+                          )}
                         </div>
                         
                         <div className="flex items-center gap-2">
@@ -393,6 +398,15 @@ const AtribuicoesTab: React.FC = () => {
                                       <>
                                         <Button 
                                           size="sm" 
+                                          variant="outline"
+                                          onClick={() => handleExtraviada(atribuicao.id, cartela.numero)}
+                                          className="gap-1 border-orange-400 text-orange-600 hover:bg-orange-50"
+                                          title="Marcar como extraviada"
+                                        >
+                                          <AlertTriangle className="w-4 h-4" />
+                                        </Button>
+                                        <Button 
+                                          size="sm" 
                                           variant="outline" 
                                           onClick={() => handleTransferirCartela(atribuicao, cartela.numero)}
                                           className="gap-1"
@@ -481,11 +495,13 @@ const AtribuicoesTab: React.FC = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>
               {actionType === 'devolver' && 'Devolver Cartela'}
+              {actionType === 'extraviar' && 'Marcar como Extraviada'}
               {actionType === 'excluir-cartela' && 'Remover Cartela'}
               {actionType === 'excluir-atribuicao' && 'Excluir Atribuição'}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {actionType === 'devolver' && 'Tem certeza que deseja devolver esta cartela? Ela será marcada como devolvida.'}
+              {actionType === 'extraviar' && 'Tem certeza que deseja marcar esta cartela como extraviada? Ela será registrada como perdida.'}
               {actionType === 'excluir-cartela' && 'Tem certeza que deseja remover esta cartela da atribuição? Ela voltará a ficar disponível.'}
               {actionType === 'excluir-atribuicao' && 'Tem certeza que deseja excluir esta atribuição? Todas as cartelas voltarão a ficar disponíveis.'}
             </AlertDialogDescription>
@@ -497,6 +513,7 @@ const AtribuicoesTab: React.FC = () => {
               className={actionType !== 'devolver' ? 'bg-danger text-danger-foreground hover:bg-danger/90' : ''}
             >
               {actionType === 'devolver' && 'Devolver'}
+              {actionType === 'extraviar' && 'Marcar Extraviada'}
               {actionType === 'excluir-cartela' && 'Remover'}
               {actionType === 'excluir-atribuicao' && 'Excluir'}
             </AlertDialogAction>

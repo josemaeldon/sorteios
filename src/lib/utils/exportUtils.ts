@@ -478,3 +478,169 @@ export const exportRelatorioCompletoPDF = async (
   
   doc.save(`relatorio-completo-${sorteio.nome.replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.pdf`);
 };
+
+// Per-seller report PDF
+export const exportRelatorioVendedorPDF = async (
+  vendedor: Vendedor,
+  atribuicoes: Atribuicao[],
+  vendas: Venda[],
+  sorteio: Sorteio,
+) => {
+  const { jsPDF, autoTable } = await loadPdfTools();
+  const doc = new jsPDF();
+
+  const atribuicao = atribuicoes.find(a => a.vendedor_id === vendedor.id);
+  const vendasVendedor = vendas.filter(v => v.vendedor_id === vendedor.id);
+  const totalVendas = vendasVendedor.reduce((acc, v) => acc + Number(v.valor_total || 0), 0);
+  const totalPago = vendasVendedor.reduce((acc, v) => acc + Number(v.valor_pago || 0), 0);
+
+  // Header
+  doc.setFontSize(20);
+  doc.setTextColor(59, 130, 246);
+  doc.text('Relatório do Vendedor', 14, 22);
+
+  doc.setFontSize(12);
+  doc.setTextColor(100);
+  doc.text(`Sorteio: ${sorteio.nome}`, 14, 32);
+  doc.text(`Vendedor: ${vendedor.nome}`, 14, 40);
+  if (vendedor.telefone) doc.text(`Telefone: ${vendedor.telefone}`, 14, 48);
+  doc.text(`Data de geração: ${new Date().toLocaleString('pt-BR')}`, 14, vendedor.telefone ? 56 : 48);
+
+  let yPos = vendedor.telefone ? 66 : 58;
+
+  // Stats summary
+  const ativas = atribuicao?.cartelas.filter(c => c.status === 'ativa').length ?? 0;
+  const vendidas = atribuicao?.cartelas.filter(c => c.status === 'vendida').length ?? 0;
+  const devolvidas = atribuicao?.cartelas.filter(c => c.status === 'devolvida').length ?? 0;
+  const extraviadas = atribuicao?.cartelas.filter(c => c.status === 'extraviada').length ?? 0;
+  const totalCartelas = atribuicao?.cartelas.length ?? 0;
+
+  doc.setFontSize(10);
+  doc.text(`Total de cartelas atribuídas: ${totalCartelas}`, 14, yPos);
+  yPos += 8;
+  doc.text(`Ativas: ${ativas}`, 14, yPos);
+  doc.text(`Vendidas: ${vendidas}`, 60, yPos);
+  doc.text(`Devolvidas: ${devolvidas}`, 100, yPos);
+  doc.text(`Extraviadas: ${extraviadas}`, 145, yPos);
+  yPos += 8;
+  doc.text(`Total em vendas: ${formatarMoeda(totalVendas)}`, 14, yPos);
+  doc.text(`Valor pago: ${formatarMoeda(totalPago)}`, 80, yPos);
+  doc.text(`Pendente: ${formatarMoeda(totalVendas - totalPago)}`, 145, yPos);
+  yPos += 12;
+
+  // Cartelas table
+  if (atribuicao && atribuicao.cartelas.length > 0) {
+    doc.setFontSize(13);
+    doc.setTextColor(59, 130, 246);
+    doc.text('Cartelas Atribuídas', 14, yPos);
+    yPos += 4;
+
+    const cartelasData = atribuicao.cartelas.map(c => [
+      formatarNumeroCartela(c.numero),
+      getStatusLabel(c.status),
+      formatarDataHora(c.data_atribuicao),
+      c.data_devolucao ? formatarDataHora(c.data_devolucao) : '-',
+    ]);
+
+    autoTable(doc, {
+      startY: yPos,
+      head: [['Cartela', 'Status', 'Data Atribuição', 'Data Devolução']],
+      body: cartelasData,
+      styles: { fontSize: 9, cellPadding: 2 },
+      headStyles: { fillColor: [59, 130, 246], textColor: 255 },
+      alternateRowStyles: { fillColor: [245, 247, 250] },
+    });
+
+    yPos = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10;
+  }
+
+  // Vendas table
+  if (vendasVendedor.length > 0) {
+    if (yPos > 220) {
+      doc.addPage();
+      yPos = 20;
+    }
+    doc.setFontSize(13);
+    doc.setTextColor(59, 130, 246);
+    doc.text('Vendas Realizadas', 14, yPos);
+    yPos += 4;
+
+    const vendasData = vendasVendedor.map(v => {
+      const pagamentosStr = v.pagamentos && v.pagamentos.length > 0
+        ? v.pagamentos.map(p => `${p.forma_pagamento}: ${formatarMoeda(p.valor)}`).join(', ')
+        : 'N/A';
+      return [
+        v.cliente_nome || '-',
+        v.numeros_cartelas || '-',
+        formatarMoeda(v.valor_total),
+        formatarMoeda(v.valor_pago),
+        pagamentosStr,
+        getStatusLabel(v.status),
+        formatarDataHora(v.created_at),
+      ];
+    });
+
+    autoTable(doc, {
+      startY: yPos,
+      head: [['Cliente', 'Cartelas', 'Valor Total', 'Valor Pago', 'Pagamento', 'Status', 'Data']],
+      body: vendasData,
+      styles: { fontSize: 8, cellPadding: 1.5 },
+      headStyles: { fillColor: [59, 130, 246], textColor: 255 },
+      alternateRowStyles: { fillColor: [245, 247, 250] },
+    });
+  }
+
+  const safeName = vendedor.nome.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9-]/g, '');
+  doc.save(`relatorio-vendedor-${safeName}-${new Date().toISOString().split('T')[0]}.pdf`);
+};
+
+// Per-seller report Excel
+export const exportRelatorioVendedorExcel = async (
+  vendedor: Vendedor,
+  atribuicoes: Atribuicao[],
+  vendas: Venda[],
+  sorteio: Sorteio,
+) => {
+  const XLSX = await loadXlsx();
+
+  const atribuicao = atribuicoes.find(a => a.vendedor_id === vendedor.id);
+  const vendasVendedor = vendas.filter(v => v.vendedor_id === vendedor.id);
+
+  const wb = XLSX.utils.book_new();
+
+  // Sheet 1: Cartelas
+  const cartelasData = (atribuicao?.cartelas ?? []).map(c => ({
+    'Número': formatarNumeroCartela(c.numero),
+    'Status': getStatusLabel(c.status),
+    'Data Atribuição': formatarDataHora(c.data_atribuicao),
+    'Data Devolução': c.data_devolucao ? formatarDataHora(c.data_devolucao) : '-',
+  }));
+
+  const wsCartelas = XLSX.utils.json_to_sheet(cartelasData);
+  wsCartelas['!cols'] = [{ wch: 10 }, { wch: 15 }, { wch: 20 }, { wch: 20 }];
+  XLSX.utils.book_append_sheet(wb, wsCartelas, 'Cartelas');
+
+  // Sheet 2: Vendas
+  const vendasData = vendasVendedor.map(v => {
+    const pagamentosStr = v.pagamentos && v.pagamentos.length > 0
+      ? v.pagamentos.map(p => `${p.forma_pagamento}: ${formatarMoeda(p.valor)}`).join(', ')
+      : 'N/A';
+    return {
+      'Cliente': v.cliente_nome || '-',
+      'Cartelas': v.numeros_cartelas || '-',
+      'Valor Total': v.valor_total,
+      'Valor Pago': v.valor_pago,
+      'Valor Pendente': v.valor_total - v.valor_pago,
+      'Forma Pagamento': pagamentosStr,
+      'Status': getStatusLabel(v.status),
+      'Data': formatarDataHora(v.created_at),
+    };
+  });
+
+  const wsVendas = XLSX.utils.json_to_sheet(vendasData);
+  wsVendas['!cols'] = Object.keys(vendasData[0] || {}).map(k => ({ wch: Math.max(k.length, 15) }));
+  XLSX.utils.book_append_sheet(wb, wsVendas, 'Vendas');
+
+  const safeName = vendedor.nome.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9-]/g, '');
+  XLSX.writeFile(wb, `relatorio-vendedor-${safeName}-${new Date().toISOString().split('T')[0]}.xlsx`);
+};
