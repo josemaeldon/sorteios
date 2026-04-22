@@ -25,6 +25,8 @@ export interface Sorteio {
   grade_colunas?: number;       // default 5
   grade_linhas?: number;        // default 5
   apenas_numero_rifa?: boolean; // if true, no number grid (rifa only)
+  // Batch size for validated cartelas grouping
+  tamanho_lote?: number;        // default 50
 }
 
 export interface RodadaSorteio {

@@ -587,6 +587,7 @@ async function initSchema() {
           'ALTER TABLE sorteios ADD COLUMN grade_linhas INT DEFAULT 5',
           'ALTER TABLE sorteios ADD COLUMN apenas_numero_rifa TINYINT(1) NOT NULL DEFAULT 0',
           "ALTER TABLE sorteios ADD COLUMN tipo VARCHAR(10) NOT NULL DEFAULT 'bingo'",
+          'ALTER TABLE sorteios ADD COLUMN tamanho_lote INT DEFAULT 50',
         ];
         for (const sql of sorteiosExtraCols) {
           try { await client.query(sql); } catch (e) {
@@ -896,6 +897,7 @@ async function initSchema() {
         await client.query(`ALTER TABLE sorteios ADD COLUMN IF NOT EXISTS grade_linhas INTEGER DEFAULT 5`);
         await client.query(`ALTER TABLE sorteios ADD COLUMN IF NOT EXISTS apenas_numero_rifa BOOLEAN DEFAULT FALSE`);
         await client.query(`ALTER TABLE sorteios ADD COLUMN IF NOT EXISTS tipo TEXT DEFAULT 'bingo'`);
+        await client.query(`ALTER TABLE sorteios ADD COLUMN IF NOT EXISTS tamanho_lote INTEGER DEFAULT 50`);
       }
       console.log('Schema initialized: sorteio_compartilhado table ready');
     } finally {
@@ -1622,11 +1624,13 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         result = await client.query(`
           UPDATE sorteios 
           SET nome = $2, data_sorteio = $3, premio = $4, premios = $5::jsonb, valor_cartela = $6, quantidade_cartelas = $7, status = $8,
-              tipo = $9, papel_largura = $10, papel_altura = $11, grade_colunas = $12, grade_linhas = $13, apenas_numero_rifa = $14, updated_at = NOW()
+              tipo = $9, papel_largura = $10, papel_altura = $11, grade_colunas = $12, grade_linhas = $13, apenas_numero_rifa = $14,
+              tamanho_lote = $15, updated_at = NOW()
           WHERE id = $1
           RETURNING *
         `, [data.id, data.nome, data.data_sorteio, premioUpdate, JSON.stringify(premiosUpdate), data.valor_cartela, data.quantidade_cartelas, data.status,
-            data.tipo ?? 'bingo', data.papel_largura ?? 210, data.papel_altura ?? 297, data.grade_colunas ?? 5, data.grade_linhas ?? 5, data.apenas_numero_rifa ?? false]);
+            data.tipo ?? 'bingo', data.papel_largura ?? 210, data.papel_altura ?? 297, data.grade_colunas ?? 5, data.grade_linhas ?? 5, data.apenas_numero_rifa ?? false,
+            data.tamanho_lote ?? 50]);
         return res.json({ data: result.rows });
       }
 
