@@ -2142,11 +2142,12 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           WHERE atribuicao_id = $1 AND numero_cartela = $2
         `, [data.atribuicao_id, data.numero_cartela, data.status]);
         
-        const cartelaStatus = data.status === 'devolvida' ? 'disponivel' : data.status;
         await client.query(`
-          UPDATE cartelas SET status = $3, vendedor_id = CASE WHEN $3 = 'disponivel' THEN NULL ELSE vendedor_id END
+          UPDATE cartelas
+          SET status = $3,
+              vendedor_id = CASE WHEN $3 IN ('disponivel', 'devolvida') THEN NULL ELSE vendedor_id END
           WHERE sorteio_id = $1 AND numero = $2
-        `, [data.sorteio_id, data.numero_cartela, cartelaStatus]);
+        `, [data.sorteio_id, data.numero_cartela, data.status]);
         
         return res.json({ data: [{ success: true }] });
 
