@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useBingo } from '@/contexts/BingoContext';
-import { ShoppingCart, Plus, Search, Filter, Eraser, Edit, Trash2, DollarSign, Calendar, User, Loader2, Hash } from 'lucide-react';
+import { ShoppingCart, Plus, Search, Filter, Eraser, Edit, Trash2, DollarSign, Calendar, User, Loader2, Hash, Receipt } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import { formatarData, formatarMoeda, getStatusLabel, formatarNumeroCartela } from '@/lib/utils/formatters';
 import VendaModal from '@/components/modals/VendaModal';
 import PagamentoModal from '@/components/modals/PagamentoModal';
+import ReciboModal from '@/components/modals/ReciboModal';
 import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -38,6 +39,8 @@ const VendasTab: React.FC = () => {
   const [deletingVendaId, setDeletingVendaId] = useState<string | null>(null);
   const [isPagamentoOpen, setIsPagamentoOpen] = useState(false);
   const [pagamentoVendaId, setPagamentoVendaId] = useState<string | null>(null);
+  const [isReciboOpen, setIsReciboOpen] = useState(false);
+  const [reciboVendaId, setReciboVendaId] = useState<string | null>(null);
 
   if (!sorteioAtivo) {
     return (
@@ -91,6 +94,11 @@ const VendasTab: React.FC = () => {
   const handlePagamento = (id: string) => {
     setPagamentoVendaId(id);
     setIsPagamentoOpen(true);
+  };
+
+  const handleRecibo = (id: string) => {
+    setReciboVendaId(id);
+    setIsReciboOpen(true);
   };
 
   const confirmDelete = () => {
@@ -324,6 +332,15 @@ const VendasTab: React.FC = () => {
                     >
                       <DollarSign className="w-4 h-4" />
                     </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleRecibo(venda.id)}
+                      title="Recibo"
+                      className="text-blue-600 hover:text-blue-600"
+                    >
+                      <Receipt className="w-4 h-4" />
+                    </Button>
                     <Button size="sm" variant="destructive" onClick={() => handleDelete(venda.id)} title="Excluir">
                       <Trash2 className="w-4 h-4" />
                     </Button>
@@ -369,6 +386,12 @@ const VendasTab: React.FC = () => {
         isOpen={isPagamentoOpen}
         onClose={() => { setIsPagamentoOpen(false); setPagamentoVendaId(null); }}
         vendaId={pagamentoVendaId}
+      />
+
+      <ReciboModal
+        isOpen={isReciboOpen}
+        onClose={() => { setIsReciboOpen(false); setReciboVendaId(null); }}
+        vendaId={reciboVendaId}
       />
 
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
