@@ -1797,6 +1797,16 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           WHERE sorteio_id = $1 AND numero = $4
           RETURNING *
         `, [data.sorteio_id, data.status, data.vendedor_id, data.numero]);
+
+        const atribuicaoStatus = data.status === 'disponivel' ? 'devolvida' : data.status;
+        await client.query(
+          `UPDATE atribuicao_cartelas
+           SET status = $3,
+               data_devolucao = CASE WHEN $3 = 'devolvida' THEN NOW() ELSE NULL END
+           WHERE numero_cartela = $2
+             AND atribuicao_id IN (SELECT id FROM atribuicoes WHERE sorteio_id = $1)`,
+          [data.sorteio_id, data.numero, atribuicaoStatus]
+        );
         return res.json({ data: result.rows });
 
       case 'updateCartelasBatch':
@@ -2100,6 +2110,20 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         return res.json({ data: [{ success: true }] });
 
       case 'removeCartelaFromAtribuicao':
+        {
+        const cartelaAtribuida = await client.query(
+          'SELECT status FROM atribuicao_cartelas WHERE atribuicao_id = $1 AND numero_cartela = $2',
+          [data.atribuicao_id, data.numero_cartela]
+        );
+
+        if (cartelaAtribuida.rows.length === 0) {
+          return res.status(404).json({ error: 'Cartela não encontrada nesta atribuição' });
+        }
+
+        if (cartelaAtribuida.rows[0].status === 'vendida') {
+          return res.status(400).json({ error: 'Não é possível remover cartela vendida da atribuição' });
+        }
+
         await client.query(`
           DELETE FROM atribuicao_cartelas WHERE atribuicao_id = $1 AND numero_cartela = $2
         `, [data.atribuicao_id, data.numero_cartela]);
@@ -2109,6 +2133,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         `, [data.sorteio_id, data.numero_cartela]);
         
         return res.json({ data: [{ success: true }] });
+        }
 
       case 'updateCartelaStatusInAtribuicao':
         await client.query(`
@@ -2175,6 +2200,15 @@ app.post('/api', checkBasicAuth, async (req, res) => {
       }
 
       case 'deleteAtribuicao': {
+        const vendidasResult = await client.query(
+          "SELECT 1 FROM atribuicao_cartelas WHERE atribuicao_id = $1 AND status = 'vendida' LIMIT 1",
+          [data.atribuicao_id]
+        );
+
+        if (vendidasResult.rows.length > 0) {
+          return res.status(400).json({ error: 'Não é possível excluir atribuição com cartela(s) vendida(s)' });
+        }
+
         const cartelasResult = await client.query(
           'SELECT numero_cartela FROM atribuicao_cartelas WHERE atribuicao_id = $1',
           [data.atribuicao_id]

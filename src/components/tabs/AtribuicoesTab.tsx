@@ -97,6 +97,17 @@ const AtribuicoesTab: React.FC = () => {
   };
 
   const handleExcluirAtribuicao = (id: string, vendedorId: string) => {
+    const atribuicao = atribuicoes.find(a => a.id === id);
+    const possuiCartelaVendida = atribuicao?.cartelas.some(c => c.status === 'vendida');
+    if (possuiCartelaVendida) {
+      toast({
+        title: "Ação não permitida",
+        description: "Não é possível excluir uma atribuição que possui cartela(s) vendida(s).",
+        variant: "destructive"
+      });
+      return;
+    }
+
     setDeletingAtribuicao({ id, vendedorId });
     setActionType('excluir-atribuicao');
     setDeleteDialogOpen(true);
@@ -248,6 +259,7 @@ const AtribuicoesTab: React.FC = () => {
         {atribuicoesFiltradas.map((atribuicao) => {
           const counts = getStatusCounts(atribuicao.cartelas);
           const isExpanded = expandedAtribuicao === atribuicao.id;
+          const possuiCartelaVendida = atribuicao.cartelas.some(c => c.status === 'vendida');
           
           return (
             <Collapsible key={atribuicao.id} open={isExpanded} onOpenChange={() => toggleExpand(atribuicao.id)}>
@@ -311,10 +323,12 @@ const AtribuicoesTab: React.FC = () => {
                           <Button 
                             size="sm" 
                             variant="destructive"
+                            disabled={possuiCartelaVendida}
                             onClick={(e) => {
                               e.stopPropagation();
                               handleExcluirAtribuicao(atribuicao.id, atribuicao.vendedor_id);
                             }}
+                            title={possuiCartelaVendida ? 'Não é possível excluir atribuição com cartela vendida' : 'Excluir atribuição'}
                           >
                             <Trash2 className="w-4 h-4" />
                           </Button>
