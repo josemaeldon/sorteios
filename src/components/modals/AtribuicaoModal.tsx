@@ -53,7 +53,7 @@ const AtribuicaoModal: React.FC<AtribuicaoModalProps> = ({ isOpen, onClose, edit
   const [progress, setProgress] = useState(0);
 
   const vendedoresAtivos = vendedores.filter(v => v.ativo);
-  const cartelasDisponiveis = cartelas.filter(c => c.status === 'disponivel');
+  const cartelasDisponiveis = cartelas.filter(c => c.status === 'disponivel' || c.status === 'devolvida');
 
   // Check if seller already has an attribution
   const atribuicaoExistente = atribuicoes.find(a => a.vendedor_id === vendedorId);

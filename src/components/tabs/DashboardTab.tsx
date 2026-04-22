@@ -1,11 +1,14 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useBingo } from '@/contexts/BingoContext';
 import { formatarMoeda } from '@/lib/utils/formatters';
 import { BarChart3, DollarSign, Ticket, ShoppingCart, Users, TrendingUp, Trophy, Banknote, Smartphone, CreditCard, ArrowRightLeft } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 const DashboardTab: React.FC = () => {
-  const { sorteioAtivo, vendedores, vendas, cartelas } = useBingo();
+  const { sorteioAtivo, vendedores, vendas, cartelas, setCurrentTab } = useBingo();
+  const [isRankingModalOpen, setIsRankingModalOpen] = useState(false);
 
   if (!sorteioAtivo) {
     return (
@@ -51,7 +54,7 @@ const DashboardTab: React.FC = () => {
   });
 
   // Ranking de vendedores
-  const rankingVendedores = vendedores
+  const rankingCompletoVendedores = vendedores
     .map(v => {
       const vendasVendedor = vendas.filter(venda => venda.vendedor_id === v.id);
       const totalVendido = vendasVendedor.reduce((sum, venda) => sum + Number(venda.valor_total || 0), 0);
@@ -63,8 +66,9 @@ const DashboardTab: React.FC = () => {
         valor_arrecadado: totalVendido
       };
     })
-    .sort((a, b) => b.valor_arrecadado - a.valor_arrecadado)
-    .slice(0, 5);
+    .sort((a, b) => b.valor_arrecadado - a.valor_arrecadado);
+
+  const rankingVendedores = rankingCompletoVendedores.slice(0, 5);
 
   const ultimasVendas = [...vendas]
     .sort((a, b) => new Date(b.data_venda).getTime() - new Date(a.data_venda).getTime())
@@ -268,11 +272,14 @@ const DashboardTab: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Ranking de Vendedores */}
         <Card>
-          <CardHeader>
+          <CardHeader className="flex-row items-center justify-between space-y-0">
             <CardTitle className="flex items-center gap-2">
               <Trophy className="w-5 h-5 text-warning" />
               Ranking de Vendedores
             </CardTitle>
+            <Button size="sm" variant="outline" onClick={() => setIsRankingModalOpen(true)}>
+              Ver completo
+            </Button>
           </CardHeader>
           <CardContent>
             {rankingVendedores.length === 0 ? (
@@ -309,11 +316,14 @@ const DashboardTab: React.FC = () => {
 
         {/* Últimas Vendas */}
         <Card>
-          <CardHeader>
+          <CardHeader className="flex-row items-center justify-between space-y-0">
             <CardTitle className="flex items-center gap-2">
               <ShoppingCart className="w-5 h-5 text-primary" />
               Últimas Vendas
             </CardTitle>
+            <Button size="sm" variant="outline" onClick={() => setCurrentTab('vendas')}>
+              Ver todas
+            </Button>
           </CardHeader>
           <CardContent>
             {ultimasVendas.length === 0 ? (
@@ -338,6 +348,46 @@ const DashboardTab: React.FC = () => {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={isRankingModalOpen} onOpenChange={setIsRankingModalOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Trophy className="w-5 h-5 text-warning" />
+              Ranking Completo de Vendedores
+            </DialogTitle>
+          </DialogHeader>
+          {rankingCompletoVendedores.length === 0 ? (
+            <p className="text-center text-muted-foreground py-8">
+              Nenhum vendedor cadastrado ainda
+            </p>
+          ) : (
+            <div className="max-h-[60vh] overflow-y-auto pr-1 space-y-3">
+              {rankingCompletoVendedores.map((vendedor, index) => (
+                <div key={vendedor.id} className="flex items-center gap-4 p-3 rounded-lg border border-border bg-muted/30">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm
+                    ${index === 0 ? 'bg-yellow-400 text-yellow-900' : 
+                      index === 1 ? 'bg-gray-300 text-gray-700' : 
+                      index === 2 ? 'bg-amber-600 text-amber-100' : 
+                      'bg-muted text-muted-foreground'}`}
+                  >
+                    {index + 1}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-foreground truncate">{vendedor.nome}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {vendedor.cartelas_vendidas} cartela(s) vendida(s)
+                    </p>
+                  </div>
+                  <p className="font-bold text-foreground whitespace-nowrap">
+                    {formatarMoeda(vendedor.valor_arrecadado)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

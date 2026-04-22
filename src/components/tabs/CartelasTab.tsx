@@ -129,6 +129,8 @@ const CartelasTab: React.FC = () => {
     removerTodasValidacoes,
     updateCartelaValidada,
     updateSorteio,
+    atualizarStatusCartela,
+    loadAtribuicoes,
   } = useBingo();
   const { toast } = useToast();
 
@@ -143,6 +145,8 @@ const CartelasTab: React.FC = () => {
   const [isPrinting, setIsPrinting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [forcedStatus, setForcedStatus] = useState<Cartela['status']>('disponivel');
+  const [isForcingStatus, setIsForcingStatus] = useState(false);
 
   // ─── New-cartela modal state ───────────────────────────────────────────────
   const [showNewModal, setShowNewModal] = useState(false);
@@ -264,7 +268,7 @@ const CartelasTab: React.FC = () => {
       case 'disponivel':  return 'Disponível';
       case 'ativa':       return `Atribuída: ${nome}`;
       case 'vendida':     return `Vendida: ${nome}`;
-      case 'devolvida':   return `Devolvida: ${nome}`;
+      case 'devolvida':   return 'Devolvida';
       case 'extraviada':  return 'Extraviada';
       default:            return '';
     }
@@ -273,7 +277,33 @@ const CartelasTab: React.FC = () => {
   // ─── Edit handlers ─────────────────────────────────────────────────────────
   const openCartela = (cartela: Cartela) => {
     setSelectedCartela(cartela);
+    setForcedStatus(cartela.status);
     setEditMode(false);
+  };
+
+  const handleForceStatus = async () => {
+    if (!selectedCartela || forcedStatus === selectedCartela.status) return;
+    setIsForcingStatus(true);
+    try {
+      const vendedorId = forcedStatus === 'disponivel' || forcedStatus === 'devolvida'
+        ? undefined
+        : selectedCartela.vendedor_id || undefined;
+      await atualizarStatusCartela(selectedCartela.numero, forcedStatus, vendedorId);
+      await loadAtribuicoes();
+      setSelectedCartela(prev => prev ? ({
+        ...prev,
+        status: forcedStatus,
+        vendedor_id: forcedStatus === 'disponivel' || forcedStatus === 'devolvida'
+          ? null
+          : prev.vendedor_id
+      }) : null);
+      toast({
+        title: "Status atualizado",
+        description: `Cartela ${formatarNumeroCartela(selectedCartela.numero)} alterada para ${getStatusLabel(forcedStatus)}.`
+      });
+    } finally {
+      setIsForcingStatus(false);
+    }
   };
 
   const openEditMode = () => {
@@ -831,6 +861,36 @@ const CartelasTab: React.FC = () => {
               <p className="text-sm text-muted-foreground mt-1">Comprador: <strong>{selectedCartela.comprador_nome}</strong></p>
             )}
           </DialogHeader>
+
+          {!editMode && selectedCartela && (
+            <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-2">
+              <p className="text-xs font-semibold text-muted-foreground">Forçar status da cartela</p>
+              <div className="flex gap-2">
+                <Select
+                  value={forcedStatus}
+                  onValueChange={(value: Cartela['status']) => setForcedStatus(value)}
+                >
+                  <SelectTrigger className="h-8">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="disponivel">Disponível</SelectItem>
+                    <SelectItem value="ativa">Atribuída</SelectItem>
+                    <SelectItem value="vendida">Vendida</SelectItem>
+                    <SelectItem value="devolvida">Devolvida</SelectItem>
+                    <SelectItem value="extraviada">Extraviada</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button
+                  size="sm"
+                  onClick={handleForceStatus}
+                  disabled={isForcingStatus || forcedStatus === selectedCartela.status}
+                >
+                  {isForcingStatus ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Aplicar'}
+                </Button>
+              </div>
+            </div>
+          )}
 
           {editMode ? (
             /* ── Edit mode ── */
