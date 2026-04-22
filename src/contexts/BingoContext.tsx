@@ -523,6 +523,11 @@ export const BingoProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       await loadCartelas();
     } catch (error: unknown) {
       console.error('Error removing cartela:', error);
+      toast({
+        title: "Erro ao remover cartela",
+        description: getErrorMessage(error),
+        variant: "destructive"
+      });
     }
   }, [sorteioAtivo, callApi, toast, loadAtribuicoes, loadCartelas]);
 
