@@ -868,23 +868,20 @@ const DrawTab: React.FC = () => {
                             </span>
                           </div>
                           <div className="flex flex-wrap gap-3 max-h-[200px] overflow-y-auto">
-                            {(() => {
-                              const orderMap = new Map(drawnNumbers.map((n, i) => [n, i + 1]));
-                              return [...drawnNumbers].sort((a, b) => a - b).map((num) => (
-                                <div
-                                  key={num}
-                                  className={cn(
-                                    "relative flex items-center justify-center w-20 h-20 rounded-lg font-bold text-2xl border-2 transition-all duration-300",
-                                    num === currentNumber && !isDrawing
-                                      ? "bg-primary text-primary-foreground border-primary scale-110"
-                                      : "bg-muted text-foreground border-border"
-                                  )}
-                                >
-                                  <span className="absolute top-1 left-1.5 text-[10px] font-normal opacity-50 leading-none">{orderMap.get(num)}º</span>
-                                  {num}
-                                </div>
-                              ));
-                            })()}
+                            {drawnNumbers.map((num, index) => (
+                              <div
+                                key={num}
+                                className={cn(
+                                  "relative flex items-center justify-center w-20 h-20 rounded-lg font-bold text-2xl border-2 transition-all duration-300",
+                                  num === currentNumber && !isDrawing
+                                    ? "bg-primary text-primary-foreground border-primary scale-110"
+                                    : "bg-muted text-foreground border-border"
+                                )}
+                              >
+                                <span className="absolute top-1 left-1.5 text-[10px] font-normal opacity-50 leading-none">{index + 1}º</span>
+                                {num}
+                              </div>
+                            ))}
                           </div>
                         </div>
                       )}
@@ -963,31 +960,28 @@ const DrawTab: React.FC = () => {
               </CardHeader>
               <CardContent>
                 <div className="flex flex-wrap gap-2">
-                  {(() => {
-                    const orderMap = new Map(drawnNumbers.map((n, i) => [n, i + 1]));
-                    return [...drawnNumbers].sort((a, b) => a - b).map((num) => (
-                      <div
-                        key={num}
-                        className={cn(
-                          "relative flex items-center justify-center w-16 h-16 rounded-lg font-bold text-xl border-2 transition-all duration-300 group",
-                          num === currentNumber && !isDrawing
-                            ? "bg-primary text-primary-foreground border-primary scale-110"
-                            : "bg-muted text-foreground border-border"
-                        )}
+                  {drawnNumbers.map((num, index) => (
+                    <div
+                      key={num}
+                      className={cn(
+                        "relative flex items-center justify-center w-16 h-16 rounded-lg font-bold text-xl border-2 transition-all duration-300 group",
+                        num === currentNumber && !isDrawing
+                          ? "bg-primary text-primary-foreground border-primary scale-110"
+                          : "bg-muted text-foreground border-border"
+                      )}
+                    >
+                      <span className="absolute top-0.5 left-1 text-[9px] font-normal opacity-50 leading-none">{index + 1}º</span>
+                      {num}
+                      <button
+                        onClick={() => removeDrawnNumber(num)}
+                        disabled={isDrawing}
+                        className="absolute -top-1.5 -right-1.5 hidden group-hover:flex items-center justify-center w-4 h-4 rounded-full bg-destructive text-destructive-foreground text-[9px] leading-none shadow"
+                        title={`Excluir número ${num}`}
                       >
-                        <span className="absolute top-0.5 left-1 text-[9px] font-normal opacity-50 leading-none">{orderMap.get(num)}º</span>
-                        {num}
-                        <button
-                          onClick={() => removeDrawnNumber(num)}
-                          disabled={isDrawing}
-                          className="absolute -top-1.5 -right-1.5 hidden group-hover:flex items-center justify-center w-4 h-4 rounded-full bg-destructive text-destructive-foreground text-[9px] leading-none shadow"
-                          title={`Excluir número ${num}`}
-                        >
-                          ×
-                        </button>
-                      </div>
-                    ));
-                  })()}
+                        ×
+                      </button>
+                    </div>
+                  ))}
                 </div>
               </CardContent>
             </Card>
