@@ -1,5 +1,6 @@
 import React, { useRef } from 'react';
 import { useBingo } from '@/contexts/BingoContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { formatarData, formatarDataHora, formatarMoeda, formatarNumeroCartela } from '@/lib/utils/formatters';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -20,6 +21,7 @@ const FORMA_PAGAMENTO_LABEL: Record<string, string> = {
 
 const ReciboModal: React.FC<ReciboModalProps> = ({ isOpen, onClose, vendaId }) => {
   const { vendas, sorteioAtivo } = useBingo();
+  const { user } = useAuth();
   const printRef = useRef<HTMLDivElement>(null);
 
   const venda = vendas.find(v => v.id === vendaId);
@@ -225,7 +227,7 @@ const ReciboModal: React.FC<ReciboModalProps> = ({ isOpen, onClose, vendaId }) =
             </div>
             <div className="flex-1 text-center">
               <div className="linha border-t border-black pt-2 mt-12">
-                <p className="text-xs text-muted-foreground">{venda.vendedor_nome || 'Responsável'}</p>
+                <p className="text-xs text-muted-foreground">{user?.nome || venda.vendedor_nome || 'Responsável'}</p>
                 <p className="titulo text-xs font-bold">Quem Recebeu</p>
               </div>
             </div>
