@@ -176,7 +176,6 @@ const CartelasTab: React.FC = () => {
     setIsSavingLote(true);
     try {
       await updateSorteio(sorteioAtivo.id, { tamanho_lote: tamanhoLote });
-      localStorage.setItem(LOTE_STORAGE_KEY, String(tamanhoLote));
     } finally {
       setIsSavingLote(false);
     }
