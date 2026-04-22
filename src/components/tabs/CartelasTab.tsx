@@ -128,6 +128,7 @@ const CartelasTab: React.FC = () => {
     removerValidacaoLote,
     removerTodasValidacoes,
     updateCartelaValidada,
+    updateSorteio,
   } = useBingo();
   const { toast } = useToast();
 
@@ -161,11 +162,29 @@ const CartelasTab: React.FC = () => {
     }
     return 50;
   });
+  const [isSavingLote, setIsSavingLote] = useState(false);
+
+  // Sync tamanhoLote from database when sorteio changes
+  React.useEffect(() => {
+    if (sorteioAtivo?.tamanho_lote != null) {
+      setTamanhoLoteState(sorteioAtivo.tamanho_lote);
+    }
+  }, [sorteioAtivo?.id, sorteioAtivo?.tamanho_lote]);
+
+  const handleSaveTamanhoLote = async () => {
+    if (!sorteioAtivo) return;
+    setIsSavingLote(true);
+    try {
+      await updateSorteio(sorteioAtivo.id, { tamanho_lote: tamanhoLote });
+      localStorage.setItem(LOTE_STORAGE_KEY, String(tamanhoLote));
+    } finally {
+      setIsSavingLote(false);
+    }
+  };
 
   const setTamanhoLote = (value: number) => {
     const clamped = Math.max(1, value);
     setTamanhoLoteState(clamped);
-    localStorage.setItem(LOTE_STORAGE_KEY, String(clamped));
   };
 
   // ─── Delete lote confirmation ──────────────────────────────────────────────
@@ -688,7 +707,20 @@ const CartelasTab: React.FC = () => {
                 value={tamanhoLote}
                 onChange={(e) => setTamanhoLote(Math.max(1, parseInt(e.target.value) || tamanhoLote))}
                 className="w-20"
+                disabled={cartelasValidadas.length > 0}
+                title={cartelasValidadas.length > 0 ? 'Exclua os números validados para alterar o tamanho do lote' : undefined}
               />
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1"
+                onClick={handleSaveTamanhoLote}
+                disabled={cartelasValidadas.length > 0 || isSavingLote || isLoading}
+                title={cartelasValidadas.length > 0 ? 'Exclua os números validados para alterar o tamanho do lote' : 'Salvar configuração de lote'}
+              >
+                {isSavingLote ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                Salvar
+              </Button>
             </div>
             <div className="flex items-center gap-3">
               <span className="text-sm text-muted-foreground">

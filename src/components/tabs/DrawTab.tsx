@@ -622,13 +622,14 @@ const DrawTab: React.FC = () => {
       const newWinners = winnerEntry.cartelas.filter(c => !ganhadoresPopShownRef.current.has(c.numero));
       if (newWinners.length > 0) {
         newWinners.forEach(c => ganhadoresPopShownRef.current.add(c.numero));
+        const loteSize = sorteioAtivo?.tamanho_lote ?? LOTE_SIZE;
         setGanhadoresPop(winnerEntry.cartelas.map(c => {
           const idx = cartelasValidadas.findIndex(cv => cv.numero === c.numero);
-          return { ...c, lote: idx !== -1 ? Math.floor(idx / LOTE_SIZE) + 1 : undefined };
+          return { ...c, lote: idx !== -1 ? Math.floor(idx / loteSize) + 1 : undefined };
         }));
       }
     }
-  }, [topScoringCartelas, cartelasValidadas, winningScore]);
+  }, [topScoringCartelas, cartelasValidadas, winningScore, sorteioAtivo]);
 
   if (!sorteioAtivo) {
     return (
