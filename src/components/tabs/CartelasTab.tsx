@@ -268,7 +268,7 @@ const CartelasTab: React.FC = () => {
       case 'disponivel':  return 'Disponível';
       case 'ativa':       return `Atribuída: ${nome}`;
       case 'vendida':     return `Vendida: ${nome}`;
-      case 'devolvida':   return `Devolvida: ${nome}`;
+      case 'devolvida':   return 'Devolvida';
       case 'extraviada':  return 'Extraviada';
       default:            return '';
     }
