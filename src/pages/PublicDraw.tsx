@@ -10,7 +10,7 @@ import { useToast } from '@/hooks/use-toast';
 const ANIMATION_INTERVAL_MS = 85;
 const ANIMATION_CYCLES = 22;
 const MIN_ZOOM = 0.75;
-const MAX_ZOOM = 2.5;
+const MAX_ZOOM = 8;
 const ZOOM_STEP = 0.25;
 
 const PublicDraw: React.FC = () => {
@@ -90,7 +90,7 @@ const PublicDraw: React.FC = () => {
     return { quantityToDraw };
   };
 
-  const runAnimation = (pool: number[], finalNumber: number) => {
+  const runAnimation = (pool: number[], finalNumber: number, onComplete?: () => void) => {
     if (animationTimerRef.current) {
       clearInterval(animationTimerRef.current);
     }
@@ -111,6 +111,7 @@ const PublicDraw: React.FC = () => {
         setAnimatedNumber(finalNumber);
         setCurrentNumber(finalNumber);
         setIsDrawing(false);
+        onComplete?.();
       }
     }, ANIMATION_INTERVAL_MS);
   };
@@ -131,8 +132,9 @@ const PublicDraw: React.FC = () => {
     }
 
     const finalNumber = pickedNumbers[pickedNumbers.length - 1];
-    runAnimation(availableNumbers, finalNumber);
-    setDrawnNumbers((previous) => [...previous, ...pickedNumbers]);
+    runAnimation(availableNumbers, finalNumber, () => {
+      setDrawnNumbers((previous) => [...previous, ...pickedNumbers]);
+    });
   };
 
   const handleReset = () => {
