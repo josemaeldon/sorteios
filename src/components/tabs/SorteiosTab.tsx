@@ -1,7 +1,8 @@
-import React, { useState, useMemo } from 'react';
-import { Plus, Dice5, Search, Filter, Eraser, User } from 'lucide-react';
+import React, { useRef, useState, useMemo } from 'react';
+import { Plus, Dice5, Search, Filter, Eraser, User, Download, Upload } from 'lucide-react';
 import { useBingo } from '@/contexts/BingoContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { useApi } from '@/hooks/useApi';
 import { Sorteio } from '@/types/bingo';
 import SorteioCard from '@/components/SorteioCard';
 import SorteioModal from '@/components/modals/SorteioModal';
@@ -26,10 +27,13 @@ const SorteiosTab: React.FC = () => {
     sorteioAtivo, 
     setSorteioAtivo, 
     deleteSorteio,
+    loadSorteios,
     setCurrentTab
   } = useBingo();
   const { user } = useAuth();
+  const { callApi } = useApi();
   const { toast } = useToast();
+  const importInputRef = useRef<HTMLInputElement | null>(null);
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSorteioId, setEditingSorteioId] = useState<string | null>(null);
@@ -127,6 +131,70 @@ const SorteiosTab: React.FC = () => {
     setEditingSorteioId(null);
   };
 
+  const buildBackupFileName = (sorteioNome: string) => {
+    const safeName = (sorteioNome || 'sorteio')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9_-]+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+      .toLowerCase();
+    const date = new Date().toISOString().slice(0, 10);
+    return `backup-sorteio-${safeName || 'sorteio'}-${date}.json`;
+  };
+
+  const handleExportBackup = async () => {
+    if (!sorteioAtivo) {
+      toast({ title: 'Selecione um sorteio', description: 'Escolha um sorteio para gerar backup.', variant: 'destructive' });
+      return;
+    }
+    try {
+      const response = await callApi('exportSorteioBackup', { sorteio_id: sorteioAtivo.id }) as { data?: unknown };
+      if (!response?.data) throw new Error('Dados de backup não retornados pela API');
+      const json = JSON.stringify(response.data, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = buildBackupFileName(sorteioAtivo.nome);
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      toast({ title: 'Backup exportado', description: 'Arquivo de backup gerado com sucesso.' });
+    } catch (error) {
+      toast({
+        title: 'Erro ao exportar backup',
+        description: error instanceof Error ? error.message : 'Falha inesperada ao exportar backup.',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  const handleImportClick = () => {
+    importInputRef.current?.click();
+  };
+
+  const handleImportBackup = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const content = await file.text();
+      const backup = JSON.parse(content);
+      await callApi('importSorteioBackup', { backup });
+      toast({ title: 'Backup restaurado', description: 'Sorteio restaurado com sucesso.' });
+      await loadSorteios();
+    } catch (error) {
+      toast({
+        title: 'Erro ao restaurar backup',
+        description: error instanceof Error ? error.message : 'Arquivo inválido ou erro na restauração.',
+        variant: 'destructive'
+      });
+    } finally {
+      event.target.value = '';
+    }
+  };
+
   const renderCards = (lista: Sorteio[]) => (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       {lista.map(sorteio => (
@@ -149,10 +217,27 @@ const SorteiosTab: React.FC = () => {
           <Dice5 className="w-6 h-6" />
           Gerenciar Sorteios
         </h2>
-        <Button onClick={handleNewSorteio} className="gap-2">
-          <Plus className="w-4 h-4" />
-          Novo Sorteio
-        </Button>
+        <div className="flex items-center gap-2">
+          <input
+            ref={importInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={handleImportBackup}
+          />
+          <Button variant="outline" onClick={handleExportBackup} className="gap-2">
+            <Download className="w-4 h-4" />
+            Backup
+          </Button>
+          <Button variant="outline" onClick={handleImportClick} className="gap-2">
+            <Upload className="w-4 h-4" />
+            Restaurar
+          </Button>
+          <Button onClick={handleNewSorteio} className="gap-2">
+            <Plus className="w-4 h-4" />
+            Novo Sorteio
+          </Button>
+        </div>
       </div>
 
       {/* Filtros */}

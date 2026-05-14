@@ -30,6 +30,30 @@ function nextMonthSameDay(from) {
   return result;
 }
 
+function parseJsonField(value, fallback) {
+  if (value === null || value === undefined || value === '') return fallback;
+  if (typeof value === 'object') return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
+async function canAccessSorteio(client, sorteioId, userId, role) {
+  if (!sorteioId) return false;
+  if (role === 'admin') return true;
+  const accessCheck = await client.query(
+    `SELECT 1
+     FROM sorteios s
+     LEFT JOIN sorteio_compartilhado sc ON sc.sorteio_id = s.id AND sc.user_id = $2
+     WHERE s.id = $1 AND (s.user_id = $2 OR sc.user_id IS NOT NULL)
+     LIMIT 1`,
+    [sorteioId, userId]
+  );
+  return accessCheck.rows.length > 0;
+}
+
 // Stripe webhook must receive raw body — register before express.json()
 app.post('/stripe-webhook', express.raw({ type: 'application/json' }), async (req, res) => {
   const sig = req.headers['stripe-signature'];
@@ -1637,6 +1661,296 @@ app.post('/api', checkBasicAuth, async (req, res) => {
       case 'deleteSorteio':
         await client.query('DELETE FROM sorteios WHERE id = $1', [data.id]);
         return res.json({ data: [{ success: true }] });
+
+      case 'exportSorteioBackup': {
+        if (!data.sorteio_id) {
+          return res.status(400).json({ error: 'sorteio_id é obrigatório' });
+        }
+        const allowed = await canAccessSorteio(client, data.sorteio_id, data.authenticated_user_id, data.authenticated_role);
+        if (!allowed) {
+          return res.status(403).json({ error: 'Você não tem acesso a este sorteio' });
+        }
+
+        const sorteioResult = await client.query('SELECT * FROM sorteios WHERE id = $1', [data.sorteio_id]);
+        if (sorteioResult.rows.length === 0) {
+          return res.status(404).json({ error: 'Sorteio não encontrado' });
+        }
+
+        const [vendedoresResult, cartelasResult, atribuicoesResult, atribuicaoCartelasResult, vendasResult, pagamentosResult, sorteioHistoricoResult, rodadasResult] = await Promise.all([
+          client.query('SELECT * FROM vendedores WHERE sorteio_id = $1 ORDER BY created_at ASC', [data.sorteio_id]),
+          client.query('SELECT * FROM cartelas WHERE sorteio_id = $1 ORDER BY numero ASC', [data.sorteio_id]),
+          client.query('SELECT * FROM atribuicoes WHERE sorteio_id = $1 ORDER BY created_at ASC', [data.sorteio_id]),
+          client.query(`SELECT ac.* FROM atribuicao_cartelas ac
+                        INNER JOIN atribuicoes a ON a.id = ac.atribuicao_id
+                        WHERE a.sorteio_id = $1
+                        ORDER BY ac.created_at ASC`, [data.sorteio_id]),
+          client.query('SELECT * FROM vendas WHERE sorteio_id = $1 ORDER BY data_venda ASC NULLS LAST, created_at ASC', [data.sorteio_id]),
+          client.query(`SELECT p.* FROM pagamentos p
+                        INNER JOIN vendas v ON v.id = p.venda_id
+                        WHERE v.sorteio_id = $1
+                        ORDER BY p.created_at ASC`, [data.sorteio_id]),
+          client.query('SELECT * FROM sorteio_historico WHERE sorteio_id = $1 ORDER BY ordem ASC, created_at ASC', [data.sorteio_id]),
+          client.query('SELECT * FROM rodadas_sorteio WHERE sorteio_id = $1 ORDER BY created_at ASC', [data.sorteio_id]),
+        ]);
+
+        const backup = {
+          version: 1,
+          exported_at: new Date().toISOString(),
+          exported_by: data.authenticated_user_id,
+          source_sorteio_id: data.sorteio_id,
+          sorteio: sorteioResult.rows[0],
+          vendedores: vendedoresResult.rows,
+          cartelas: cartelasResult.rows,
+          atribuicoes: atribuicoesResult.rows,
+          atribuicao_cartelas: atribuicaoCartelasResult.rows,
+          vendas: vendasResult.rows,
+          pagamentos: pagamentosResult.rows,
+          sorteio_historico: sorteioHistoricoResult.rows,
+          rodadas_sorteio: rodadasResult.rows,
+        };
+
+        return res.json({ data: backup });
+      }
+
+      case 'importSorteioBackup': {
+        const payload = data.backup || data;
+        const backupData = payload?.data && payload.data.sorteio ? payload.data : payload;
+        if (!backupData || !backupData.sorteio) {
+          return res.status(400).json({ error: 'Arquivo de backup inválido' });
+        }
+
+        const sourceSorteio = backupData.sorteio;
+        const sourceVendedores = Array.isArray(backupData.vendedores) ? backupData.vendedores : [];
+        const sourceCartelas = Array.isArray(backupData.cartelas) ? backupData.cartelas : [];
+        const sourceAtribuicoes = Array.isArray(backupData.atribuicoes) ? backupData.atribuicoes : [];
+        const sourceAtribuicaoCartelas = Array.isArray(backupData.atribuicao_cartelas) ? backupData.atribuicao_cartelas : [];
+        const sourceVendas = Array.isArray(backupData.vendas) ? backupData.vendas : [];
+        const sourcePagamentos = Array.isArray(backupData.pagamentos) ? backupData.pagamentos : [];
+        const sourceSorteioHistorico = Array.isArray(backupData.sorteio_historico) ? backupData.sorteio_historico : [];
+        const sourceRodadas = Array.isArray(backupData.rodadas_sorteio) ? backupData.rodadas_sorteio : [];
+
+        const idMapVendedores = new Map();
+        const idMapAtribuicoes = new Map();
+        const idMapVendas = new Map();
+        const idMapRodadas = new Map();
+
+        await client.query('BEGIN');
+        try {
+          const premiosImport = Array.isArray(sourceSorteio.premios)
+            ? sourceSorteio.premios
+            : parseJsonField(sourceSorteio.premios, []);
+          const premioImport = sourceSorteio.premio || premiosImport[0] || '';
+          const newStatus = sourceSorteio.status || 'agendado';
+          const newNome = data.nome || `${sourceSorteio.nome} (Restaurado)`;
+
+          let shortId = generateShortId();
+          let shortIdUnique = false;
+          for (let attempt = 0; attempt < 10 && !shortIdUnique; attempt++) {
+            const existing = await client.query('SELECT id FROM sorteios WHERE short_id = $1', [shortId]);
+            if (existing.rows.length === 0) shortIdUnique = true;
+            else shortId = generateShortId();
+          }
+          if (!shortIdUnique) {
+            throw new Error('Não foi possível gerar um identificador único para o novo sorteio');
+          }
+
+          const insertSorteioSql = dbConfig.type === 'mysql'
+            ? `INSERT INTO sorteios (id, user_id, nome, premio, premios, data_sorteio, valor_cartela, quantidade_cartelas, status, short_id, tipo, papel_largura, papel_altura, grade_colunas, grade_linhas, apenas_numero_rifa, created_at, updated_at)
+               VALUES (UUID(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW(), NOW())`
+            : `INSERT INTO sorteios (user_id, nome, premio, premios, data_sorteio, valor_cartela, quantidade_cartelas, status, short_id, tipo, papel_largura, papel_altura, grade_colunas, grade_linhas, apenas_numero_rifa, created_at, updated_at)
+               VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW(), NOW())
+               RETURNING id`;
+
+          let newSorteioId;
+          if (dbConfig.type === 'mysql') {
+            await client.query(insertSorteioSql, [
+              data.authenticated_user_id, newNome, premioImport, JSON.stringify(premiosImport), sourceSorteio.data_sorteio || null,
+              sourceSorteio.valor_cartela || 0, sourceCartelas.length || sourceSorteio.quantidade_cartelas || 0, newStatus, shortId,
+              sourceSorteio.tipo || 'bingo', sourceSorteio.papel_largura ?? 210, sourceSorteio.papel_altura ?? 297, sourceSorteio.grade_colunas ?? 5, sourceSorteio.grade_linhas ?? 5,
+              sourceSorteio.apenas_numero_rifa ? 1 : 0,
+            ]);
+            const inserted = await client.query('SELECT id FROM sorteios WHERE short_id = $1 LIMIT 1', [shortId]);
+            newSorteioId = inserted.rows[0]?.id;
+          } else {
+            const inserted = await client.query(insertSorteioSql, [
+              data.authenticated_user_id, newNome, premioImport, JSON.stringify(premiosImport), sourceSorteio.data_sorteio || null,
+              sourceSorteio.valor_cartela || 0, sourceCartelas.length || sourceSorteio.quantidade_cartelas || 0, newStatus, shortId,
+              sourceSorteio.tipo || 'bingo', sourceSorteio.papel_largura ?? 210, sourceSorteio.papel_altura ?? 297, sourceSorteio.grade_colunas ?? 5, sourceSorteio.grade_linhas ?? 5,
+              sourceSorteio.apenas_numero_rifa || false,
+            ]);
+            newSorteioId = inserted.rows[0]?.id;
+          }
+
+          if (!newSorteioId) throw new Error('Falha ao criar sorteio no restore');
+
+          for (const vendedor of sourceVendedores) {
+            let newVendedorId;
+            if (dbConfig.type === 'mysql') {
+              await client.query(
+                `INSERT INTO vendedores (id, sorteio_id, nome, telefone, email, cpf, endereco, ativo, created_at, updated_at)
+                 VALUES (UUID(), $1, $2, $3, $4, $5, $6, $7, NOW(), NOW())`,
+                [newSorteioId, vendedor.nome, vendedor.telefone || null, vendedor.email || null, vendedor.cpf || null, vendedor.endereco || null, vendedor.ativo !== false]
+              );
+              const newVendedorResult = await client.query(
+                `SELECT id FROM vendedores WHERE sorteio_id = $1 AND nome = $2 ORDER BY created_at DESC LIMIT 1`,
+                [newSorteioId, vendedor.nome]
+              );
+              newVendedorId = newVendedorResult.rows[0]?.id;
+            } else {
+              const newVendedorResult = await client.query(
+                `INSERT INTO vendedores (sorteio_id, nome, telefone, email, cpf, endereco, ativo, created_at, updated_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+                 RETURNING id`,
+                [newSorteioId, vendedor.nome, vendedor.telefone || null, vendedor.email || null, vendedor.cpf || null, vendedor.endereco || null, vendedor.ativo !== false]
+              );
+              newVendedorId = newVendedorResult.rows[0]?.id;
+            }
+            if (newVendedorId) idMapVendedores.set(vendedor.id, newVendedorId);
+          }
+
+          for (const cartela of sourceCartelas) {
+            const mappedVendedorId = cartela.vendedor_id ? (idMapVendedores.get(cartela.vendedor_id) || null) : null;
+            const numerosGradeValue = cartela.numeros_grade !== undefined
+              ? JSON.stringify(parseJsonField(cartela.numeros_grade, null))
+              : null;
+            await client.query(
+              `INSERT INTO cartelas (sorteio_id, vendedor_id, numero, status, numeros_grade, comprador_nome, created_at, updated_at)
+               VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())`,
+              [newSorteioId, mappedVendedorId, cartela.numero, cartela.status || 'disponivel', numerosGradeValue, cartela.comprador_nome || null]
+            );
+          }
+
+          for (const atribuicao of sourceAtribuicoes) {
+            const mappedVendedorId = idMapVendedores.get(atribuicao.vendedor_id);
+            if (!mappedVendedorId) continue;
+            let newAtribuicaoId;
+            if (dbConfig.type === 'mysql') {
+              await client.query(
+                `INSERT INTO atribuicoes (id, sorteio_id, vendedor_id, created_at, updated_at)
+                 VALUES (UUID(), $1, $2, NOW(), NOW())`,
+                [newSorteioId, mappedVendedorId]
+              );
+              const createdAtrib = await client.query(
+                `SELECT id FROM atribuicoes WHERE sorteio_id = $1 AND vendedor_id = $2 ORDER BY created_at DESC LIMIT 1`,
+                [newSorteioId, mappedVendedorId]
+              );
+              newAtribuicaoId = createdAtrib.rows[0]?.id;
+            } else {
+              const createdAtrib = await client.query(
+                `INSERT INTO atribuicoes (sorteio_id, vendedor_id, created_at, updated_at)
+                 VALUES ($1, $2, NOW(), NOW())
+                 RETURNING id`,
+                [newSorteioId, mappedVendedorId]
+              );
+              newAtribuicaoId = createdAtrib.rows[0]?.id;
+            }
+            if (newAtribuicaoId) idMapAtribuicoes.set(atribuicao.id, newAtribuicaoId);
+          }
+
+          for (const venda of sourceVendas) {
+            const mappedVendedorId = venda.vendedor_id ? (idMapVendedores.get(venda.vendedor_id) || null) : null;
+            let newVendaId;
+            if (dbConfig.type === 'mysql') {
+              await client.query(
+                `INSERT INTO vendas (id, sorteio_id, vendedor_id, cliente_nome, cliente_telefone, numeros_cartelas, valor_total, valor_pago, data_venda, status, created_at, updated_at, stripe_session_id)
+                 VALUES (UUID(), $1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW(), NULL)`,
+                [newSorteioId, mappedVendedorId, venda.cliente_nome || null, venda.cliente_telefone || null, venda.numeros_cartelas || '', venda.valor_total || 0, venda.valor_pago || 0, venda.data_venda || null, venda.status || 'pendente']
+              );
+              const createdVenda = await client.query(
+                `SELECT id FROM vendas WHERE sorteio_id = $1 AND cliente_nome <=> $2 AND numeros_cartelas = $3 ORDER BY created_at DESC LIMIT 1`,
+                [newSorteioId, venda.cliente_nome || null, venda.numeros_cartelas || '']
+              );
+              newVendaId = createdVenda.rows[0]?.id;
+            } else {
+              const createdVenda = await client.query(
+                `INSERT INTO vendas (sorteio_id, vendedor_id, cliente_nome, cliente_telefone, numeros_cartelas, valor_total, valor_pago, data_venda, status, created_at, updated_at, stripe_session_id)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW(), NULL)
+                 RETURNING id`,
+                [newSorteioId, mappedVendedorId, venda.cliente_nome || null, venda.cliente_telefone || null, venda.numeros_cartelas || '', venda.valor_total || 0, venda.valor_pago || 0, venda.data_venda || null, venda.status || 'pendente']
+              );
+              newVendaId = createdVenda.rows[0]?.id;
+            }
+            if (newVendaId) idMapVendas.set(venda.id, newVendaId);
+          }
+
+          for (const atribuicaoCartela of sourceAtribuicaoCartelas) {
+            const mappedAtribuicaoId = idMapAtribuicoes.get(atribuicaoCartela.atribuicao_id);
+            if (!mappedAtribuicaoId) continue;
+            const mappedVendaId = atribuicaoCartela.venda_id ? (idMapVendas.get(atribuicaoCartela.venda_id) || null) : null;
+            await client.query(
+              `INSERT INTO atribuicao_cartelas (atribuicao_id, numero_cartela, status, data_atribuicao, data_devolucao, venda_id, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+              [mappedAtribuicaoId, atribuicaoCartela.numero_cartela, atribuicaoCartela.status || 'ativa', atribuicaoCartela.data_atribuicao || null, atribuicaoCartela.data_devolucao || null, mappedVendaId]
+            );
+          }
+
+          for (const pagamento of sourcePagamentos) {
+            const mappedVendaId = idMapVendas.get(pagamento.venda_id);
+            if (!mappedVendaId) continue;
+            await client.query(
+              `INSERT INTO pagamentos (venda_id, valor, forma_pagamento, data_pagamento, created_at)
+               VALUES ($1, $2, $3, $4, NOW())`,
+              [mappedVendaId, pagamento.valor || 0, pagamento.forma_pagamento || null, pagamento.data_pagamento || null]
+            );
+          }
+
+          for (const rodada of sourceRodadas) {
+            let newRodadaId;
+            if (dbConfig.type === 'mysql') {
+              await client.query(
+                `INSERT INTO rodadas_sorteio (id, sorteio_id, nome, range_start, range_end, status, data_inicio, data_fim, created_at, updated_at)
+                 VALUES (UUID(), $1, $2, $3, $4, $5, $6, $7, NOW(), NOW())`,
+                [newSorteioId, rodada.nome, rodada.range_start, rodada.range_end, rodada.status || 'ativo', rodada.data_inicio || null, rodada.data_fim || null]
+              );
+              const createdRodada = await client.query(
+                `SELECT id FROM rodadas_sorteio WHERE sorteio_id = $1 AND nome = $2 ORDER BY created_at DESC LIMIT 1`,
+                [newSorteioId, rodada.nome]
+              );
+              newRodadaId = createdRodada.rows[0]?.id;
+            } else {
+              const createdRodada = await client.query(
+                `INSERT INTO rodadas_sorteio (sorteio_id, nome, range_start, range_end, status, data_inicio, data_fim, created_at, updated_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+                 RETURNING id`,
+                [newSorteioId, rodada.nome, rodada.range_start, rodada.range_end, rodada.status || 'ativo', rodada.data_inicio || null, rodada.data_fim || null]
+              );
+              newRodadaId = createdRodada.rows[0]?.id;
+            }
+            if (newRodadaId) idMapRodadas.set(rodada.id, newRodadaId);
+          }
+
+          for (const sorteado of sourceSorteioHistorico) {
+            const mappedRodadaId = sorteado.rodada_id ? (idMapRodadas.get(sorteado.rodada_id) || null) : null;
+            await client.query(
+              `INSERT INTO sorteio_historico (sorteio_id, rodada_id, numero_sorteado, range_start, range_end, ordem, registro, data_sorteio, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
+              [newSorteioId, mappedRodadaId, sorteado.numero_sorteado, sorteado.range_start, sorteado.range_end, sorteado.ordem, sorteado.registro || null, sorteado.data_sorteio || null]
+            );
+          }
+
+          await client.query('COMMIT');
+          return res.json({
+            data: [{
+              success: true,
+              sorteio_id: newSorteioId,
+              nome: newNome,
+              restored: {
+                vendedores: sourceVendedores.length,
+                cartelas: sourceCartelas.length,
+                atribuicoes: sourceAtribuicoes.length,
+                atribuicao_cartelas: sourceAtribuicaoCartelas.length,
+                vendas: sourceVendas.length,
+                pagamentos: sourcePagamentos.length,
+                sorteio_historico: sourceSorteioHistorico.length,
+                rodadas_sorteio: sourceRodadas.length,
+              }
+            }]
+          });
+        } catch (restoreError) {
+          await client.query('ROLLBACK');
+          throw restoreError;
+        }
+      }
 
       // ================== DRAW HISTORY ==================
       case 'getSorteioHistorico':
