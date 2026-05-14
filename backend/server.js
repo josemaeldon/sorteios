@@ -54,6 +54,15 @@ async function canAccessSorteio(client, sorteioId, userId, role) {
   return accessCheck.rows.length > 0;
 }
 
+async function queryRowsSafe(client, sql, params = []) {
+  try {
+    const result = await client.query(sql, params);
+    return result.rows || [];
+  } catch {
+    return [];
+  }
+}
+
 // Stripe webhook must receive raw body — register before express.json()
 app.post('/stripe-webhook', express.raw({ type: 'application/json' }), async (req, res) => {
   const sig = req.headers['stripe-signature'];
@@ -1676,7 +1685,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           return res.status(404).json({ error: 'Sorteio não encontrado' });
         }
 
-        const [vendedoresResult, cartelasResult, atribuicoesResult, atribuicaoCartelasResult, vendasResult, pagamentosResult, sorteioHistoricoResult, rodadasResult] = await Promise.all([
+        const [vendedoresResult, cartelasResult, atribuicoesResult, atribuicaoCartelasResult, vendasResult, pagamentosResult, sorteioHistoricoResult, rodadasResult, cartelasValidadasRows, cartelaLayoutsRows, lojaCartelasRows] = await Promise.all([
           client.query('SELECT * FROM vendedores WHERE sorteio_id = $1 ORDER BY created_at ASC', [data.sorteio_id]),
           client.query('SELECT * FROM cartelas WHERE sorteio_id = $1 ORDER BY numero ASC', [data.sorteio_id]),
           client.query('SELECT * FROM atribuicoes WHERE sorteio_id = $1 ORDER BY created_at ASC', [data.sorteio_id]),
@@ -1691,20 +1700,47 @@ app.post('/api', checkBasicAuth, async (req, res) => {
                         ORDER BY p.created_at ASC`, [data.sorteio_id]),
           client.query('SELECT * FROM sorteio_historico WHERE sorteio_id = $1 ORDER BY ordem ASC, created_at ASC', [data.sorteio_id]),
           client.query('SELECT * FROM rodadas_sorteio WHERE sorteio_id = $1 ORDER BY created_at ASC', [data.sorteio_id]),
+          queryRowsSafe(client, 'SELECT id, sorteio_id, numero, comprador_nome, created_at FROM cartelas_validadas WHERE sorteio_id = $1 ORDER BY created_at ASC', [data.sorteio_id]),
+          queryRowsSafe(client, 'SELECT id, sorteio_id, nome, layout_data, cards_data, created_at, updated_at FROM cartela_layouts WHERE sorteio_id = $1 ORDER BY created_at ASC', [data.sorteio_id]),
+          queryRowsSafe(client, `SELECT lc.id, lc.user_id, lc.card_set_id, lc.numero_cartela, lc.preco, lc.status, lc.card_data, lc.layout_data, lc.vendedor_id,
+                                        lc.comprador_nome, lc.comprador_email, lc.comprador_endereco, lc.comprador_cidade, lc.comprador_telefone,
+                                        lc.stripe_session_id, lc.created_at, lc.updated_at
+                                 FROM loja_cartelas lc
+                                 INNER JOIN bingo_card_sets bcs ON bcs.id = lc.card_set_id
+                                 WHERE bcs.sorteio_id = $1
+                                 ORDER BY lc.created_at ASC`, [data.sorteio_id]),
         ]);
+
+        const normalizedCartelas = (cartelasResult.rows || []).map((row) => ({
+          ...row,
+          numeros_grade: parseJsonField(row.numeros_grade, row.numeros_grade),
+        }));
+        const cartelasGeradas = normalizedCartelas.map((row) => ({
+          numero: row.numero,
+          status: row.status,
+          vendedor_id: row.vendedor_id ?? null,
+          numeros_grade: row.numeros_grade ?? null,
+          comprador_nome: row.comprador_nome ?? null,
+          created_at: row.created_at ?? null,
+          updated_at: row.updated_at ?? null,
+        }));
 
         const backup = {
           version: 1,
           exported_at: new Date().toISOString(),
           sorteio: sorteioResult.rows[0],
           vendedores: vendedoresResult.rows,
-          cartelas: cartelasResult.rows,
+          cartelas: normalizedCartelas,
+          cartelas_geradas: cartelasGeradas,
+          cartelas_validadas: cartelasValidadasRows,
           atribuicoes: atribuicoesResult.rows,
           atribuicao_cartelas: atribuicaoCartelasResult.rows,
           vendas: vendasResult.rows,
           pagamentos: pagamentosResult.rows,
           sorteio_historico: sorteioHistoricoResult.rows,
-          rodadas_sorteio: rodadasResult.rows,
+          rodadas: rodadasResult.rows,
+          cartela_layouts: cartelaLayoutsRows,
+          loja_cartelas: lojaCartelasRows,
         };
 
         return res.json({ data: backup });
@@ -1719,13 +1755,17 @@ app.post('/api', checkBasicAuth, async (req, res) => {
 
         const sourceSorteio = backupData.sorteio;
         const sourceVendedores = Array.isArray(backupData.vendedores) ? backupData.vendedores : [];
-        const sourceCartelas = Array.isArray(backupData.cartelas) ? backupData.cartelas : [];
+        const sourceCartelas = Array.isArray(backupData.cartelas)
+          ? backupData.cartelas
+          : (Array.isArray(backupData.cartelas_geradas) ? backupData.cartelas_geradas : []);
         const sourceAtribuicoes = Array.isArray(backupData.atribuicoes) ? backupData.atribuicoes : [];
         const sourceAtribuicaoCartelas = Array.isArray(backupData.atribuicao_cartelas) ? backupData.atribuicao_cartelas : [];
         const sourceVendas = Array.isArray(backupData.vendas) ? backupData.vendas : [];
         const sourcePagamentos = Array.isArray(backupData.pagamentos) ? backupData.pagamentos : [];
         const sourceSorteioHistorico = Array.isArray(backupData.sorteio_historico) ? backupData.sorteio_historico : [];
-        const sourceRodadas = Array.isArray(backupData.rodadas_sorteio) ? backupData.rodadas_sorteio : [];
+        const sourceRodadas = Array.isArray(backupData.rodadas_sorteio)
+          ? backupData.rodadas_sorteio
+          : (Array.isArray(backupData.rodadas) ? backupData.rodadas : []);
 
         const idMapVendedores = new Map();
         const idMapAtribuicoes = new Map();
