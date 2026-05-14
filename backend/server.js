@@ -1716,7 +1716,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           client.query('SELECT * FROM sorteio_historico WHERE sorteio_id = $1 ORDER BY ordem ASC, created_at ASC', [data.sorteio_id]),
           client.query('SELECT * FROM rodadas_sorteio WHERE sorteio_id = $1 ORDER BY created_at ASC', [data.sorteio_id]),
           queryRowsSafe(client, 'SELECT id, sorteio_id, numero, comprador_nome, created_at FROM cartelas_validadas WHERE sorteio_id = $1 ORDER BY created_at ASC', [data.sorteio_id]),
-          queryRowsSafe(client, 'SELECT id, sorteio_id, nome, layout_data, cards_data, created_at, updated_at FROM cartela_layouts WHERE sorteio_id = $1 ORDER BY created_at ASC', [data.sorteio_id]),
+          queryRowsSafe(client, 'SELECT id, sorteio_id, nome, layout_data, cards_data, created_at, updated_at FROM bingo_card_sets WHERE sorteio_id = $1 ORDER BY created_at ASC', [data.sorteio_id]),
           queryRowsSafe(client, `SELECT lc.id, lc.user_id, lc.card_set_id, lc.numero_cartela, lc.preco, lc.status, lc.card_data, lc.layout_data, lc.vendedor_id,
                                         lc.comprador_nome, lc.comprador_email, lc.comprador_endereco, lc.comprador_cidade, lc.comprador_telefone,
                                         lc.stripe_session_id, lc.created_at, lc.updated_at
@@ -1755,6 +1755,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
           sorteio_historico: sorteioHistoricoResult.rows,
           rodadas: rodadasResult.rows,
           cartela_layouts: cartelaLayoutsRows,
+          bingo_card_sets: cartelaLayoutsRows,
           loja_cartelas: lojaCartelasRows,
         };
 
@@ -1781,11 +1782,16 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         const sourceRodadas = Array.isArray(backupData.rodadas_sorteio)
           ? backupData.rodadas_sorteio
           : (Array.isArray(backupData.rodadas) ? backupData.rodadas : []);
+        const sourceCartelaLayouts = Array.isArray(backupData.cartela_layouts)
+          ? backupData.cartela_layouts
+          : (Array.isArray(backupData.bingo_card_sets) ? backupData.bingo_card_sets : []);
+        const sourceLojaCartelas = Array.isArray(backupData.loja_cartelas) ? backupData.loja_cartelas : [];
 
         const idMapVendedores = new Map();
         const idMapAtribuicoes = new Map();
         const idMapVendas = new Map();
         const idMapRodadas = new Map();
+        const idMapCardSets = new Map();
 
         await client.query('BEGIN');
         try {
@@ -1879,6 +1885,75 @@ app.post('/api', checkBasicAuth, async (req, res) => {
                 cartela.comprador_nome || null,
                 cartela.created_at || new Date().toISOString(),
                 cartela.updated_at || cartela.created_at || new Date().toISOString(),
+              ]
+            );
+          }
+
+          // Restore builder configuration (Construtor): layouts/card sets
+          for (const cardSet of sourceCartelaLayouts) {
+            let newCardSetId;
+            if (dbConfig.type === 'mysql') {
+              await client.query(
+                `INSERT INTO bingo_card_sets (id, sorteio_id, nome, layout_data, cards_data, created_at, updated_at)
+                 VALUES (UUID(), $1, $2, $3, $4, $5, $6)`,
+                [
+                  newSorteioId,
+                  cardSet.nome || 'Layout Restaurado',
+                  cardSet.layout_data || '',
+                  cardSet.cards_data || '[]',
+                  cardSet.created_at || new Date().toISOString(),
+                  cardSet.updated_at || cardSet.created_at || new Date().toISOString(),
+                ]
+              );
+              const createdCardSet = await client.query(
+                `SELECT id FROM bingo_card_sets WHERE sorteio_id = $1 AND nome = $2 ORDER BY created_at DESC LIMIT 1`,
+                [newSorteioId, cardSet.nome || 'Layout Restaurado']
+              );
+              newCardSetId = createdCardSet.rows[0]?.id;
+            } else {
+              const createdCardSet = await client.query(
+                `INSERT INTO bingo_card_sets (sorteio_id, nome, layout_data, cards_data, created_at, updated_at)
+                 VALUES ($1, $2, $3, $4, $5, $6)
+                 RETURNING id`,
+                [
+                  newSorteioId,
+                  cardSet.nome || 'Layout Restaurado',
+                  cardSet.layout_data || '',
+                  cardSet.cards_data || '[]',
+                  cardSet.created_at || new Date().toISOString(),
+                  cardSet.updated_at || cardSet.created_at || new Date().toISOString(),
+                ]
+              );
+              newCardSetId = createdCardSet.rows[0]?.id;
+            }
+            if (newCardSetId) idMapCardSets.set(cardSet.id, newCardSetId);
+          }
+
+          // Restore store cards linked to builder layouts (optional in backup)
+          for (const lojaCartela of sourceLojaCartelas) {
+            const mappedCardSetId = idMapCardSets.get(lojaCartela.card_set_id);
+            if (!mappedCardSetId) continue;
+            await client.query(
+              `INSERT INTO loja_cartelas
+               (user_id, card_set_id, numero_cartela, preco, status, vendedor_id, comprador_nome, comprador_email, comprador_endereco, comprador_cidade, comprador_telefone, stripe_session_id, card_data, layout_data, created_at, updated_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+              [
+                data.authenticated_user_id,
+                mappedCardSetId,
+                lojaCartela.numero_cartela,
+                lojaCartela.preco || 0,
+                lojaCartela.status || 'disponivel',
+                lojaCartela.vendedor_id ? (idMapVendedores.get(lojaCartela.vendedor_id) || null) : null,
+                lojaCartela.comprador_nome || null,
+                lojaCartela.comprador_email || null,
+                lojaCartela.comprador_endereco || null,
+                lojaCartela.comprador_cidade || null,
+                lojaCartela.comprador_telefone || null,
+                lojaCartela.stripe_session_id || null,
+                lojaCartela.card_data || '',
+                lojaCartela.layout_data || '',
+                lojaCartela.created_at || new Date().toISOString(),
+                lojaCartela.updated_at || lojaCartela.created_at || new Date().toISOString(),
               ]
             );
           }
@@ -2006,6 +2081,8 @@ app.post('/api', checkBasicAuth, async (req, res) => {
                 pagamentos: sourcePagamentos.length,
                 sorteio_historico: sourceSorteioHistorico.length,
                 rodadas_sorteio: sourceRodadas.length,
+                cartela_layouts: sourceCartelaLayouts.length,
+                loja_cartelas: sourceLojaCartelas.length,
               }
             }]
           });
