@@ -1696,8 +1696,6 @@ app.post('/api', checkBasicAuth, async (req, res) => {
         const backup = {
           version: 1,
           exported_at: new Date().toISOString(),
-          exported_by: data.authenticated_user_id,
-          source_sorteio_id: data.sorteio_id,
           sorteio: sorteioResult.rows[0],
           vendedores: vendedoresResult.rows,
           cartelas: cartelasResult.rows,
