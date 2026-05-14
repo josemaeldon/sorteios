@@ -63,6 +63,21 @@ async function queryRowsSafe(client, sql, params = []) {
   }
 }
 
+function normalizeNumerosGradeForBackup(rawValue) {
+  const parsed = parseJsonField(rawValue, null);
+  if (!Array.isArray(parsed) || parsed.length === 0) return null;
+
+  // Old format: flat array with 25 numbers -> convert to one prize grid.
+  if (typeof parsed[0] === 'number') {
+    return [parsed.map((n) => Number(n))];
+  }
+
+  // Current format: array of prize grids.
+  return parsed
+    .filter((grid) => Array.isArray(grid))
+    .map((grid) => grid.map((n) => Number(n)));
+}
+
 // Stripe webhook must receive raw body — register before express.json()
 app.post('/stripe-webhook', express.raw({ type: 'application/json' }), async (req, res) => {
   const sig = req.headers['stripe-signature'];
@@ -1713,7 +1728,7 @@ app.post('/api', checkBasicAuth, async (req, res) => {
 
         const normalizedCartelas = (cartelasResult.rows || []).map((row) => ({
           ...row,
-          numeros_grade: parseJsonField(row.numeros_grade, row.numeros_grade),
+          numeros_grade: normalizeNumerosGradeForBackup(row.numeros_grade),
         }));
         const cartelasGeradas = normalizedCartelas.map((row) => ({
           numero: row.numero,
@@ -1848,13 +1863,23 @@ app.post('/api', checkBasicAuth, async (req, res) => {
 
           for (const cartela of sourceCartelas) {
             const mappedVendedorId = cartela.vendedor_id ? (idMapVendedores.get(cartela.vendedor_id) || null) : null;
-            const numerosGradeValue = cartela.numeros_grade !== undefined
-              ? JSON.stringify(parseJsonField(cartela.numeros_grade, null))
+            const normalizedGrade = normalizeNumerosGradeForBackup(cartela.numeros_grade);
+            const numerosGradeValue = normalizedGrade !== null
+              ? JSON.stringify(normalizedGrade)
               : null;
             await client.query(
               `INSERT INTO cartelas (sorteio_id, vendedor_id, numero, status, numeros_grade, comprador_nome, created_at, updated_at)
-               VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())`,
-              [newSorteioId, mappedVendedorId, cartela.numero, cartela.status || 'disponivel', numerosGradeValue, cartela.comprador_nome || null]
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+              [
+                newSorteioId,
+                mappedVendedorId,
+                cartela.numero,
+                cartela.status || 'disponivel',
+                numerosGradeValue,
+                cartela.comprador_nome || null,
+                cartela.created_at || new Date().toISOString(),
+                cartela.updated_at || cartela.created_at || new Date().toISOString(),
+              ]
             );
           }
 
